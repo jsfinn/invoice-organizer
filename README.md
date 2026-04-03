@@ -47,3 +47,29 @@ This does **not** clear:
 - folder paths
 - LLM provider / base URL / model / API key
 - custom instructions
+
+## Release Process
+
+Create a release by running:
+
+```sh
+./release
+```
+
+This prints the current `MARKETING_VERSION` and suggests the next patch version. To publish a release, run:
+
+```sh
+./release 0.1.4
+```
+
+The `release` script:
+- updates `MARKETING_VERSION` in `project.yml` and `InvoiceOrganizer.xcodeproj/project.pbxproj`
+- increments `CURRENT_PROJECT_VERSION`
+- creates a release commit
+- creates and pushes tag `v0.1.4`
+
+Pushing the tag triggers the GitHub Actions release workflow, which:
+- verifies the tag version matches `project.yml`
+- builds the macOS app and packages a DMG
+- creates a GitHub Release
+- attaches the DMG as a release asset
