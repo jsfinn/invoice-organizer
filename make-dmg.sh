@@ -74,6 +74,7 @@ PY
 
 CURRENT_VERSION="$(read_marketing_version)"
 VERSION="${VERSION:-$(bump_revision "$CURRENT_VERSION")}"
+PERSIST_VERSION="${PERSIST_VERSION:-1}"
 APP_PATH="${DERIVED_DATA_PATH}/Build/Products/${CONFIGURATION}/${APP_NAME}.app"
 DMG_PATH="${DIST_DIR}/${OUTPUT_BASENAME}-${VERSION}.dmg"
 
@@ -100,6 +101,8 @@ hdiutil create \
 
 rm -rf "${STAGING_DIR}"
 
-persist_marketing_version "${VERSION}"
+if [[ "${PERSIST_VERSION}" == "1" ]]; then
+  persist_marketing_version "${VERSION}"
+fi
 
 echo "Created ${DMG_PATH}"
