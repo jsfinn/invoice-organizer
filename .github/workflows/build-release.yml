@@ -1,15 +1,12 @@
-name: Build Release
+name: Publish Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Version to embed in the app and DMG filename
-        required: true
-        type: string
+  push:
+    tags:
+      - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-dmg:
@@ -24,17 +21,22 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      - name: Derive version from tag
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Build DMG
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.version.outputs.value }}
           PERSIST_VERSION: "0"
         run: |
           chmod +x ./make-dmg.sh
           ./make-dmg.sh
 
-      - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
         with:
-          name: InvoiceOrganizer-${{ inputs.version }}
-          path: dist/*.dmg
-          if-no-files-found: error
+          name: Invoice Organizer ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist/*.dmg
+          fail_on_unmatched_files: true
