@@ -28,6 +28,25 @@ jobs:
         id: version
         run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Verify committed project version
+        run: |
+          project_version="$(python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          text = Path("project.yml").read_text()
+          match = re.search(r'(^\s*MARKETING_VERSION:\s*)(\d+\.\d+\.\d+)\s*$', text, re.MULTILINE)
+          if match is None:
+              raise SystemExit("Could not read MARKETING_VERSION from project.yml")
+
+          print(match.group(2))
+          PY
+          )"
+          if [[ "${project_version}" != "${{ steps.version.outputs.value }}" ]]; then
+            echo "Tag version ${GITHUB_REF_NAME#v} does not match project.yml MARKETING_VERSION ${project_version}" >&2
+            exit 1
+          fi
+
       - name: Build DMG
         env:
           VERSION: ${{ steps.version.outputs.value }}

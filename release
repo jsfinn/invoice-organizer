@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PROJECT_SPEC="project.yml"
+PROJECT_FILE="InvoiceOrganizer.xcodeproj/project.pbxproj"
+
+usage() {
+  echo "Usage: ./release <version>" >&2
+  echo "Example: ./release 0.1.4" >&2
+}
+
+read_current_version() {
+  python3 - "$PROJECT_SPEC" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+text = Path(sys.argv[1]).read_text()
+match = re.search(r'(^\s*MARKETING_VERSION:\s*)(\d+\.\d+\.\d+)\s*$', text, re.MULTILINE)
+if match is None:
+    raise SystemExit("Could not read MARKETING_VERSION from project.yml")
+
+print(match.group(2))
+PY
+}
+
+read_current_build() {
+  python3 - "$PROJECT_SPEC" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+text = Path(sys.argv[1]).read_text()
+match = re.search(r'(^\s*CURRENT_PROJECT_VERSION:\s*)(\d+)\s*$', text, re.MULTILINE)
+if match is None:
+    raise SystemExit("Could not read CURRENT_PROJECT_VERSION from project.yml")
+
+print(match.group(2))
+PY
+}
+
+bump_revision() {
+  python3 - "$1" <<'PY'
+import sys
+
+parts = sys.argv[1].split(".")
+if len(parts) != 3 or not all(part.isdigit() for part in parts):
+    raise SystemExit("MARKETING_VERSION must use x.y.z format")
+
+major, minor, revision = map(int, parts)
+print(f"{major}.{minor}.{revision + 1}")
+PY
+}
+
+next_build_number() {
+  python3 - "$1" <<'PY'
+import sys
+
+value = sys.argv[1]
+if not value.isdigit():
+    raise SystemExit("CURRENT_PROJECT_VERSION must be numeric")
+
+print(str(int(value) + 1))
+PY
+}
+
+persist_versions() {
+  python3 - "$1" "$2" "$PROJECT_SPEC" "$PROJECT_FILE" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+marketing_version = sys.argv[1]
+build_number = sys.argv[2]
+paths = [Path(path) for path in sys.argv[3:]]
+patterns = [
+    (
+        re.compile(r'(^\s*MARKETING_VERSION:\s*)\d+\.\d+\.\d+(\s*)$', re.MULTILINE),
+        marketing_version,
+    ),
+    (
+        re.compile(r'(^\s*MARKETING_VERSION = )\d+\.\d+\.\d+(;\s*)$', re.MULTILINE),
+        marketing_version,
+    ),
+    (
+        re.compile(r'(^\s*CURRENT_PROJECT_VERSION:\s*)\d+(\s*)$', re.MULTILINE),
+        build_number,
+    ),
+    (
+        re.compile(r'(^\s*CURRENT_PROJECT_VERSION = )\d+(;\s*)$', re.MULTILINE),
+        build_number,
+    ),
+]
+
+for path in paths:
+    text = path.read_text()
+    updated = text
+    replacements = 0
+
+    for pattern, replacement in patterns:
+        updated, count = pattern.subn(rf'\g<1>{replacement}\g<2>', updated)
+        replacements += count
+
+    if replacements == 0:
+        raise SystemExit(f"Could not update versions in {path}")
+
+    path.write_text(updated)
+PY
+}
+
+VERSION="${1:-}"
+
+if [[ -z "${VERSION}" ]]; then
+  CURRENT_VERSION="$(read_current_version)"
+  SUGGESTED_VERSION="$(bump_revision "${CURRENT_VERSION}")"
+  echo "No version provided." >&2
+  echo "Current version: ${CURRENT_VERSION}" >&2
+  echo "Suggested next version: ${SUGGESTED_VERSION}" >&2
+  echo "Run: ./release ${SUGGESTED_VERSION}" >&2
+  usage
+  exit 0
+fi
+
+if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Version must use semantic version format: x.y.z" >&2
+  exit 1
+fi
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Working tree must be clean before creating a release tag." >&2
+  exit 1
+fi
+
+CURRENT_BUILD="$(read_current_build)"
+NEXT_BUILD="$(next_build_number "${CURRENT_BUILD}")"
+TAG="v${VERSION}"
+
+if git rev-parse "${TAG}" >/dev/null 2>&1; then
+  echo "Tag ${TAG} already exists locally." >&2
+  exit 1
+fi
+
+persist_versions "${VERSION}" "${NEXT_BUILD}"
+git add "${PROJECT_SPEC}" "${PROJECT_FILE}"
+git commit -m "Release ${TAG}"
+git tag -a "${TAG}" -m "Release ${TAG}"
+git push origin HEAD
+git push origin "${TAG}"
+
+echo "Released ${TAG} with build ${NEXT_BUILD}"
