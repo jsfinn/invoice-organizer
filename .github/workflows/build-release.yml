@@ -1,5 +1,8 @@
 name: Publish Release
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   push:
     tags:
@@ -14,7 +17,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -34,7 +37,7 @@ jobs:
           ./make-dmg.sh
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.6.0
         with:
           name: Invoice Organizer ${{ github.ref_name }}
           generate_release_notes: true
