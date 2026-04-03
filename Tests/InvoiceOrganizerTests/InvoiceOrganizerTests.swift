@@ -1,0 +1,1982 @@
+import AppKit
+import CoreGraphics
+import Foundation
+import ImageIO
+import PDFKit
+import Testing
+import UniformTypeIdentifiers
+@testable import InvoiceOrganizer
+
+private func utcDate(year: Int, month: Int, day: Int, hour: Int = 0, minute: Int = 0, second: Int = 0) -> Date {
+    Calendar(identifier: .gregorian).date(
+        from: DateComponents(
+            timeZone: TimeZone(secondsFromGMT: 0),
+            year: year,
+            month: month,
+            day: day,
+            hour: hour,
+            minute: minute,
+            second: second
+        )
+    )!
+}
+
+private func localDateComponents(_ date: Date) -> DateComponents {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .autoupdatingCurrent
+    return calendar.dateComponents([.year, .month, .day], from: date)
+}
+
+private func writePNG(width: Int, height: Int, to url: URL) throws {
+    guard let context = CGContext(
+        data: nil,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+
+    context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+    guard let image = context.makeImage(),
+          let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+}
+
+private func writePDF(width: CGFloat, height: CGFloat, to url: URL) throws {
+    let data = NSMutableData()
+    var mediaBox = CGRect(x: 0, y: 0, width: width, height: height)
+
+    guard let consumer = CGDataConsumer(data: data),
+          let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+
+    context.beginPDFPage(nil)
+    context.setFillColor(CGColor(gray: 0.9, alpha: 1))
+    context.fill(mediaBox)
+    context.endPDFPage()
+    context.closePDF()
+
+    try (data as Data).write(to: url)
+}
+
+private func imagePixelSize(at url: URL) throws -> CGSize {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+          let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+          let height = properties[kCGImagePropertyPixelHeight] as? CGFloat else {
+        throw CocoaError(.fileReadCorruptFile)
+    }
+
+    return CGSize(width: width, height: height)
+}
+
+@MainActor
+private final class TestPreviewAssetProvider: PreviewAssetProviding {
+    struct Response {
+        let asset: PreviewAsset
+        let delay: Duration
+
+        static func success(asset: PreviewAsset, delay: Duration) -> Response {
+            Response(asset: asset, delay: delay)
+        }
+    }
+
+    private let responses: [URL: Response]
+
+    init(responses: [URL: Response]) {
+        self.responses = responses
+    }
+
+    func asset(
+        for fileURL: URL,
+        contentHash: String?,
+        fileType: InvoiceFileType,
+        forceReload: Bool
+    ) async throws -> PreviewAsset {
+        guard let response = responses[fileURL] else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        try await Task.sleep(for: response.delay)
+        return response.asset
+    }
+
+    func invalidateAsset(for fileURL: URL) {}
+}
+
+@MainActor
+private final class RecordingPreviewPersistHandler {
+    private(set) var drafts: [PreviewRotationDraft] = []
+
+    func persist(_ draft: PreviewRotationDraft) async -> PreviewRotationSaveResult? {
+        drafts.append(draft)
+        return PreviewRotationSaveResult(contentHash: draft.contentHash)
+    }
+}
+
+@Test func archivePathUsesVendorInitial() async throws {
+    let root = URL(fileURLWithPath: "/Processed")
+
+    let destination = ArchivePathBuilder.destinationFolder(root: root, vendor: "Amazon")
+
+    #expect(destination.path == "/Processed/A/Amazon")
+}
+
+@Test func archivePathFallsBackToMisc() async throws {
+    let root = URL(fileURLWithPath: "/Processed")
+
+    let destination = ArchivePathBuilder.destinationFolder(root: root, vendor: "   ")
+
+    #expect(destination.path == "/Processed/M/Misc")
+}
+
+@Test func processedFilenameRoundTripsMetadata() async throws {
+    let invoiceDate = utcDate(year: 2024, month: 1, day: 5)
+    let processedAt = utcDate(year: 2024, month: 3, day: 30, hour: 6, minute: 24, second: 5)
+    let fileURL = URL(fileURLWithPath: "/tmp/invoice.pdf")
+
+    let filename = ArchivePathBuilder.processedFilename(
+        vendor: "Amazon",
+        invoiceDate: invoiceDate,
+        processedAt: processedAt,
+        originalFileURL: fileURL
+    )
+
+    #expect(filename == "Amazon-2024-01-05-20240330-062405.pdf")
+
+    let parsed = ArchivePathBuilder.processedMetadata(from: URL(fileURLWithPath: "/tmp/\(filename)"))
+    #expect(parsed?.vendor == "Amazon")
+    #expect(parsed?.invoiceDate == invoiceDate)
+    #expect(parsed?.processedAt == processedAt)
+}
+
+@Test func scannerRecognizesSupportedExtensions() async throws {
+    #expect(InboxFileScanner.isSupportedFile(url: URL(fileURLWithPath: "/tmp/invoice.pdf")))
+    #expect(InboxFileScanner.isSupportedFile(url: URL(fileURLWithPath: "/tmp/invoice.HEIC")))
+    #expect(InboxFileScanner.isSupportedFile(url: URL(fileURLWithPath: "/tmp/invoice.png")))
+    #expect(InboxFileScanner.isSupportedFile(url: URL(fileURLWithPath: "/tmp/invoice.gif")))
+    #expect(InboxFileScanner.isSupportedFile(url: URL(fileURLWithPath: "/tmp/invoice.tiff")))
+    #expect(!InboxFileScanner.isSupportedFile(url: URL(fileURLWithPath: "/tmp/readme.txt")))
+}
+
+@Test func plainRowClickCollapsesMultiSelection() async throws {
+    #expect(shouldCollapseSelectionAfterMouseInteraction(row: 2, modifierFlags: [], didBeginDrag: false) == true)
+    #expect(shouldCollapseSelectionAfterMouseInteraction(row: 2, modifierFlags: [.command], didBeginDrag: false) == false)
+    #expect(shouldCollapseSelectionAfterMouseInteraction(row: 2, modifierFlags: [.shift], didBeginDrag: false) == false)
+    #expect(shouldCollapseSelectionAfterMouseInteraction(row: 2, modifierFlags: [], didBeginDrag: true) == false)
+    #expect(shouldCollapseSelectionAfterMouseInteraction(row: -1, modifierFlags: [], didBeginDrag: false) == false)
+}
+
+@Test func scannerSkipsNestedProcessedFolderFromInboxResults() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let nestedFolder = tempRoot.appendingPathComponent("Nested", isDirectory: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: nestedFolder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let inboxInvoiceURL = tempRoot.appendingPathComponent("incoming.pdf")
+    let processedInvoiceURL = processedRoot.appendingPathComponent("Amazon-2024-01-05-20240330-062405.pdf")
+    let nestedInvoiceURL = nestedFolder.appendingPathComponent("nested.pdf")
+
+    try Data("inbox".utf8).write(to: inboxInvoiceURL)
+    try Data("processed".utf8).write(to: processedInvoiceURL)
+    try Data("nested".utf8).write(to: nestedInvoiceURL)
+
+    let scannedInboxFiles = try InboxFileScanner.scanFiles(
+        in: tempRoot,
+        location: .inbox,
+        recursive: false,
+        excluding: [processedRoot]
+    )
+
+    #expect(scannedInboxFiles.map(\.fileURL.lastPathComponent) == ["incoming.pdf"])
+}
+
+@Test func workspaceMoverMovesInvoiceIntoProcessingFolder() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let inboxInvoiceURL = tempRoot.appendingPathComponent("incoming.pdf")
+    try Data("inbox".utf8).write(to: inboxInvoiceURL)
+
+    let invoice = InvoiceItem(
+        name: "incoming.pdf",
+        fileURL: inboxInvoiceURL,
+        location: .inbox,
+        addedAt: .now,
+        fileType: .pdf,
+        status: .unprocessed
+    )
+
+    let movedURL = try InvoiceWorkspaceMover.moveToProcessing(invoice, processingRoot: processingRoot)
+    #expect(movedURL.deletingLastPathComponent() == processingRoot)
+    #expect(movedURL.lastPathComponent == "incoming.pdf")
+    #expect(FileManager.default.fileExists(atPath: movedURL.path))
+    #expect(!FileManager.default.fileExists(atPath: inboxInvoiceURL.path))
+}
+
+@Test func workspaceMoverRenamesProcessingInvoiceFromMetadata() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let processingInvoiceURL = processingRoot.appendingPathComponent("incoming.pdf")
+    try Data("inbox".utf8).write(to: processingInvoiceURL)
+
+    let invoice = InvoiceItem(
+        name: "incoming.pdf",
+        fileURL: processingInvoiceURL,
+        location: .processing,
+        addedAt: .now,
+        fileType: .pdf,
+        status: .inProgress
+    )
+
+    let renamedURL = try InvoiceWorkspaceMover.renameInProcessing(
+        invoice,
+        vendor: "Amazon",
+        invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+        invoiceNumber: "INV-42"
+    )
+
+    #expect(renamedURL.lastPathComponent == "Amazon-2024-01-05-INV-42.pdf")
+    #expect(FileManager.default.fileExists(atPath: renamedURL.path))
+    #expect(!FileManager.default.fileExists(atPath: processingInvoiceURL.path))
+}
+
+@Test func workspaceMoverMovesInvoiceBackIntoInboxFolder() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let processingInvoiceURL = processingRoot.appendingPathComponent("Amazon-2024-01-05-INV-42.pdf")
+    try Data("inbox".utf8).write(to: processingInvoiceURL)
+
+    let invoice = InvoiceItem(
+        name: processingInvoiceURL.lastPathComponent,
+        fileURL: processingInvoiceURL,
+        location: .processing,
+        vendor: "Amazon",
+        invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+        invoiceNumber: "INV-42",
+        addedAt: .now,
+        fileType: .pdf,
+        status: .inProgress
+    )
+
+    let movedURL = try InvoiceWorkspaceMover.moveToInbox(invoice, inboxRoot: inboxRoot)
+
+    #expect(movedURL.deletingLastPathComponent() == inboxRoot)
+    #expect(movedURL.lastPathComponent == "Amazon-2024-01-05-INV-42.pdf")
+    #expect(FileManager.default.fileExists(atPath: movedURL.path))
+    #expect(!FileManager.default.fileExists(atPath: processingInvoiceURL.path))
+}
+
+@Test func previewRotationSaveUpdatesImageWithoutLibraryReload() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let invoiceURL = inboxRoot.appendingPathComponent("incoming.png")
+    try writePNG(width: 2, height: 1, to: invoiceURL)
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [:],
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+    let initialInvoice = try #require(await MainActor.run { model.invoices.first })
+    let invoiceID = initialInvoice.id
+    let previousContentHash = initialInvoice.contentHash
+
+    let result = await model.persistPreviewRotation(for: invoiceID, quarterTurns: 1)
+    let rotatedInvoice = try #require(await MainActor.run { model.invoices.first })
+
+    #expect(result?.contentHash != nil)
+    #expect(rotatedInvoice.contentHash == result?.contentHash)
+    #expect(rotatedInvoice.contentHash != previousContentHash)
+    #expect(try imagePixelSize(at: rotatedInvoice.fileURL) == CGSize(width: 1, height: 2))
+}
+
+@Test func previewRotationDraftPersistsAfterMoveUsingRelocatedInvoice() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let invoiceURL = inboxRoot.appendingPathComponent("incoming.png")
+    try writePNG(width: 2, height: 1, to: invoiceURL)
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [:],
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+    let initialInvoice = try #require(await MainActor.run { model.invoices.first })
+    let draft = PreviewRotationDraft(invoice: initialInvoice, quarterTurns: 1)
+
+    await MainActor.run {
+        model.moveInvoicesToInProgress(ids: [initialInvoice.id])
+    }
+
+    await model.reloadLibraryForTesting()
+    let result = await model.persistPreviewRotation(for: draft)
+    let movedInvoice = try #require(await MainActor.run {
+        model.invoices.first(where: { $0.location == .processing })
+    })
+
+    #expect(result?.contentHash != nil)
+    #expect(movedInvoice.contentHash == result?.contentHash)
+    #expect(try imagePixelSize(at: movedInvoice.fileURL) == CGSize(width: 1, height: 2))
+}
+
+@Test func invoiceFileRotatorRotatesPNGOnDisk() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let imageURL = tempRoot.appendingPathComponent("rotate-me.png")
+    try writePNG(width: 2, height: 1, to: imageURL)
+
+    try InvoiceFileRotator.rotateFile(at: imageURL, fileType: .image, quarterTurns: 1)
+
+    #expect(try imagePixelSize(at: imageURL) == CGSize(width: 1, height: 2))
+}
+
+@Test func previewRotationSaveRotatesPDFOnDisk() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let invoiceURL = inboxRoot.appendingPathComponent("incoming.pdf")
+    try writePDF(width: 200, height: 100, to: invoiceURL)
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [:],
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+    let initialInvoice = try #require(await MainActor.run { model.invoices.first })
+
+    let result = await model.persistPreviewRotation(for: initialInvoice.id, quarterTurns: 1)
+    let rotatedInvoice = try #require(await MainActor.run { model.invoices.first })
+    let document = try #require(PDFDocument(url: rotatedInvoice.fileURL))
+    let firstPage = try #require(document.page(at: 0))
+
+    #expect(result?.contentHash != nil)
+    #expect(rotatedInvoice.contentHash == result?.contentHash)
+    #expect(firstPage.rotation == 270)
+}
+
+@Test func invoiceFileRotatorKeepsFolderContentsStable() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let imageURL = tempRoot.appendingPathComponent("rotate-me.png")
+    try writePNG(width: 2, height: 1, to: imageURL)
+    let before = try FileManager.default.contentsOfDirectory(atPath: tempRoot.path).sorted()
+
+    try InvoiceFileRotator.rotateFile(at: imageURL, fileType: .image, quarterTurns: 1)
+
+    let after = try FileManager.default.contentsOfDirectory(atPath: tempRoot.path).sorted()
+    #expect(after == before)
+}
+
+@MainActor
+@Test func previewAssetProviderReloadsAssetWhenContentHashChanges() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let imageURL = tempRoot.appendingPathComponent("reload-me.png")
+    try writePNG(width: 2, height: 1, to: imageURL)
+
+    let provider = PreviewAssetProvider()
+    let firstHash = try FileHasher.sha256(for: imageURL)
+    let firstAsset = try await provider.asset(
+        for: imageURL,
+        contentHash: firstHash,
+        fileType: .image,
+        forceReload: false
+    )
+
+    try InvoiceFileRotator.rotateFile(at: imageURL, fileType: .image, quarterTurns: 1)
+    let secondHash = try FileHasher.sha256(for: imageURL)
+    let secondAsset = try await provider.asset(
+        for: imageURL,
+        contentHash: secondHash,
+        fileType: .image,
+        forceReload: false
+    )
+
+    guard case .image(let firstImage) = firstAsset,
+          case .image(let secondImage) = secondAsset else {
+        Issue.record("Expected image assets from provider")
+        return
+    }
+
+    #expect(firstHash != secondHash)
+    #expect(firstImage !== secondImage)
+}
+
+@MainActor
+@Test func previewViewStateIgnoresStaleLoadAfterSelectionChange() async throws {
+    let firstURL = URL(fileURLWithPath: "/tmp/preview-first.png")
+    let secondURL = URL(fileURLWithPath: "/tmp/preview-second.png")
+    let firstImage = NSImage(size: NSSize(width: 10, height: 10))
+    let secondImage = NSImage(size: NSSize(width: 20, height: 10))
+    let provider = TestPreviewAssetProvider(
+        responses: [
+            firstURL: .success(asset: .image(firstImage), delay: .milliseconds(120)),
+            secondURL: .success(asset: .image(secondImage), delay: .milliseconds(10))
+        ]
+    )
+    let coordinator = PreviewRotationCoordinator()
+    let state = PreviewViewState(assetProvider: provider, rotationCoordinator: coordinator)
+
+    let firstInvoice = InvoiceItem(
+        name: "first.png",
+        fileURL: firstURL,
+        location: .inbox,
+        addedAt: .now,
+        fileType: .image,
+        status: .unprocessed,
+        contentHash: "first"
+    )
+    let secondInvoice = InvoiceItem(
+        name: "second.png",
+        fileURL: secondURL,
+        location: .inbox,
+        addedAt: .now,
+        fileType: .image,
+        status: .unprocessed,
+        contentHash: "second"
+    )
+
+    let firstLoad = Task { @MainActor in
+        await state.loadPreview(for: firstInvoice)
+    }
+    try await Task.sleep(for: .milliseconds(20))
+    await state.loadPreview(for: secondInvoice)
+    await firstLoad.value
+
+    guard case .asset(.image(let image)) = state.content else {
+        Issue.record("Expected the latest preview asset to remain visible")
+        return
+    }
+
+    #expect(image === secondImage)
+}
+
+@MainActor
+@Test func previewRotationCoordinatorFlushesPendingDraftsOnQuit() async throws {
+    let recorder = RecordingPreviewPersistHandler()
+    let coordinator = PreviewRotationCoordinator()
+    coordinator.persistHandler = recorder.persist
+
+    let invoice = InvoiceItem(
+        name: "draft.png",
+        fileURL: URL(fileURLWithPath: "/tmp/draft.png"),
+        location: .inbox,
+        addedAt: .now,
+        fileType: .image,
+        status: .unprocessed,
+        contentHash: "draft-hash"
+    )
+
+    coordinator.updateDraft(for: invoice, quarterTurns: 1)
+    await coordinator.commitAllPendingDrafts()
+
+    #expect(recorder.drafts.count == 1)
+    #expect(recorder.drafts.first?.invoiceID == invoice.id)
+    #expect(!coordinator.hasPendingWork)
+}
+
+@Test func processingFilesAppearAsInProgress() async throws {
+    let file = ScannedInvoiceFile(
+        id: "/Processing/incoming.pdf",
+        name: "incoming.pdf",
+        fileURL: URL(fileURLWithPath: "/Processing/incoming.pdf"),
+        location: .processing,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: .now,
+        fileType: .pdf,
+        contentHash: nil
+    )
+
+    let invoice = InboxFileScanner.makeActiveInvoice(from: file, workflow: nil, duplicateInfo: nil)
+    #expect(invoice.location == .processing)
+    #expect(invoice.status == .inProgress)
+}
+
+@Test func inboxFilesIgnoreStaleInProgressWorkflowFlag() async throws {
+    let file = ScannedInvoiceFile(
+        id: "/Inbox/incoming.pdf",
+        name: "incoming.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/incoming.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: .now,
+        fileType: .pdf,
+        contentHash: nil
+    )
+
+    let staleWorkflow = StoredInvoiceWorkflow(vendor: nil, invoiceDate: nil, invoiceNumber: nil, isInProgress: true)
+    let invoice = InboxFileScanner.makeActiveInvoice(from: file, workflow: staleWorkflow, duplicateInfo: nil)
+
+    #expect(invoice.location == .inbox)
+    #expect(invoice.status == .unprocessed)
+}
+
+@Test func dragExportRenamesHEICToJPEG() async throws {
+    #expect(DragExportService.jpegExportBasename(for: "invoice.heic") == "invoice")
+    #expect(DragExportService.jpegExportBasename(for: "invoice") == "invoice")
+    #expect(DragExportService.jpegExportFilename(for: "invoice.heic") == "invoice.jpg")
+    #expect(DragExportService.jpegExportFilename(for: "invoice.HEIC") == "invoice.jpg")
+    #expect(DragExportService.jpegExportFilename(for: "invoice") == "invoice.jpg")
+}
+
+@Test func archiveMovesInvoiceWithCanonicalFilename() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let inboxURL = tempRoot.appendingPathComponent("invoice.pdf")
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try "one".data(using: .utf8)?.write(to: inboxURL)
+    let invoiceDate = utcDate(year: 2024, month: 1, day: 5)
+    let processedAt = utcDate(year: 2024, month: 3, day: 30, hour: 6, minute: 24, second: 5)
+
+    let invoice = InvoiceItem(
+        name: "invoice.pdf",
+        fileURL: inboxURL,
+        location: .inbox,
+        vendor: "Amazon",
+        invoiceDate: invoiceDate,
+        addedAt: .now,
+        fileType: .pdf,
+        status: .inProgress
+    )
+
+    let archivedURL = try InvoiceArchiver.archive(
+        invoice,
+        processedRoot: processedRoot,
+        vendor: "Amazon",
+        invoiceDate: invoiceDate,
+        processedAt: processedAt
+    )
+    #expect(archivedURL.lastPathComponent == "Amazon-2024-01-05-20240330-062405.pdf")
+    #expect(FileManager.default.fileExists(atPath: archivedURL.path))
+}
+
+@Test func extractedTextDuplicateDetectorPrefersProcessedCopy() async throws {
+    let processedFile = ScannedInvoiceFile(
+        id: "/Processed/A/Amazon/invoice.pdf",
+        name: "Amazon-2024-01-05-20240330-062405.pdf",
+        fileURL: URL(fileURLWithPath: "/Processed/A/Amazon/invoice.pdf"),
+        location: .processed,
+        vendor: "Amazon",
+        invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+        processedAt: utcDate(year: 2024, month: 3, day: 30, hour: 6, minute: 24, second: 5),
+        addedAt: utcDate(year: 2024, month: 3, day: 30, hour: 6, minute: 24, second: 5),
+        fileType: .pdf,
+        contentHash: "processed-hash"
+    )
+
+    let inboxFile = ScannedInvoiceFile(
+        id: "/Inbox/invoice.pdf",
+        name: "invoice.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 1_711_951_999),
+        fileType: .pdf,
+        contentHash: "inbox-hash"
+    )
+
+    let duplicateMap = InvoiceDuplicateDetector.extractedTextDuplicateMap(
+        for: [processedFile, inboxFile],
+        textRecordsByContentHash: [
+            "processed-hash": InvoiceTextRecord(text: "Amazon\nInvoice INV-42", source: .pdfText),
+            "inbox-hash": InvoiceTextRecord(text: "  Amazon  \nInvoice INV-42  ", source: .ocr)
+        ]
+    )
+    #expect(duplicateMap[inboxFile.id]?.duplicateOfPath == processedFile.fileURL.path)
+    #expect(duplicateMap[processedFile.id] == nil)
+}
+
+@Test func extractedTextDuplicateDetectorBlocksLaterInboxCopy() async throws {
+    let firstInbox = ScannedInvoiceFile(
+        id: "/Inbox/invoice-1.pdf",
+        name: "invoice.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-1.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        contentHash: "hash-123"
+    )
+
+    let secondInbox = ScannedInvoiceFile(
+        id: "/Inbox/invoice-2.pdf",
+        name: "invoice.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-2.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        contentHash: "hash-456"
+    )
+
+    let duplicateMap = InvoiceDuplicateDetector.extractedTextDuplicateMap(
+        for: [firstInbox, secondInbox],
+        textRecordsByContentHash: [
+            "hash-123": InvoiceTextRecord(text: "Vendor: Acme\nInvoice: INV-42", source: .pdfText),
+            "hash-456": InvoiceTextRecord(text: "Vendor: Acme\nInvoice: INV-42", source: .ocr)
+        ]
+    )
+    #expect(duplicateMap[firstInbox.id] == nil)
+    #expect(duplicateMap[secondInbox.id]?.duplicateOfPath == firstInbox.fileURL.path)
+}
+
+@Test func extractedTextDuplicateDetectorMatchesNearEquivalentOCRText() async throws {
+    let firstInbox = ScannedInvoiceFile(
+        id: "/Inbox/invoice-a.jpg",
+        name: "invoice-a.jpg",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-a.jpg"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .jpeg,
+        contentHash: "hash-a"
+    )
+
+    let secondInbox = ScannedInvoiceFile(
+        id: "/Inbox/invoice-b.heic",
+        name: "invoice-b.heic",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-b.heic"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .heic,
+        contentHash: "hash-b"
+    )
+
+    let duplicateMap = InvoiceDuplicateDetector.extractedTextDuplicateMap(
+        for: [firstInbox, secondInbox],
+        textRecordsByContentHash: [
+            "hash-a": InvoiceTextRecord(
+                text: "Amazon invoice INV-42 date 2024-01-05 total 123.45",
+                source: .ocr
+            ),
+            "hash-b": InvoiceTextRecord(
+                text: "amazon invoice inv 42 date 2024 01 05 total 123 45",
+                source: .ocr
+            )
+        ]
+    )
+
+    #expect(duplicateMap[firstInbox.id] == nil)
+    #expect(duplicateMap[secondInbox.id]?.duplicateOfPath == firstInbox.fileURL.path)
+}
+
+@Test func browserRowsCollapseAndExpandDuplicateGroups() async throws {
+    let canonical = InvoiceItem(
+        name: "invoice.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        status: .unprocessed
+    )
+    let duplicateA = InvoiceItem(
+        name: "invoice-copy-1.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-1.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 9),
+        fileType: .pdf,
+        status: .blockedDuplicate,
+        duplicateOfPath: canonical.fileURL.path,
+        duplicateReason: "Duplicate extracted text matches invoice.pdf"
+    )
+    let duplicateB = InvoiceItem(
+        name: "invoice-copy-2.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-2.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 8),
+        fileType: .pdf,
+        status: .blockedDuplicate,
+        duplicateOfPath: canonical.fileURL.path,
+        duplicateReason: "Duplicate extracted text matches invoice.pdf"
+    )
+
+    let collapsedRows = buildInvoiceBrowserRows(from: [canonical, duplicateA, duplicateB], expandedGroupIDs: [])
+    #expect(collapsedRows.count == 1)
+    #expect(collapsedRows.first?.kind == .groupHeader(duplicateCount: 2))
+    #expect(collapsedRows.first?.disclosureState == .collapsed)
+
+    let expandedRows = buildInvoiceBrowserRows(from: [canonical, duplicateA, duplicateB], expandedGroupIDs: [canonical.id])
+    #expect(expandedRows.count == 3)
+    #expect(expandedRows[0].kind == .groupHeader(duplicateCount: 2))
+    #expect(expandedRows[0].disclosureState == .expanded)
+    #expect(expandedRows[1].kind == .groupChild(parentID: canonical.id))
+    #expect(expandedRows[2].kind == .groupChild(parentID: canonical.id))
+}
+
+@Test func disclosureNavigationExpandsAndCollapsesGroupHeaders() async throws {
+    let canonical = InvoiceItem(
+        name: "invoice.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        status: .unprocessed
+    )
+
+    let collapsedHeader = InvoiceBrowserRow(
+        invoice: canonical,
+        kind: .groupHeader(duplicateCount: 2),
+        memberIDs: Set([canonical.id]),
+        indentationLevel: 0,
+        disclosureState: .collapsed
+    )
+    let expandedHeader = InvoiceBrowserRow(
+        invoice: canonical,
+        kind: .groupHeader(duplicateCount: 2),
+        memberIDs: Set([canonical.id]),
+        indentationLevel: 0,
+        disclosureState: .expanded
+    )
+
+    #expect(disclosureNavigationAction(for: collapsedHeader, keyCode: 124) == .expand(canonical.id))
+    #expect(disclosureNavigationAction(for: expandedHeader, keyCode: 123) == .collapse(canonical.id))
+}
+
+@Test func disclosureNavigationMovesChildSelectionToParent() async throws {
+    let canonical = InvoiceItem(
+        name: "invoice.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        status: .unprocessed
+    )
+    let duplicate = InvoiceItem(
+        name: "invoice-copy.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 8),
+        fileType: .pdf,
+        status: .blockedDuplicate,
+        duplicateOfPath: canonical.fileURL.path,
+        duplicateReason: "Duplicate extracted text matches invoice.pdf"
+    )
+
+    let childRow = InvoiceBrowserRow(
+        invoice: duplicate,
+        kind: .groupChild(parentID: canonical.id),
+        memberIDs: Set([duplicate.id]),
+        indentationLevel: 1,
+        disclosureState: .hidden
+    )
+
+    #expect(disclosureNavigationAction(for: childRow, keyCode: 123) == .selectParent(canonical.id))
+    #expect(disclosureNavigationAction(for: childRow, keyCode: 124) == nil)
+}
+
+@Test func browserRowsLeaveOrphanDuplicateUngroupedWhenCanonicalHidden() async throws {
+    let orphanDuplicate = InvoiceItem(
+        name: "invoice-copy.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 8),
+        fileType: .pdf,
+        status: .blockedDuplicate,
+        duplicateOfPath: "/Processed/A/Amazon/invoice.pdf",
+        duplicateReason: "Duplicate extracted text matches invoice.pdf"
+    )
+
+    let rows = buildInvoiceBrowserRows(from: [orphanDuplicate], expandedGroupIDs: [])
+    #expect(rows.count == 1)
+    #expect(rows[0].kind == .invoice)
+    #expect(rows[0].invoice.id == orphanDuplicate.id)
+}
+
+@Test func invoiceTextStoreCachesRecordsByContentHash() async throws {
+    let suiteName = "InvoiceTextStoreTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = InvoiceTextStore(suiteName: suiteName)
+    let record = InvoiceTextRecord(text: "Acme Corp\nTotal 42.00", source: .pdfText)
+
+    await store.save(record, forContentHash: "hash-123")
+
+    #expect(await store.hasCachedText(forContentHash: "hash-123"))
+    #expect(await store.cachedText(forContentHash: "hash-123") == record)
+    #expect(await store.cachedContentHashes() == ["hash-123"])
+}
+
+@Test func documentTextExtractorPrefersEmbeddedPDFText() async throws {
+    let callLog = CallLog()
+    let extractor = DocumentTextExtractor(
+        extractEmbeddedPDFText: { _ in
+            callLog.append("pdfText")
+            return "Vendor Invoice\nInvoice 42"
+        },
+        recognizePDFText: { _ in
+            callLog.append("pdfOCR")
+            return "Should not run"
+        },
+        recognizeImageText: { _ in
+            callLog.append("imageOCR")
+            return "Should not run"
+        }
+    )
+
+    let record = try await extractor.extractText(from: URL(fileURLWithPath: "/tmp/invoice.pdf"), fileType: .pdf)
+
+    #expect(record?.source == .pdfText)
+    #expect(record?.text == "Vendor Invoice\nInvoice 42")
+    #expect(callLog.snapshot() == ["pdfText"])
+}
+
+@Test func documentTextExtractorFallsBackToOCRWhenEmbeddedPDFTextIsEmpty() async throws {
+    let callLog = CallLog()
+    let extractor = DocumentTextExtractor(
+        extractEmbeddedPDFText: { _ in
+            callLog.append("pdfText")
+            return "   "
+        },
+        recognizePDFText: { _ in
+            callLog.append("pdfOCR")
+            return "Scanned Invoice\nTotal 42.00"
+        },
+        recognizeImageText: { _ in
+            callLog.append("imageOCR")
+            return nil
+        }
+    )
+
+    let record = try await extractor.extractText(from: URL(fileURLWithPath: "/tmp/invoice.pdf"), fileType: .pdf)
+
+    #expect(record?.source == .ocr)
+    #expect(record?.text == "Scanned Invoice\nTotal 42.00")
+    #expect(callLog.snapshot() == ["pdfText", "pdfOCR"])
+}
+
+@Test func invoiceTextExtractionQueueProcessesQueuedInvoices() async throws {
+    let invoiceURL = URL(fileURLWithPath: "/tmp/incoming.pdf")
+    let invoice = InvoiceItem(
+        name: "incoming.pdf",
+        fileURL: invoiceURL,
+        location: .inbox,
+        addedAt: .now,
+        fileType: .pdf,
+        status: .unprocessed,
+        contentHash: "hash-123"
+    )
+
+    let store = InMemoryInvoiceTextStore()
+    let extractor = MockDocumentTextExtractor(
+        resultsByPath: [
+            invoiceURL.path: InvoiceTextRecord(text: "Parsed text", source: .pdfText)
+        ]
+    )
+    let queue = InvoiceTextExtractionQueue(store: store, extractor: extractor)
+
+    await queue.enqueue(invoices: [invoice], knownCachedHashes: [])
+    await queue.waitForIdle()
+
+    #expect(await store.cachedText(forContentHash: "hash-123")?.text == "Parsed text")
+    #expect(await extractor.callCount(for: invoiceURL.path) == 1)
+}
+
+@Test func appModelQueuesUnprocessedInvoicesForBackgroundExtraction() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let invoiceURL = inboxRoot.appendingPathComponent("incoming.pdf")
+    try Data("invoice-body".utf8).write(to: invoiceURL)
+    let contentHash = try FileHasher.sha256(for: invoiceURL)
+    let store = InMemoryInvoiceTextStore()
+    let extractor = MockDocumentTextExtractor(
+        defaultResult: InvoiceTextRecord(text: "Parsed text", source: .pdfText)
+    )
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [:],
+            textStore: store,
+            textExtractor: extractor,
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+    await model.waitForBackgroundTextExtractionForTesting()
+
+    let invoices = await MainActor.run { model.invoices }
+    #expect(invoices.count == 1)
+    #expect(invoices[0].contentHash == contentHash)
+    #expect(invoices[0].canPreExtractText)
+    #expect(await store.cachedText(forContentHash: contentHash)?.text == "Parsed text")
+    #expect(await extractor.totalCallCount() == 1)
+    #expect(await model.hasExtractedText(for: invoices[0]))
+}
+
+@Test func appModelDeduplicatesInFlightBackgroundExtractionAcrossRefreshes() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let invoiceURL = inboxRoot.appendingPathComponent("incoming.pdf")
+    try Data("invoice-body".utf8).write(to: invoiceURL)
+    let store = InMemoryInvoiceTextStore()
+    let extractor = MockDocumentTextExtractor(
+        defaultResult: InvoiceTextRecord(text: "Parsed text", source: .pdfText),
+        delay: .milliseconds(200)
+    )
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [:],
+            textStore: store,
+            textExtractor: extractor,
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+    await model.reloadLibraryForTesting()
+    await model.waitForBackgroundTextExtractionForTesting()
+
+    #expect(await extractor.totalCallCount() == 1)
+}
+
+@Test func appModelHidesIgnoredInvoicesByDefault() async throws {
+    let model = await MainActor.run {
+        AppModel(autoRefresh: false)
+    }
+    let ignoredURL = URL(fileURLWithPath: "/Inbox/\(UUID().uuidString).pdf")
+    let ignoredInvoice = InvoiceItem(
+        name: "ignored.pdf",
+        fileURL: ignoredURL,
+        location: .inbox,
+        addedAt: .now,
+        fileType: .pdf,
+        status: .unprocessed
+    )
+
+    await MainActor.run {
+        model.invoices = [ignoredInvoice]
+        model.setIgnored(true, for: [ignoredInvoice.id])
+    }
+
+    let hiddenVisibleInvoices = await MainActor.run { model.visibleInvoices }
+    #expect(hiddenVisibleInvoices.isEmpty)
+
+    let shownVisibleInvoices = await MainActor.run {
+        model.showIgnoredInvoices = true
+        return model.visibleInvoices
+    }
+    #expect(shownVisibleInvoices.map(\.id) == [ignoredInvoice.id])
+    #expect(await MainActor.run { model.isIgnored(ignoredInvoice.id) })
+}
+
+@Test func appModelUsesDuplicateProcessedBadgeWhenCanonicalIsPromoted() async throws {
+    let model = await MainActor.run {
+        AppModel(autoRefresh: false)
+    }
+    let canonical = InvoiceItem(
+        name: "processed.pdf",
+        fileURL: URL(fileURLWithPath: "/Processing/processed.pdf"),
+        location: .processing,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        status: .inProgress
+    )
+    let duplicate = InvoiceItem(
+        name: "incoming.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/incoming.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 12),
+        fileType: .pdf,
+        status: .blockedDuplicate,
+        duplicateOfPath: canonical.fileURL.path,
+        duplicateReason: "Duplicate extracted text matches processed.pdf"
+    )
+
+    let badgeTitle = await MainActor.run {
+        model.invoices = [duplicate, canonical]
+        return model.duplicateBadgeTitlesByInvoiceID[duplicate.id]
+    }
+    #expect(badgeTitle == "Duplicate Processed")
+}
+
+@Test func appModelBlocksDuplicatesAfterExtractionBackedReload() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstInvoiceURL = inboxRoot.appendingPathComponent("incoming-1.pdf")
+    let secondInvoiceURL = inboxRoot.appendingPathComponent("incoming-2.pdf")
+    try Data("first-file-body".utf8).write(to: firstInvoiceURL)
+    try Data("second-file-body".utf8).write(to: secondInvoiceURL)
+
+    let extractor = MockDocumentTextExtractor(
+        defaultResult: InvoiceTextRecord(text: "Vendor: Acme Corp\nInvoice: INV-42", source: .pdfText),
+        delay: .milliseconds(150)
+    )
+    let textStore = InMemoryInvoiceTextStore()
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: extractor,
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+
+    let invoicesBeforeExtraction = await MainActor.run { model.invoices }
+    #expect(invoicesBeforeExtraction.count == 2)
+    #expect(invoicesBeforeExtraction.allSatisfy { $0.status == .unprocessed })
+    #expect(invoicesBeforeExtraction.allSatisfy { $0.duplicateReason == nil })
+
+    await model.waitForBackgroundTextExtractionForTesting()
+    #expect(await textStore.cachedContentHashes().count == 2)
+    await model.reloadLibraryForTesting()
+
+    let invoicesAfterExtraction = await MainActor.run { model.invoices }
+    #expect(invoicesAfterExtraction.filter { $0.status == .blockedDuplicate }.count == 1)
+    #expect(invoicesAfterExtraction.filter { $0.status == .unprocessed }.count == 1)
+    #expect(invoicesAfterExtraction.contains { $0.duplicateReason?.contains("Similar extracted text matches") == true })
+    #expect(await extractor.totalCallCount() == 2)
+}
+
+@Test func lmStudioStructuredExtractionClientParsesStructuredJSON() async throws {
+    let responseBody = """
+    {
+      "choices": [
+        {
+          "message": {
+            "content": "{\\"companyName\\":\\"Acme Corp\\",\\"invoiceNumber\\":\\"INV-42\\",\\"invoiceDate\\":\\"2024-01-05\\",\\"documentType\\":\\"invoice\\"}"
+          }
+        }
+      ]
+    }
+    """
+
+    let client = LMStudioStructuredExtractionClient(
+        transport: StaticStructuredExtractionTransport { _ in
+            (
+                Data(responseBody.utf8),
+                HTTPURLResponse(
+                    url: URL(string: "http://localhost:1234/v1/chat/completions")!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+            )
+        }
+    )
+    let settings = LLMSettings(
+        provider: .lmStudio,
+        baseURL: "http://localhost:1234/v1",
+        modelName: "qwen-local",
+        apiKey: "",
+        customInstructions: ""
+    )
+
+    let record = try await client.extractStructuredData(from: "raw text", settings: settings)
+
+    #expect(record?.companyName == "Acme Corp")
+    #expect(record?.invoiceNumber == "INV-42")
+    #expect(record?.invoiceDate.map(localDateComponents(_:)) == DateComponents(year: 2024, month: 1, day: 5))
+    #expect(record?.documentType == .invoice)
+    #expect(record?.provider == .lmStudio)
+}
+
+@Test func structuredExtractionClientIncludesCustomInstructionsInPrompt() async throws {
+    let responseBody = """
+    {
+      "choices": [
+        {
+          "message": {
+            "content": "{\\"companyName\\":\\"Restaurant Depo\\",\\"invoiceNumber\\":\\"\\",\\"invoiceDate\\":\\"2024-01-05\\",\\"documentType\\":\\"receipt\\"}"
+          }
+        }
+      ]
+    }
+    """
+    let capturedBody = LockedBox<Data?>(nil)
+    let client = LMStudioStructuredExtractionClient(
+        transport: StaticStructuredExtractionTransport { request in
+            await capturedBody.set(request.httpBody)
+            return (
+                Data(responseBody.utf8),
+                HTTPURLResponse(
+                    url: URL(string: "http://localhost:1234/v1/chat/completions")!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+            )
+        }
+    )
+    let settings = LLMSettings(
+        provider: .lmStudio,
+        baseURL: "http://localhost:1234/v1",
+        modelName: "qwen-local",
+        apiKey: "",
+        customInstructions: "My company name is ABC company and our address is 123 Main St, so do not use ABC company as the vendor name. Sometimes we'll have a receipt for \"Burger Joint\"; when you see that, use Restaurant Depo as the vendor name."
+    )
+
+    _ = try await client.extractStructuredData(from: "Receipt text", settings: settings)
+
+    let requestBody = try #require(await capturedBody.value())
+    let payload = try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
+    let messages = try #require(payload["messages"] as? [[String: Any]])
+    #expect(messages.count == 3)
+    let systemMessage = messages[0]
+    let userMessage = messages[1]
+    let instructionMessage = messages[2]
+    #expect(systemMessage["role"] as? String == "system")
+    #expect(userMessage["role"] as? String == "user")
+    #expect(instructionMessage["role"] as? String == "user")
+    let systemContent = try #require(systemMessage["content"] as? String)
+    let instructionContent = try #require(instructionMessage["content"] as? String)
+    let content = try #require(userMessage["content"] as? String)
+    #expect(systemContent.contains("companyName should be normalized to a plain vendor name with no special characters"))
+    #expect(systemContent.contains("Use the provided current date as temporal context"))
+    #expect(instructionContent.contains("Additional user-specific extraction guidance:"))
+    #expect(instructionContent.contains("do not use ABC company as the vendor name"))
+    #expect(instructionContent.contains("\"Burger Joint\""))
+    #expect(instructionContent.contains("use Restaurant Depo as the vendor name"))
+    #expect(content.contains("Extract the following fields from this invoice, receipt, or document text:"))
+    #expect(content.contains("Today's date is \(isoPromptDateString())"))
+    #expect(content.contains("Invoice text:"))
+}
+
+@Test func structuredExtractionClientNormalizesAllCapsVendorNames() async throws {
+    let responseBody = """
+    {
+      "choices": [
+        {
+          "message": {
+            "content": "{\\"companyName\\":\\"ATLANTIC BEVERAGE DISTRIBUTORS\\",\\"invoiceNumber\\":\\"INV-42\\",\\"invoiceDate\\":\\"2024-01-05\\",\\"documentType\\":\\"invoice\\"}"
+          }
+        }
+      ]
+    }
+    """
+
+    let client = LMStudioStructuredExtractionClient(
+        transport: StaticStructuredExtractionTransport { _ in
+            (
+                Data(responseBody.utf8),
+                HTTPURLResponse(
+                    url: URL(string: "http://localhost:1234/v1/chat/completions")!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+            )
+        }
+    )
+    let settings = LLMSettings(
+        provider: .lmStudio,
+        baseURL: "http://localhost:1234/v1",
+        modelName: "qwen-local",
+        apiKey: "",
+        customInstructions: ""
+    )
+
+    let record = try await client.extractStructuredData(from: "raw text", settings: settings)
+
+    #expect(record?.companyName == "Atlantic Beverage Distributors")
+}
+
+@Test func structuredExtractionClientCanonicalizesMixedCaseVendorSuffixes() async throws {
+    let responseBody = """
+    {
+      "choices": [
+        {
+          "message": {
+            "content": "{\\"companyName\\":\\"Atlantic Beverage Distributors INC\\",\\"invoiceNumber\\":\\"INV-42\\",\\"invoiceDate\\":\\"2024-01-05\\",\\"documentType\\":\\"invoice\\"}"
+          }
+        }
+      ]
+    }
+    """
+
+    let client = LMStudioStructuredExtractionClient(
+        transport: StaticStructuredExtractionTransport { _ in
+            (
+                Data(responseBody.utf8),
+                HTTPURLResponse(
+                    url: URL(string: "http://localhost:1234/v1/chat/completions")!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+            )
+        }
+    )
+    let settings = LLMSettings(
+        provider: .lmStudio,
+        baseURL: "http://localhost:1234/v1",
+        modelName: "qwen-local",
+        apiKey: "",
+        customInstructions: ""
+    )
+
+    let record = try await client.extractStructuredData(from: "raw text", settings: settings)
+
+    #expect(record?.companyName == "Atlantic Beverage Distributors Inc")
+}
+
+@Test func openAIStructuredExtractionClientMapsUnauthorizedPreflightToAuthFailure() async throws {
+    let client = OpenAIStructuredExtractionClient(
+        transport: StaticStructuredExtractionTransport { request in
+            (
+                Data("{}".utf8),
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 401,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+            )
+        }
+    )
+    let settings = LLMSettings(
+        provider: .openAI,
+        baseURL: "https://api.openai.com/v1",
+        modelName: "gpt-4o-mini",
+        apiKey: "bad-key",
+        customInstructions: ""
+    )
+
+    let status = await client.preflightCheck(settings: settings)
+
+    #expect(status.state == .authenticationFailed)
+}
+
+@Test func invoiceStructuredDataStoreCachesRecordsByContentHash() async throws {
+    let suiteName = "InvoiceStructuredDataStoreTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = InvoiceStructuredDataStore(suiteName: suiteName)
+    let record = InvoiceStructuredDataRecord(
+        companyName: "Acme Corp",
+        invoiceNumber: "INV-42",
+        invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+        documentType: .invoice,
+        provider: .lmStudio,
+        modelName: "qwen-local"
+    )
+
+    await store.save(record, forContentHash: "hash-456")
+
+    #expect(await store.hasCachedData(forContentHash: "hash-456"))
+    #expect(await store.cachedData(forContentHash: "hash-456") == record)
+    #expect(await store.cachedContentHashes() == ["hash-456"])
+}
+
+@Test func invoiceStructuredExtractionQueueSkipsAlreadyCachedHashes() async throws {
+    let textStore = InMemoryInvoiceTextStore()
+    let structuredStore = InMemoryInvoiceStructuredDataStore()
+    await textStore.save(InvoiceTextRecord(text: "Vendor text", source: .pdfText), forContentHash: "hash-123")
+    await structuredStore.save(
+        InvoiceStructuredDataRecord(
+            companyName: "Acme Corp",
+            invoiceNumber: "INV-42",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            documentType: .invoice,
+            provider: .lmStudio,
+            modelName: "qwen-local"
+        ),
+        forContentHash: "hash-123"
+    )
+
+    let client = MockStructuredExtractionClient(defaultResult: InvoiceStructuredDataRecord(
+        companyName: "Should Not Run",
+        invoiceNumber: nil,
+        invoiceDate: nil,
+        documentType: nil,
+        provider: .lmStudio,
+        modelName: "qwen-local"
+    ))
+    let queue = InvoiceStructuredExtractionQueue(
+        textStore: textStore,
+        structuredDataStore: structuredStore,
+        client: client
+    )
+    let invoice = InvoiceItem(
+        name: "incoming.pdf",
+        fileURL: URL(fileURLWithPath: "/tmp/incoming.pdf"),
+        location: .inbox,
+        addedAt: .now,
+        fileType: .pdf,
+        status: .unprocessed,
+        contentHash: "hash-123"
+    )
+
+    await queue.enqueue(
+        invoices: [invoice],
+        knownStructuredHashes: ["hash-123"],
+        settings: LLMSettings(provider: .lmStudio, baseURL: "http://localhost:1234/v1", modelName: "qwen-local", apiKey: "", customInstructions: "")
+    )
+    await queue.waitForIdle()
+
+    #expect(await client.totalCallCount() == 0)
+}
+
+@Test func appModelAutofillsWorkflowFromStructuredExtraction() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let invoiceURL = inboxRoot.appendingPathComponent("incoming.pdf")
+    try Data("invoice-body".utf8).write(to: invoiceURL)
+    let contentHash = try FileHasher.sha256(for: invoiceURL)
+
+    let textStore = InMemoryInvoiceTextStore()
+    await textStore.save(
+        InvoiceTextRecord(text: "Vendor: Acme Corp Invoice: INV-42 Date: 2024-01-05", source: .pdfText),
+        forContentHash: contentHash
+    )
+    let structuredStore = InMemoryInvoiceStructuredDataStore()
+    let structuredClient = MockStructuredExtractionClient(
+        defaultResult: InvoiceStructuredDataRecord(
+            companyName: "Acme Corp",
+            invoiceNumber: "INV-42",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            documentType: .invoice,
+            provider: .lmStudio,
+            modelName: "qwen-local"
+        )
+    )
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(),
+            structuredDataStore: structuredStore,
+            structuredExtractionClient: structuredClient,
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "http://localhost:1234/v1", modelName: "qwen-local", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+    await model.waitForBackgroundTextExtractionForTesting()
+
+    let invoice = await MainActor.run { model.invoices.first }
+    #expect(invoice?.vendor == "Acme Corp")
+    #expect(invoice?.invoiceNumber == "INV-42")
+    #expect(invoice?.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
+    #expect(invoice?.documentType == .invoice)
+    #expect(await structuredStore.hasCachedData(forContentHash: contentHash))
+    #expect(await structuredClient.totalCallCount() == 1)
+}
+
+@Test func appModelRenamesMovedInvoiceWhenStructuredDataIsHighConfidence() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let invoiceURL = inboxRoot.appendingPathComponent("incoming.pdf")
+    try Data("invoice-body".utf8).write(to: invoiceURL)
+    let contentHash = try FileHasher.sha256(for: invoiceURL)
+
+    let textStore = InMemoryInvoiceTextStore()
+    await textStore.save(
+        InvoiceTextRecord(text: "Vendor: Acme Corp Invoice: INV-42 Date: 2024-01-05", source: .pdfText),
+        forContentHash: contentHash
+    )
+    let structuredStore = InMemoryInvoiceStructuredDataStore()
+    let structuredClient = MockStructuredExtractionClient(
+        defaultResult: InvoiceStructuredDataRecord(
+            companyName: "Acme Corp",
+            invoiceNumber: "INV-42",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            documentType: .invoice,
+            provider: .lmStudio,
+            modelName: "qwen-local"
+        )
+    )
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(),
+            structuredDataStore: structuredStore,
+            structuredExtractionClient: structuredClient,
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "http://localhost:1234/v1", modelName: "qwen-local", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+    await model.waitForBackgroundTextExtractionForTesting()
+
+    let invoiceID = try #require(await MainActor.run { model.invoices.first?.id })
+    await MainActor.run {
+        model.moveInvoicesToInProgress(ids: [invoiceID])
+    }
+    await model.reloadLibraryForTesting()
+
+    let movedInvoice = try #require(await MainActor.run {
+        model.invoices.first(where: { $0.location == .processing })
+    })
+    #expect(movedInvoice.name == "Acme Corp-2024-01-05-INV-42.pdf")
+    #expect(movedInvoice.vendor == "Acme Corp")
+    #expect(movedInvoice.invoiceNumber == "INV-42")
+    #expect(movedInvoice.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
+    #expect(movedInvoice.documentType == .invoice)
+}
+
+@Test func appModelRenamesReceiptWithoutInvoiceNumber() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let invoiceURL = inboxRoot.appendingPathComponent("receipt.pdf")
+    try Data("receipt-body".utf8).write(to: invoiceURL)
+    let contentHash = try FileHasher.sha256(for: invoiceURL)
+
+    let textStore = InMemoryInvoiceTextStore()
+    await textStore.save(
+        InvoiceTextRecord(text: "Merchant: Coffee Shop Date: 2024-01-05 Total: 8.50", source: .pdfText),
+        forContentHash: contentHash
+    )
+    let structuredStore = InMemoryInvoiceStructuredDataStore()
+    let structuredClient = MockStructuredExtractionClient(
+        defaultResult: InvoiceStructuredDataRecord(
+            companyName: "Coffee Shop",
+            invoiceNumber: nil,
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            documentType: .receipt,
+            provider: .lmStudio,
+            modelName: "qwen-local"
+        )
+    )
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(),
+            structuredDataStore: structuredStore,
+            structuredExtractionClient: structuredClient,
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "http://localhost:1234/v1", modelName: "qwen-local", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+    await model.waitForBackgroundTextExtractionForTesting()
+
+    let invoiceID = try #require(await MainActor.run { model.invoices.first?.id })
+    await MainActor.run {
+        model.moveInvoicesToInProgress(ids: [invoiceID])
+    }
+    await model.reloadLibraryForTesting()
+
+    let movedInvoice = try #require(await MainActor.run {
+        model.invoices.first(where: { $0.location == .processing })
+    })
+    #expect(movedInvoice.name == "Coffee Shop-2024-01-05.pdf")
+    #expect(movedInvoice.vendor == "Coffee Shop")
+    #expect(movedInvoice.invoiceNumber == nil)
+    #expect(movedInvoice.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
+    #expect(movedInvoice.documentType == .receipt)
+}
+
+@Test func appModelStructuredExtractionDeduplicatesAcrossRefreshes() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let invoiceURL = inboxRoot.appendingPathComponent("incoming.pdf")
+    try Data("invoice-body".utf8).write(to: invoiceURL)
+    let contentHash = try FileHasher.sha256(for: invoiceURL)
+
+    let textStore = InMemoryInvoiceTextStore()
+    await textStore.save(
+        InvoiceTextRecord(text: "Vendor: Acme Corp Invoice: INV-42 Date: 2024-01-05", source: .pdfText),
+        forContentHash: contentHash
+    )
+    let structuredStore = InMemoryInvoiceStructuredDataStore()
+    let structuredClient = MockStructuredExtractionClient(
+        defaultResult: InvoiceStructuredDataRecord(
+            companyName: "Acme Corp",
+            invoiceNumber: "INV-42",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            provider: .lmStudio,
+            modelName: "qwen-local"
+        ),
+        delay: .milliseconds(200)
+    )
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(),
+            structuredDataStore: structuredStore,
+            structuredExtractionClient: structuredClient,
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "http://localhost:1234/v1", modelName: "qwen-local", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+    await model.reloadLibraryForTesting()
+    await model.waitForBackgroundTextExtractionForTesting()
+
+    #expect(await structuredClient.totalCallCount() == 1)
+}
+
+@Test func appModelRescanInvalidatesCachesAndRequeuesExtraction() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let invoiceURL = processingRoot.appendingPathComponent("incoming.pdf")
+    try Data("invoice-body".utf8).write(to: invoiceURL)
+    let contentHash = try FileHasher.sha256(for: invoiceURL)
+
+    let textStore = InMemoryInvoiceTextStore()
+    await textStore.save(InvoiceTextRecord(text: "Stale text", source: .pdfText), forContentHash: contentHash)
+
+    let structuredStore = InMemoryInvoiceStructuredDataStore()
+    await structuredStore.save(
+        InvoiceStructuredDataRecord(
+            companyName: "Old Corp",
+            invoiceNumber: "OLD-1",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            provider: .lmStudio,
+            modelName: "old-model"
+        ),
+        forContentHash: contentHash
+    )
+
+    let extractor = MockDocumentTextExtractor(
+        defaultResult: InvoiceTextRecord(text: "Fresh text", source: .pdfText)
+    )
+    let structuredClient = MockStructuredExtractionClient(
+        defaultResult: InvoiceStructuredDataRecord(
+            companyName: "Fresh Corp",
+            invoiceNumber: "INV-99",
+            invoiceDate: utcDate(year: 2024, month: 2, day: 7),
+            provider: .lmStudio,
+            modelName: "fresh-model"
+        )
+    )
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [
+                InvoiceItem.stableID(for: invoiceURL): StoredInvoiceWorkflow(
+                    vendor: "Old Corp",
+                    invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                    invoiceNumber: "OLD-1",
+                    isInProgress: false
+                )
+            ],
+            textStore: textStore,
+            textExtractor: extractor,
+            structuredDataStore: structuredStore,
+            structuredExtractionClient: structuredClient,
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "http://localhost:1234/v1", modelName: "fresh-model", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+    let invoiceID = try #require(await MainActor.run { model.invoices.first?.id })
+
+    await MainActor.run {
+        model.selectedInvoiceIDs = [invoiceID]
+    }
+    await model.rescanInvoices(ids: [invoiceID])
+    await model.waitForBackgroundTextExtractionForTesting()
+
+    let rescannedInvoice = try #require(await MainActor.run {
+        model.invoices.first(where: { $0.contentHash == contentHash })
+    })
+
+    #expect(await textStore.cachedText(forContentHash: contentHash)?.text == "Fresh text")
+    #expect(await structuredStore.cachedData(forContentHash: contentHash)?.companyName == "Fresh Corp")
+    #expect(await extractor.totalCallCount() == 1)
+    #expect(await structuredClient.totalCallCount() == 1)
+    #expect(rescannedInvoice.vendor == "Fresh Corp")
+    #expect(rescannedInvoice.invoiceNumber == "INV-99")
+    #expect(rescannedInvoice.invoiceDate == utcDate(year: 2024, month: 2, day: 7))
+}
+
+@Test func appModelRescanClearsFieldsMissingFromStructuredExtraction() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let invoiceURL = processingRoot.appendingPathComponent("incoming.pdf")
+    try Data("invoice-body".utf8).write(to: invoiceURL)
+    let contentHash = try FileHasher.sha256(for: invoiceURL)
+
+    let textStore = InMemoryInvoiceTextStore()
+    await textStore.save(InvoiceTextRecord(text: "Stale text", source: .pdfText), forContentHash: contentHash)
+
+    let structuredStore = InMemoryInvoiceStructuredDataStore()
+    await structuredStore.save(
+        InvoiceStructuredDataRecord(
+            companyName: "Old Corp",
+            invoiceNumber: "OLD-1",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            provider: .lmStudio,
+            modelName: "old-model"
+        ),
+        forContentHash: contentHash
+    )
+
+    let extractor = MockDocumentTextExtractor(
+        defaultResult: InvoiceTextRecord(text: "Fresh text", source: .pdfText)
+    )
+    let structuredClient = MockStructuredExtractionClient(
+        defaultResult: InvoiceStructuredDataRecord(
+            companyName: nil,
+            invoiceNumber: "INV-99",
+            invoiceDate: nil,
+            provider: .lmStudio,
+            modelName: "fresh-model"
+        )
+    )
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [
+                InvoiceItem.stableID(for: invoiceURL): StoredInvoiceWorkflow(
+                    vendor: "Old Corp",
+                    invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                    invoiceNumber: "OLD-1",
+                    isInProgress: false
+                )
+            ],
+            textStore: textStore,
+            textExtractor: extractor,
+            structuredDataStore: structuredStore,
+            structuredExtractionClient: structuredClient,
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "http://localhost:1234/v1", modelName: "fresh-model", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+    let invoiceID = try #require(await MainActor.run { model.invoices.first?.id })
+
+    await MainActor.run {
+        model.selectedInvoiceIDs = [invoiceID]
+    }
+    await model.rescanInvoices(ids: [invoiceID])
+    await model.waitForBackgroundTextExtractionForTesting()
+
+    let rescannedInvoice = try #require(await MainActor.run {
+        model.invoices.first(where: { $0.contentHash == contentHash })
+    })
+
+    #expect(rescannedInvoice.vendor == nil)
+    #expect(rescannedInvoice.invoiceDate == nil)
+    #expect(rescannedInvoice.invoiceNumber == "INV-99")
+}
+
+private final class CallLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls: [String] = []
+
+    func append(_ value: String) {
+        lock.lock()
+        calls.append(value)
+        lock.unlock()
+    }
+
+    func snapshot() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
+    }
+}
+
+private actor InMemoryInvoiceTextStore: InvoiceTextStoring {
+    private var records: [String: InvoiceTextRecord] = [:]
+
+    func cachedText(forContentHash contentHash: String) async -> InvoiceTextRecord? {
+        records[contentHash]
+    }
+
+    func hasCachedText(forContentHash contentHash: String) async -> Bool {
+        records[contentHash] != nil
+    }
+
+    func save(_ record: InvoiceTextRecord, forContentHash contentHash: String) async {
+        records[contentHash] = record
+    }
+
+    func removeCachedText(forContentHash contentHash: String) async {
+        records.removeValue(forKey: contentHash)
+    }
+
+    func cachedContentHashes() async -> Set<String> {
+        Set(records.keys)
+    }
+
+    func cachedRecords() async -> [String: InvoiceTextRecord] {
+        records
+    }
+}
+
+private actor InMemoryInvoiceStructuredDataStore: InvoiceStructuredDataStoring {
+    private var records: [String: InvoiceStructuredDataRecord] = [:]
+
+    func cachedData(forContentHash contentHash: String) async -> InvoiceStructuredDataRecord? {
+        records[contentHash]
+    }
+
+    func hasCachedData(forContentHash contentHash: String) async -> Bool {
+        records[contentHash] != nil
+    }
+
+    func save(_ record: InvoiceStructuredDataRecord, forContentHash contentHash: String) async {
+        records[contentHash] = record
+    }
+
+    func removeCachedData(forContentHash contentHash: String) async {
+        records.removeValue(forKey: contentHash)
+    }
+
+    func cachedContentHashes() async -> Set<String> {
+        Set(records.keys)
+    }
+
+    func cachedRecords() async -> [String: InvoiceStructuredDataRecord] {
+        records
+    }
+}
+
+private struct StaticStructuredExtractionTransport: StructuredExtractionTransporting {
+    let responder: @Sendable (URLRequest) async throws -> (Data, HTTPURLResponse)
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        try await responder(request)
+    }
+}
+
+private actor LockedBox<Value> {
+    private var storedValue: Value
+
+    init(_ value: Value) {
+        self.storedValue = value
+    }
+
+    func set(_ value: Value) {
+        storedValue = value
+    }
+
+    func value() -> Value {
+        storedValue
+    }
+}
+
+private func isoPromptDateString(now: Date = Date()) -> String {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = .autoupdatingCurrent
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.string(from: now)
+}
+
+private actor MockDocumentTextExtractor: DocumentTextExtracting {
+    private let resultsByPath: [String: InvoiceTextRecord]
+    private let defaultResult: InvoiceTextRecord?
+    private let delay: Duration?
+    private var callCounts: [String: Int] = [:]
+
+    init(resultsByPath: [String: InvoiceTextRecord] = [:], defaultResult: InvoiceTextRecord? = nil, delay: Duration? = nil) {
+        self.resultsByPath = resultsByPath
+        self.defaultResult = defaultResult
+        self.delay = delay
+    }
+
+    func extractText(from fileURL: URL, fileType: InvoiceFileType) async throws -> InvoiceTextRecord? {
+        callCounts[fileURL.path, default: 0] += 1
+
+        if let delay {
+            try? await Task.sleep(for: delay)
+        }
+
+        return resultsByPath[fileURL.path] ?? defaultResult
+    }
+
+    func callCount(for path: String) -> Int {
+        callCounts[path, default: 0]
+    }
+
+    func totalCallCount() -> Int {
+        callCounts.values.reduce(0, +)
+    }
+
+}
+
+private actor MockStructuredExtractionClient: InvoiceStructuredExtractionClient {
+    private let defaultResult: InvoiceStructuredDataRecord?
+    private let preflightStatus: LLMPreflightStatus
+    private let delay: Duration?
+    private var callCount = 0
+
+    init(
+        defaultResult: InvoiceStructuredDataRecord? = nil,
+        preflightStatus: LLMPreflightStatus = LLMPreflightStatus(state: .ready, message: "Ready"),
+        delay: Duration? = nil
+    ) {
+        self.defaultResult = defaultResult
+        self.preflightStatus = preflightStatus
+        self.delay = delay
+    }
+
+    func preflightCheck(settings: LLMSettings) async -> LLMPreflightStatus {
+        preflightStatus
+    }
+
+    func extractStructuredData(from text: String, settings: LLMSettings) async throws -> InvoiceStructuredDataRecord? {
+        callCount += 1
+
+        if let delay {
+            try? await Task.sleep(for: delay)
+        }
+
+        return defaultResult
+    }
+
+    func totalCallCount() -> Int {
+        callCount
+    }
+}
