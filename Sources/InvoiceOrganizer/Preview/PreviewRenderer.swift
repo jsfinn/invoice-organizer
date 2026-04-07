@@ -196,6 +196,7 @@ final class InvoicePreviewPaneContainerView: NSView {
     private var currentRotationQuarterTurns = 0
     private var appliedRotationQuarterTurns: Int?
     private var currentContentKey: ContentKey?
+    private var shouldResetImageScrollPosition = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -292,6 +293,7 @@ final class InvoicePreviewPaneContainerView: NSView {
         currentAsset = nil
         currentImage = nil
         renderedImage = nil
+        shouldResetImageScrollPosition = false
         appliedRotationQuarterTurns = nil
         progressIndicator.startAnimation(nil)
         progressIndicator.isHidden = false
@@ -308,6 +310,7 @@ final class InvoicePreviewPaneContainerView: NSView {
         currentAsset = nil
         currentImage = nil
         renderedImage = nil
+        shouldResetImageScrollPosition = false
         appliedRotationQuarterTurns = nil
         progressIndicator.stopAnimation(nil)
         progressIndicator.isHidden = true
@@ -330,6 +333,7 @@ final class InvoicePreviewPaneContainerView: NSView {
 
         switch asset {
         case .pdf(let document):
+            shouldResetImageScrollPosition = false
             pdfView.document = document
             pdfView.isHidden = false
             imageScrollView.isHidden = true
@@ -338,6 +342,7 @@ final class InvoicePreviewPaneContainerView: NSView {
         case .image(let image):
             currentImage = image
             renderedImage = nil
+            shouldResetImageScrollPosition = true
             imageScrollView.isHidden = false
             pdfView.isHidden = true
         }
@@ -503,6 +508,13 @@ final class InvoicePreviewPaneContainerView: NSView {
             imageSize: CGSize(width: width, height: height),
             viewportSize: viewportSize
         )
+
+        if shouldResetImageScrollPosition {
+            shouldResetImageScrollPosition = false
+            let clip = imageScrollView.contentView
+            clip.scroll(to: .zero)
+            imageScrollView.reflectScrolledClipView(clip)
+        }
     }
 
     private func applyRotation() {
