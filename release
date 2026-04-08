@@ -6,8 +6,10 @@ PROJECT_SPEC="project.yml"
 PROJECT_FILE="InvoiceOrganizer.xcodeproj/project.pbxproj"
 
 usage() {
-  echo "Usage: ./release <version>" >&2
-  echo "Example: ./release 0.1.4" >&2
+  echo "Usage: ./release [version]" >&2
+  echo "Examples:" >&2
+  echo "  ./release" >&2
+  echo "  ./release 0.1.4" >&2
 }
 
 ensure_xcode_project() {
@@ -60,6 +62,26 @@ if len(parts) != 3 or not all(part.isdigit() for part in parts):
 major, minor, revision = map(int, parts)
 print(f"{major}.{minor}.{revision + 1}")
 PY
+}
+
+prompt_for_version() {
+  local current_version="$1"
+  local suggested_version="$2"
+  local response=""
+
+  echo "Latest version: ${current_version}"
+
+  if [[ ! -t 0 ]]; then
+    echo "No version provided." >&2
+    echo "Current version: ${current_version}" >&2
+    echo "Suggested next version: ${suggested_version}" >&2
+    echo "Re-run interactively or pass a version explicitly, for example: ./release ${suggested_version}" >&2
+    return 1
+  fi
+
+  read -r -p "Release version [${suggested_version}]: " response
+  VERSION="${response:-${suggested_version}}"
+  return 0
 }
 
 next_build_number() {
@@ -123,12 +145,7 @@ VERSION="${1:-}"
 if [[ -z "${VERSION}" ]]; then
   CURRENT_VERSION="$(read_current_version)"
   SUGGESTED_VERSION="$(bump_revision "${CURRENT_VERSION}")"
-  echo "No version provided." >&2
-  echo "Current version: ${CURRENT_VERSION}" >&2
-  echo "Suggested next version: ${SUGGESTED_VERSION}" >&2
-  echo "Run: ./release ${SUGGESTED_VERSION}" >&2
-  usage
-  exit 0
+  prompt_for_version "${CURRENT_VERSION}" "${SUGGESTED_VERSION}" || exit 0
 fi
 
 if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

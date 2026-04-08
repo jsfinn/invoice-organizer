@@ -56,7 +56,7 @@ Create a release by running:
 ./release
 ```
 
-This prints the current `MARKETING_VERSION` and suggests the next patch version. To publish a release, run:
+This prompts for a release version and defaults to the next patch version based on the current `MARKETING_VERSION`. You can still pass a version explicitly:
 
 ```sh
 ./release 0.1.4
