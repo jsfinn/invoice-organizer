@@ -32,10 +32,10 @@ struct QueueSidebar: View {
         )
     }
 
-    private var selectedInvoiceIDsBinding: Binding<Set<InvoiceItem.ID>> {
+    private var selectedArtifactIDsBinding: Binding<Set<PhysicalArtifact.ID>> {
         Binding(
-            get: { model.selectedInvoiceIDs },
-            set: { model.setSelectedInvoiceIDs($0) }
+            get: { model.selectedArtifactIDs },
+            set: { model.setSelectedArtifactIDs($0) }
         )
     }
 
@@ -90,8 +90,8 @@ struct QueueSidebar: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if !activeTabContext.selectedInvoiceIDs.isEmpty {
-                    Text("• \(activeTabContext.selectedInvoiceIDs.count) selected")
+                if !activeTabContext.selectedArtifactIDs.isEmpty {
+                    Text("• \(activeTabContext.selectedArtifactIDs.count) selected")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -117,33 +117,39 @@ struct QueueSidebar: View {
                     documents: model.documents,
                     queueTab: model.selectedQueueTab,
                     browserContext: browserContextBinding,
-                    ocrStatesByInvoiceID: model.ocrStatesByInvoiceID,
-                    readStatesByInvoiceID: model.readStatesByInvoiceID,
-                    duplicateBadgeTitlesByInvoiceID: model.duplicateBadgeTitlesByInvoiceID,
+                    ocrStatesByArtifactID: model.ocrStatesByArtifactID,
+                    readStatesByArtifactID: model.readStatesByArtifactID,
+                    duplicateBadgeTitlesByArtifactID: model.duplicateBadgeTitlesByArtifactID,
                     ignoredInvoiceIDs: model.ignoredInvoiceIDs,
-                    selectedInvoiceIDs: selectedInvoiceIDsBinding,
+                    selectedArtifactIDs: selectedArtifactIDsBinding,
                     onMoveToInProgress: { orderedIDs in
                         model.moveInvoicesToInProgress(ids: orderedIDs)
                     },
                     onMoveToUnprocessed: {
-                        model.moveInvoicesToUnprocessed(ids: model.selectedInvoiceIDs)
+                        model.moveInvoicesToUnprocessed(ids: model.selectedArtifactIDs)
                     },
                     onMoveToProcessed: {
-                        model.moveInvoicesToProcessed(ids: model.selectedInvoiceIDs)
+                        model.moveInvoicesToProcessed(ids: model.selectedArtifactIDs)
                     },
                     onRescan: {
                         Task {
-                            await model.rescanInvoices(ids: model.selectedInvoiceIDs)
+                            await model.rescanInvoices(ids: model.selectedArtifactIDs)
                         }
                     },
                     onSetIgnored: { ignored in
-                        model.setIgnored(ignored, for: model.selectedInvoiceIDs)
+                        model.setIgnored(ignored, for: model.selectedArtifactIDs)
                     },
                     onVendorChange: { invoiceID, vendor in
                         model.updateVendor(vendor, for: invoiceID)
                     },
                     onInvoiceDateChange: { invoiceID, invoiceDate in
                         model.updateInvoiceDate(invoiceDate, for: invoiceID)
+                    },
+                    dragExportURL: { invoice in
+                        try model.dragExportURL(for: invoice)
+                    },
+                    fileIcon: { invoice in
+                        model.fileIcon(for: invoice)
                     }
                 )
             }

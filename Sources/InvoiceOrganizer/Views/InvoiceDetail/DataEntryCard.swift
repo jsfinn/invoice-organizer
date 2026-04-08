@@ -2,21 +2,21 @@ import SwiftUI
 
 struct DataEntryCard: View {
     @ObservedObject var model: AppModel
-    let invoice: InvoiceItem
+    let invoice: PhysicalArtifact
 
-    private var activeInvoiceID: InvoiceItem.ID {
-        model.selectedInvoiceID ?? invoice.id
+    private var activeInvoiceID: PhysicalArtifact.ID {
+        model.selectedArtifactID ?? invoice.id
     }
 
-    private var committedInvoice: InvoiceItem {
-        model.selectedInvoice ?? invoice
+    private var committedInvoice: PhysicalArtifact {
+        model.selectedArtifact ?? invoice
     }
 
     private var documentMemberCount: Int {
         model.document(for: activeInvoiceID)?.members.count ?? 1
     }
 
-    private var documentTypeBinding: Binding<InvoiceDocumentType?> {
+    private var documentTypeBinding: Binding<DocumentType?> {
         Binding(
             get: { committedInvoice.documentType },
             set: { newValue in
@@ -55,9 +55,9 @@ struct DataEntryCard: View {
                     )
 
                     Picker("Document Type", selection: documentTypeBinding) {
-                        Text("Unknown").tag(Optional<InvoiceDocumentType>.none)
-                        Text("Invoice").tag(Optional.some(InvoiceDocumentType.invoice))
-                        Text("Receipt").tag(Optional.some(InvoiceDocumentType.receipt))
+                        Text("Unknown").tag(Optional<DocumentType>.none)
+                        Text("Invoice").tag(Optional.some(DocumentType.invoice))
+                        Text("Receipt").tag(Optional.some(DocumentType.receipt))
                     }
 
                     Text("Invoice Number")

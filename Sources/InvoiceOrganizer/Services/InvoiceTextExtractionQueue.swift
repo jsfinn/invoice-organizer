@@ -44,7 +44,7 @@ actor InvoiceTextExtractionQueue {
         onRequestFailed = handler
     }
 
-    func enqueue(invoices: [InvoiceItem], knownCachedHashes: Set<String>, force: Bool = false) {
+    func enqueue(invoices: [PhysicalArtifact], knownCachedHashes: Set<String>, force: Bool = false) {
         for invoice in invoices {
             guard let contentHash = invoice.contentHash,
                   (force || invoice.canPreExtractText),

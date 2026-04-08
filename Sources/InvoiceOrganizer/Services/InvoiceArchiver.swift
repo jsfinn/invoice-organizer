@@ -2,7 +2,7 @@ import Foundation
 
 enum InvoiceArchiver {
     static func archive(
-        _ invoice: InvoiceItem,
+        _ invoice: PhysicalArtifact,
         processedRoot: URL,
         vendor: String?,
         invoiceDate: Date,

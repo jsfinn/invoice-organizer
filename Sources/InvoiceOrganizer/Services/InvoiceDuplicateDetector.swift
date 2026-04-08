@@ -3,9 +3,23 @@ import Foundation
 enum InvoiceDuplicateDetector {
     private static let similarityThreshold = 0.9
 
+    static var duplicateSimilarityThreshold: Double {
+        similarityThreshold
+    }
+
     static func extractedTextDuplicateGroups(
         for files: [ScannedInvoiceFile],
         textRecordsByContentHash: [String: InvoiceTextRecord]
+    ) -> [InvoiceDuplicateGroup] {
+        extractedTextDuplicateGroups(
+            for: files,
+            tokenSetsByContentHash: normalizedTokenSets(from: textRecordsByContentHash)
+        )
+    }
+
+    static func extractedTextDuplicateGroups(
+        for files: [ScannedInvoiceFile],
+        tokenSetsByContentHash: [String: Set<String>]
     ) -> [InvoiceDuplicateGroup] {
         duplicateGroups(
             candidates: files.map {
@@ -18,13 +32,23 @@ enum InvoiceDuplicateDetector {
                     contentHash: $0.contentHash
                 )
             },
-            textRecordsByContentHash: textRecordsByContentHash
+            tokenSetsByContentHash: tokenSetsByContentHash
         )
     }
 
     static func extractedTextDuplicateGroups(
-        for invoices: [InvoiceItem],
+        for invoices: [PhysicalArtifact],
         textRecordsByContentHash: [String: InvoiceTextRecord]
+    ) -> [InvoiceDuplicateGroup] {
+        extractedTextDuplicateGroups(
+            for: invoices,
+            tokenSetsByContentHash: normalizedTokenSets(from: textRecordsByContentHash)
+        )
+    }
+
+    static func extractedTextDuplicateGroups(
+        for invoices: [PhysicalArtifact],
+        tokenSetsByContentHash: [String: Set<String>]
     ) -> [InvoiceDuplicateGroup] {
         duplicateGroups(
             candidates: invoices.map {
@@ -37,7 +61,7 @@ enum InvoiceDuplicateDetector {
                     contentHash: $0.contentHash
                 )
             },
-            textRecordsByContentHash: textRecordsByContentHash
+            tokenSetsByContentHash: tokenSetsByContentHash
         )
     }
 
@@ -54,9 +78,9 @@ enum InvoiceDuplicateDetector {
     }
 
     static func extractedTextDuplicateMap(
-        for invoices: [InvoiceItem],
+        for invoices: [PhysicalArtifact],
         textRecordsByContentHash: [String: InvoiceTextRecord]
-    ) -> [InvoiceItem.ID: InvoiceDuplicateInfo] {
+    ) -> [PhysicalArtifact.ID: InvoiceDuplicateInfo] {
         duplicateMap(
             groups: extractedTextDuplicateGroups(
                 for: invoices,
@@ -67,12 +91,11 @@ enum InvoiceDuplicateDetector {
 
     private static func duplicateGroups(
         candidates: [DuplicateCandidate],
-        textRecordsByContentHash: [String: InvoiceTextRecord]
+        tokenSetsByContentHash: [String: Set<String>]
     ) -> [InvoiceDuplicateGroup] {
         let candidatesWithTokens = candidates.compactMap { candidate -> CandidateTextSignature? in
             guard let contentHash = candidate.contentHash,
-                  let record = textRecordsByContentHash[contentHash],
-                  let tokens = normalizedTokenSet(for: record.text),
+                  let tokens = tokenSetsByContentHash[contentHash],
                   !tokens.isEmpty else {
                 return nil
             }
@@ -116,10 +139,7 @@ enum InvoiceDuplicateDetector {
         var groups: [[CandidateTextSignature]] = []
 
         for candidate in sortedCandidates {
-            if let matchIndex = groups.firstIndex(where: { group in
-                guard let canonical = group.first else { return false }
-                return jaccardSimilarity(candidate.tokens, canonical.tokens) >= similarityThreshold
-            }) {
+            if let matchIndex = bestMatchingGroupIndex(for: candidate, in: groups) {
                 groups[matchIndex].append(candidate)
             } else {
                 groups.append([candidate])
@@ -127,6 +147,41 @@ enum InvoiceDuplicateDetector {
         }
 
         return groups
+    }
+
+    static func normalizedTokenSets(from textRecordsByContentHash: [String: InvoiceTextRecord]) -> [String: Set<String>] {
+        Dictionary(
+            uniqueKeysWithValues: textRecordsByContentHash.compactMap { contentHash, record in
+                guard let tokens = normalizedTokenSet(for: record.text), !tokens.isEmpty else {
+                    return nil
+                }
+
+                return (contentHash, tokens)
+            }
+        )
+    }
+
+    private static func bestMatchingGroupIndex(
+        for candidate: CandidateTextSignature,
+        in groups: [[CandidateTextSignature]]
+    ) -> Int? {
+        var bestIndex: Int?
+        var bestScore = 0.0
+
+        for (index, group) in groups.enumerated() {
+            let groupBestScore = group.reduce(0.0) { currentBest, member in
+                max(currentBest, jaccardSimilarity(candidate.tokens, member.tokens))
+            }
+
+            guard groupBestScore >= similarityThreshold else { continue }
+
+            if groupBestScore > bestScore {
+                bestScore = groupBestScore
+                bestIndex = index
+            }
+        }
+
+        return bestIndex
     }
 
     static func normalizedTokenSet(for text: String) -> Set<String>? {

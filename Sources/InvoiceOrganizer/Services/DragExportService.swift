@@ -3,7 +3,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 enum DragExportService {
-    static func dragURL(for invoice: InvoiceItem) throws -> URL {
+    static func dragURL(for invoice: PhysicalArtifact) throws -> URL {
         if invoice.fileType == .heic {
             return try exportTemporaryJPEG(from: invoice.fileURL, originalFilename: invoice.name)
         }
@@ -11,7 +11,7 @@ enum DragExportService {
         return invoice.fileURL
     }
 
-    static func itemProvider(for invoice: InvoiceItem, internalInvoiceIDs: [String]? = nil) -> NSItemProvider {
+    static func itemProvider(for invoice: PhysicalArtifact, internalInvoiceIDs: [String]? = nil) -> NSItemProvider {
         let provider: NSItemProvider
         if invoice.fileType == .heic {
             provider = heicItemProvider(for: invoice)
@@ -33,7 +33,7 @@ enum DragExportService {
         "\(jpegExportBasename(for: originalFilename)).jpg"
     }
 
-    private static func heicItemProvider(for invoice: InvoiceItem) -> NSItemProvider {
+    private static func heicItemProvider(for invoice: PhysicalArtifact) -> NSItemProvider {
         let provider = NSItemProvider()
         provider.suggestedName = jpegExportBasename(for: invoice.name)
         provider.registerFileRepresentation(

@@ -31,7 +31,7 @@ final class PreviewViewState: ObservableObject {
         activeContext?.rotationSaveStatus ?? .idle
     }
 
-    func loadPreview(for invoice: InvoiceItem) async {
+    func loadPreview(for invoice: PhysicalArtifact) async {
         let nextSessionID = PreviewSessionID(invoice: invoice)
         let isSameRevision = activeContext?.sessionID == nextSessionID
 
@@ -81,7 +81,7 @@ final class PreviewViewState: ObservableObject {
         }
     }
 
-    func rotate(by quarterTurnsDelta: Int, for invoice: InvoiceItem) {
+    func rotate(by quarterTurnsDelta: Int, for invoice: PhysicalArtifact) {
         guard activeContext?.invoice.id == invoice.id else {
             return
         }
@@ -100,7 +100,7 @@ final class PreviewViewState: ObservableObject {
         syncSaveState(for: activeContext.invoice.id)
     }
 
-    private func handoffActiveContextIfNeeded(for nextInvoice: InvoiceItem) {
+    private func handoffActiveContextIfNeeded(for nextInvoice: PhysicalArtifact) {
         guard let activeContext,
               activeContext.invoice.id != nextInvoice.id else {
             return
@@ -109,7 +109,7 @@ final class PreviewViewState: ObservableObject {
         rotationCoordinator.enqueueCommitIfNeeded(from: activeContext)
     }
 
-    private func syncSaveState(for invoiceID: InvoiceItem.ID) {
+    private func syncSaveState(for invoiceID: PhysicalArtifact.ID) {
         updateActiveContext {
             guard $0.invoice.id == invoiceID else { return }
             $0.rotationSaveStatus = rotationCoordinator.saveStatus(for: invoiceID)

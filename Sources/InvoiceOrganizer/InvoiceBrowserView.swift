@@ -3,22 +3,24 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct InvoiceBrowserView: NSViewRepresentable {
-    let invoices: [InvoiceItem]
-    let documents: [InvoiceDocument]
+    let invoices: [PhysicalArtifact]
+    let documents: [Document]
     let queueTab: InvoiceQueueTab
     @Binding var browserContext: InvoiceBrowserContext
-    let ocrStatesByInvoiceID: [InvoiceItem.ID: InvoiceOCRState]
-    let readStatesByInvoiceID: [InvoiceItem.ID: InvoiceReadState]
-    let duplicateBadgeTitlesByInvoiceID: [InvoiceItem.ID: String]
-    let ignoredInvoiceIDs: Set<InvoiceItem.ID>
-    @Binding var selectedInvoiceIDs: Set<InvoiceItem.ID>
-    let onMoveToInProgress: ([InvoiceItem.ID]) -> Void
+    let ocrStatesByArtifactID: [PhysicalArtifact.ID: InvoiceOCRState]
+    let readStatesByArtifactID: [PhysicalArtifact.ID: InvoiceReadState]
+    let duplicateBadgeTitlesByArtifactID: [PhysicalArtifact.ID: String]
+    let ignoredInvoiceIDs: Set<PhysicalArtifact.ID>
+    @Binding var selectedArtifactIDs: Set<PhysicalArtifact.ID>
+    let onMoveToInProgress: ([PhysicalArtifact.ID]) -> Void
     let onMoveToUnprocessed: () -> Void
     let onMoveToProcessed: () -> Void
     let onRescan: () -> Void
     let onSetIgnored: (Bool) -> Void
-    let onVendorChange: (InvoiceItem.ID, String) -> Void
-    let onInvoiceDateChange: (InvoiceItem.ID, Date) -> Void
+    let onVendorChange: (PhysicalArtifact.ID, String) -> Void
+    let onInvoiceDateChange: (PhysicalArtifact.ID, Date) -> Void
+    let dragExportURL: (PhysicalArtifact) throws -> URL
+    let fileIcon: (PhysicalArtifact) -> NSImage
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -63,9 +65,9 @@ struct InvoiceBrowserView: NSViewRepresentable {
         context.coordinator.update(
             invoices: invoices,
             documents: documents,
-            ocrStatesByInvoiceID: ocrStatesByInvoiceID,
-            readStatesByInvoiceID: readStatesByInvoiceID,
-            selectedIDs: selectedInvoiceIDs
+            ocrStatesByArtifactID: ocrStatesByArtifactID,
+            readStatesByArtifactID: readStatesByArtifactID,
+            selectedIDs: selectedArtifactIDs
         )
         return scrollView
     }
@@ -78,9 +80,9 @@ struct InvoiceBrowserView: NSViewRepresentable {
         context.coordinator.update(
             invoices: invoices,
             documents: documents,
-            ocrStatesByInvoiceID: ocrStatesByInvoiceID,
-            readStatesByInvoiceID: readStatesByInvoiceID,
-            selectedIDs: selectedInvoiceIDs
+            ocrStatesByArtifactID: ocrStatesByArtifactID,
+            readStatesByArtifactID: readStatesByArtifactID,
+            selectedIDs: selectedArtifactIDs
         )
     }
 
@@ -118,8 +120,8 @@ struct InvoiceBrowserView: NSViewRepresentable {
         var parent: InvoiceBrowserView
         weak var tableView: FinderLikeTableView?
         private var displayedRows: [InvoiceBrowserRow] = []
-        private var ocrStatesByInvoiceID: [InvoiceItem.ID: InvoiceOCRState] = [:]
-        private var readStatesByInvoiceID: [InvoiceItem.ID: InvoiceReadState] = [:]
+        private var ocrStatesByArtifactID: [PhysicalArtifact.ID: InvoiceOCRState] = [:]
+        private var readStatesByArtifactID: [PhysicalArtifact.ID: InvoiceReadState] = [:]
         private var isSyncingSelection = false
 
         init(parent: InvoiceBrowserView) {
@@ -127,15 +129,15 @@ struct InvoiceBrowserView: NSViewRepresentable {
         }
 
         func update(
-            invoices: [InvoiceItem],
-            documents: [InvoiceDocument],
-            ocrStatesByInvoiceID: [InvoiceItem.ID: InvoiceOCRState],
-            readStatesByInvoiceID: [InvoiceItem.ID: InvoiceReadState],
-            selectedIDs: Set<InvoiceItem.ID>
+            invoices: [PhysicalArtifact],
+            documents: [Document],
+            ocrStatesByArtifactID: [PhysicalArtifact.ID: InvoiceOCRState],
+            readStatesByArtifactID: [PhysicalArtifact.ID: InvoiceReadState],
+            selectedIDs: Set<PhysicalArtifact.ID>
         ) {
-            let didStateChange = self.ocrStatesByInvoiceID != ocrStatesByInvoiceID || self.readStatesByInvoiceID != readStatesByInvoiceID
-            self.ocrStatesByInvoiceID = ocrStatesByInvoiceID
-            self.readStatesByInvoiceID = readStatesByInvoiceID
+            let didStateChange = self.ocrStatesByArtifactID != ocrStatesByArtifactID || self.readStatesByArtifactID != readStatesByArtifactID
+            self.ocrStatesByArtifactID = ocrStatesByArtifactID
+            self.readStatesByArtifactID = readStatesByArtifactID
             syncTableSortDescriptorsFromContext()
             let sortedInvoices = sort(invoices: invoices)
             let nextRows = buildInvoiceBrowserRows(
@@ -168,6 +170,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 let view = tableView.makeView(withIdentifier: NameCellView.reuseIdentifier, owner: nil) as? NameCellView ?? NameCellView()
                 view.configure(
                     with: invoice,
+                    icon: parent.fileIcon(invoice),
                     disclosureState: rowModel.disclosureState,
                     indentationLevel: rowModel.indentationLevel,
                     badges: badges(for: rowModel)
@@ -181,11 +184,11 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 return view
             case .ocr:
                 let view = tableView.makeView(withIdentifier: TextCellView.reuseIdentifier, owner: nil) as? TextCellView ?? TextCellView()
-                view.configure(state: ocrStatesByInvoiceID[invoice.id])
+                view.configure(state: ocrStatesByArtifactID[invoice.id])
                 return view
             case .read:
                 let view = tableView.makeView(withIdentifier: TextCellView.reuseIdentifier, owner: nil) as? TextCellView ?? TextCellView()
-                view.configure(state: readStatesByInvoiceID[invoice.id])
+                view.configure(state: readStatesByArtifactID[invoice.id])
                 return view
             case .fileType:
                 let view = tableView.makeView(withIdentifier: TextCellView.reuseIdentifier, owner: nil) as? TextCellView ?? TextCellView()
@@ -234,15 +237,15 @@ struct InvoiceBrowserView: NSViewRepresentable {
         func tableViewSelectionDidChange(_ notification: Notification) {
             guard let tableView, !isSyncingSelection else { return }
 
-            let ids = Set<InvoiceItem.ID>(tableView.selectedRowIndexes.compactMap { row in
+            let ids = Set<PhysicalArtifact.ID>(tableView.selectedRowIndexes.compactMap { row in
                 guard row >= 0, row < displayedRows.count else { return nil }
                 return displayedRows[row].invoice.id
             })
 
-            guard parent.selectedInvoiceIDs != ids else { return }
+            guard parent.selectedArtifactIDs != ids else { return }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.parent.selectedInvoiceIDs = ids
+                self.parent.selectedArtifactIDs = ids
             }
         }
 
@@ -264,7 +267,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 expandedGroupIDs: parent.browserContext.expandedGroupIDs
             )
             tableView.reloadData()
-            syncSelection(to: parent.selectedInvoiceIDs)
+            syncSelection(to: parent.selectedArtifactIDs)
         }
 
         func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
@@ -276,7 +279,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
             do {
                 let draggedIDs = idsForDragStarting(at: row)
                 InvoiceInternalDrag.beginDrag(draggedIDs)
-                let dragURL = try DragExportService.dragURL(for: invoice)
+                let dragURL = try parent.dragExportURL(invoice)
                 let pasteboardItem = NSPasteboardItem()
                 pasteboardItem.setString(dragURL.absoluteString, forType: .fileURL)
 
@@ -324,8 +327,8 @@ struct InvoiceBrowserView: NSViewRepresentable {
             (tableView as? FinderLikeTableView)?.didBeginDragDuringMouseInteraction = false
         }
 
-        private func idsForDragStarting(at row: Int) -> [InvoiceItem.ID] {
-            let selectedIDs = parent.selectedInvoiceIDs
+        private func idsForDragStarting(at row: Int) -> [PhysicalArtifact.ID] {
+            let selectedIDs = parent.selectedArtifactIDs
             let selection = selectedIDs.contains(displayedRows[row].invoice.id)
                 ? displayedRows.map(\.invoice).filter { selectedIDs.contains($0.id) }
                 : [displayedRows[row].invoice]
@@ -333,10 +336,10 @@ struct InvoiceBrowserView: NSViewRepresentable {
             return selection.map(\.id)
         }
 
-        private func orderedSelectedInvoiceIDs() -> [InvoiceItem.ID] {
+        private func orderedSelectedInvoiceIDs() -> [PhysicalArtifact.ID] {
             displayedRows
                 .map(\.invoice.id)
-                .filter { parent.selectedInvoiceIDs.contains($0) }
+                .filter { parent.selectedArtifactIDs.contains($0) }
         }
 
         func contextMenu(forRow row: Int) -> NSMenu? {
@@ -345,33 +348,33 @@ struct InvoiceBrowserView: NSViewRepresentable {
             }
 
             let clickedInvoiceID = displayedRows[row].invoice.id
-            if !parent.selectedInvoiceIDs.contains(clickedInvoiceID) {
-                parent.selectedInvoiceIDs = [clickedInvoiceID]
-                syncSelection(to: parent.selectedInvoiceIDs)
+            if !parent.selectedArtifactIDs.contains(clickedInvoiceID) {
+                parent.selectedArtifactIDs = [clickedInvoiceID]
+                syncSelection(to: parent.selectedArtifactIDs)
             }
 
-            let selectedInvoices = parent.invoices.filter { parent.selectedInvoiceIDs.contains($0.id) }
+            let selectedArtifacts = parent.invoices.filter { parent.selectedArtifactIDs.contains($0.id) }
             let menu = NSMenu()
-            let canRescan = parent.queueTab != .processed && selectedInvoices.contains { $0.contentHash != nil }
-            let allIgnored = !selectedInvoices.isEmpty && selectedInvoices.allSatisfy { parent.ignoredInvoiceIDs.contains($0.id) }
+            let canRescan = parent.queueTab != .processed && selectedArtifacts.contains { $0.contentHash != nil }
+            let allIgnored = !selectedArtifacts.isEmpty && selectedArtifacts.allSatisfy { parent.ignoredInvoiceIDs.contains($0.id) }
 
             switch parent.queueTab {
             case .unprocessed:
-                guard selectedInvoices.contains(where: \.canMoveToInProgress) || canRescan || !selectedInvoices.isEmpty else {
+                guard selectedArtifacts.contains(where: \.canMoveToInProgress) || canRescan || !selectedArtifacts.isEmpty else {
                     return nil
                 }
 
-                if selectedInvoices.contains(where: \.canMoveToInProgress) {
+                if selectedArtifacts.contains(where: \.canMoveToInProgress) {
                     let item = NSMenuItem(title: "Move to In Progress", action: #selector(moveSelectionToInProgress), keyEquivalent: "")
                     item.target = self
                     menu.addItem(item)
                 }
             case .inProgress:
-                guard selectedInvoices.contains(where: \.canMarkDone) || canRescan || !selectedInvoices.isEmpty else {
+                guard selectedArtifacts.contains(where: \.canMarkDone) || canRescan || !selectedArtifacts.isEmpty else {
                     return nil
                 }
 
-                if selectedInvoices.contains(where: \.canMarkDone) {
+                if selectedArtifacts.contains(where: \.canMarkDone) {
                     let moveToUnprocessedItem = NSMenuItem(title: "Move to Unprocessed", action: #selector(moveSelectionToUnprocessed), keyEquivalent: "")
                     moveToUnprocessedItem.target = self
                     menu.addItem(moveToUnprocessedItem)
@@ -381,7 +384,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
                     menu.addItem(moveToProcessedItem)
                 }
             case .processed:
-                guard !selectedInvoices.isEmpty else {
+                guard !selectedArtifacts.isEmpty else {
                     return nil
                 }
             }
@@ -396,7 +399,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 menu.addItem(rescanItem)
             }
 
-            if !selectedInvoices.isEmpty {
+            if !selectedArtifacts.isEmpty {
                 if menu.items.isEmpty == false {
                     menu.addItem(.separator())
                 }
@@ -438,7 +441,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
             parent.onSetIgnored(!currentlyIgnored)
         }
 
-        private func syncSelection(to selectedIDs: Set<InvoiceItem.ID>) {
+        private func syncSelection(to selectedIDs: Set<PhysicalArtifact.ID>) {
             guard let tableView else { return }
 
             let rowIndexes = IndexSet(displayedRows.enumerated().compactMap { index, row in
@@ -479,7 +482,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 expandedGroupIDs: parent.browserContext.expandedGroupIDs
             )
             tableView?.reloadData()
-            syncSelection(to: parent.selectedInvoiceIDs)
+            syncSelection(to: parent.selectedArtifactIDs)
         }
 
         func handleDisclosureNavigation(keyCode: UInt16) -> Bool {
@@ -520,7 +523,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
                     queueTab: parent.queueTab
                 )
                 badges.append(.duplicate(label))
-            } else if let duplicateBadge = parent.duplicateBadgeTitlesByInvoiceID[row.invoice.id] {
+            } else if let duplicateBadge = parent.duplicateBadgeTitlesByArtifactID[row.invoice.id] {
                 badges.append(.duplicate(duplicateBadge))
             }
 
@@ -531,7 +534,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
             return badges
         }
 
-        private func sort(invoices: [InvoiceItem]) -> [InvoiceItem] {
+        private func sort(invoices: [PhysicalArtifact]) -> [PhysicalArtifact] {
             invoices.sorted { lhs, rhs in
                 for descriptor in parent.browserContext.sortDescriptors {
                     let comparison = compare(lhs: lhs, rhs: rhs, columnID: descriptor.columnID)
@@ -564,8 +567,8 @@ struct InvoiceBrowserView: NSViewRepresentable {
         }
 
         private func compare(
-            lhs: InvoiceItem,
-            rhs: InvoiceItem,
+            lhs: PhysicalArtifact,
+            rhs: PhysicalArtifact,
             columnID: InvoiceBrowserColumnID
         ) -> ComparisonResult {
             switch columnID {
@@ -575,9 +578,9 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 if lhs.addedAt == rhs.addedAt { return .orderedSame }
                 return lhs.addedAt < rhs.addedAt ? .orderedAscending : .orderedDescending
             case .ocr:
-                return compareOCRState(lhs: ocrStatesByInvoiceID[lhs.id], rhs: ocrStatesByInvoiceID[rhs.id])
+                return compareOCRState(lhs: ocrStatesByArtifactID[lhs.id], rhs: ocrStatesByArtifactID[rhs.id])
             case .read:
-                return compareReadState(lhs: readStatesByInvoiceID[lhs.id], rhs: readStatesByInvoiceID[rhs.id])
+                return compareReadState(lhs: readStatesByArtifactID[lhs.id], rhs: readStatesByArtifactID[rhs.id])
             case .fileType:
                 return lhs.fileType.rawValue.localizedCaseInsensitiveCompare(rhs.fileType.rawValue)
             case .vendor:
@@ -626,7 +629,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
 func duplicateGroupHeaderBadgeTitle(
     for row: InvoiceBrowserRow,
     duplicateCount: Int,
-    documents: [InvoiceDocument],
+    documents: [Document],
     queueTab: InvoiceQueueTab
 ) -> String {
     let defaultLabel = duplicateCount == 1 ? "1 duplicate" : "\(duplicateCount) duplicates"
@@ -753,13 +756,13 @@ enum InvoiceBrowserDisclosureState: Equatable {
 enum InvoiceBrowserRowKind: Equatable {
     case invoice
     case groupHeader(duplicateCount: Int)
-    case groupChild(parentID: InvoiceItem.ID)
+    case groupChild(parentID: PhysicalArtifact.ID)
 }
 
 struct InvoiceBrowserRow: Equatable {
-    let invoice: InvoiceItem
+    let invoice: PhysicalArtifact
     let kind: InvoiceBrowserRowKind
-    let memberIDs: Set<InvoiceItem.ID>
+    let memberIDs: Set<PhysicalArtifact.ID>
     let indentationLevel: Int
     let disclosureState: InvoiceBrowserDisclosureState
 
@@ -774,9 +777,9 @@ struct InvoiceBrowserRow: Equatable {
 }
 
 enum InvoiceBrowserDisclosureNavigationAction: Equatable {
-    case expand(InvoiceItem.ID)
-    case collapse(InvoiceItem.ID)
-    case selectParent(InvoiceItem.ID)
+    case expand(PhysicalArtifact.ID)
+    case collapse(PhysicalArtifact.ID)
+    case selectParent(PhysicalArtifact.ID)
 }
 
 func disclosureNavigationAction(for row: InvoiceBrowserRow, keyCode: UInt16) -> InvoiceBrowserDisclosureNavigationAction? {
@@ -825,12 +828,12 @@ enum InvoiceBrowserBadge: Equatable {
 }
 
 func buildInvoiceBrowserRows(
-    from invoices: [InvoiceItem],
-    documents: [InvoiceDocument],
-    expandedGroupIDs: Set<InvoiceItem.ID>
+    from invoices: [PhysicalArtifact],
+    documents: [Document],
+    expandedGroupIDs: Set<PhysicalArtifact.ID>
 ) -> [InvoiceBrowserRow] {
     let visibleInvoicesByID = Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
-    var childrenByRepresentativeID: [InvoiceItem.ID: [InvoiceItem]] = [:]
+    var childrenByRepresentativeID: [PhysicalArtifact.ID: [PhysicalArtifact]] = [:]
 
     for document in documents where document.isDuplicate {
         let visibleMembers = invoices.filter { document.memberIDs.contains($0.id) && visibleInvoicesByID[$0.id] != nil }
@@ -993,14 +996,13 @@ private final class NameCellView: NSTableCellView {
     }
 
     func configure(
-        with invoice: InvoiceItem,
+        with invoice: PhysicalArtifact,
+        icon: NSImage,
         disclosureState: InvoiceBrowserDisclosureState,
         indentationLevel: Int,
         badges: [InvoiceBrowserBadge],
         onToggleDisclosure: (() -> Void)?
     ) {
-        let icon = NSWorkspace.shared.icon(forFile: invoice.fileURL.path)
-        icon.size = NSSize(width: 16, height: 16)
         iconView.image = icon
         nameField.stringValue = invoice.name
         self.onToggleDisclosure = onToggleDisclosure
@@ -1165,8 +1167,8 @@ private final class EditableTextCellView: NSTableCellView, NSTextFieldDelegate {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("EditableTextCellView")
 
     private let textFieldView = NSTextField()
-    private var invoiceID: InvoiceItem.ID?
-    private var onCommit: ((InvoiceItem.ID, String) -> Void)?
+    private var invoiceID: PhysicalArtifact.ID?
+    private var onCommit: ((PhysicalArtifact.ID, String) -> Void)?
     private var isUpdating = false
 
     init() {
@@ -1192,10 +1194,10 @@ private final class EditableTextCellView: NSTableCellView, NSTextFieldDelegate {
     }
 
     func configure(
-        invoiceID: InvoiceItem.ID,
+        invoiceID: PhysicalArtifact.ID,
         text: String,
         placeholder: String,
-        onCommit: @escaping (InvoiceItem.ID, String) -> Void
+        onCommit: @escaping (PhysicalArtifact.ID, String) -> Void
     ) {
         self.invoiceID = invoiceID
         self.onCommit = onCommit
@@ -1222,8 +1224,8 @@ private final class EditableDateCellView: NSTableCellView {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("EditableDateCellView")
 
     private let datePicker = CommitOnBlurDatePicker()
-    private var invoiceID: InvoiceItem.ID?
-    private var onCommit: ((InvoiceItem.ID, Date) -> Void)?
+    private var invoiceID: PhysicalArtifact.ID?
+    private var onCommit: ((PhysicalArtifact.ID, Date) -> Void)?
     private var isUpdating = false
     private var committedDate: Date?
 
@@ -1255,9 +1257,9 @@ private final class EditableDateCellView: NSTableCellView {
     }
 
     func configure(
-        invoiceID: InvoiceItem.ID,
+        invoiceID: PhysicalArtifact.ID,
         date: Date,
-        onCommit: @escaping (InvoiceItem.ID, Date) -> Void
+        onCommit: @escaping (PhysicalArtifact.ID, Date) -> Void
     ) {
         self.invoiceID = invoiceID
         self.onCommit = onCommit

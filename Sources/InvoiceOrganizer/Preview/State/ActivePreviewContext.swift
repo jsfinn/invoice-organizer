@@ -10,7 +10,7 @@ func normalizedPreviewRotationQuarterTurns(_ value: Int) -> Int {
 }
 
 struct ActivePreviewContext {
-    let invoice: InvoiceItem
+    let invoice: PhysicalArtifact
     let sessionID: PreviewSessionID
     var content: PreviewContent
     var rotationQuarterTurns: Int
@@ -18,7 +18,7 @@ struct ActivePreviewContext {
     var rotationSaveStatus: PreviewRotationCoordinator.SaveStatus
 
     init(
-        invoice: InvoiceItem,
+        invoice: PhysicalArtifact,
         persistedQuarterTurns: Int,
         rotationSaveStatus: PreviewRotationCoordinator.SaveStatus
     ) {

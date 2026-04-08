@@ -34,14 +34,14 @@ enum InvoiceStatus: String, CaseIterable, Identifiable, Codable, Sendable {
     var id: String { rawValue }
 }
 
-enum InvoiceDocumentType: String, CaseIterable, Identifiable, Codable, Sendable {
+enum DocumentType: String, CaseIterable, Identifiable, Codable, Sendable {
     case invoice = "Invoice"
     case receipt = "Receipt"
 
     var id: String { rawValue }
 }
 
-struct InvoiceItem: Identifiable, Hashable, Sendable {
+struct PhysicalArtifact: Identifiable, Hashable, Sendable {
     typealias ID = String
 
     let id: ID
@@ -52,7 +52,7 @@ struct InvoiceItem: Identifiable, Hashable, Sendable {
     var vendor: String?
     var invoiceDate: Date?
     var invoiceNumber: String?
-    var documentType: InvoiceDocumentType?
+    var documentType: DocumentType?
     var processedAt: Date?
     var addedAt: Date
     var fileType: InvoiceFileType
@@ -68,7 +68,7 @@ struct InvoiceItem: Identifiable, Hashable, Sendable {
         vendor: String? = nil,
         invoiceDate: Date? = nil,
         invoiceNumber: String? = nil,
-        documentType: InvoiceDocumentType? = nil,
+        documentType: DocumentType? = nil,
         processedAt: Date? = nil,
         addedAt: Date,
         fileType: InvoiceFileType,
@@ -144,7 +144,7 @@ struct StoredInvoiceWorkflow: Codable, Equatable, Sendable {
     var vendor: String?
     var invoiceDate: Date?
     var invoiceNumber: String?
-    var documentType: InvoiceDocumentType?
+    var documentType: DocumentType?
     var isInProgress: Bool
     var metadataScope: InvoiceWorkflowMetadataScope?
 
@@ -152,7 +152,7 @@ struct StoredInvoiceWorkflow: Codable, Equatable, Sendable {
         vendor: String?,
         invoiceDate: Date?,
         invoiceNumber: String?,
-        documentType: InvoiceDocumentType? = nil,
+        documentType: DocumentType? = nil,
         isInProgress: Bool,
         metadataScope: InvoiceWorkflowMetadataScope? = nil
     ) {
@@ -226,7 +226,7 @@ struct InvoiceStructuredDataRecord: Codable, Equatable, Sendable {
     let companyName: String?
     let invoiceNumber: String?
     let invoiceDate: Date?
-    let documentType: InvoiceDocumentType?
+    let documentType: DocumentType?
     let provider: LLMProvider
     let modelName: String
     let extractedAt: Date
@@ -236,7 +236,7 @@ struct InvoiceStructuredDataRecord: Codable, Equatable, Sendable {
         companyName: String?,
         invoiceNumber: String?,
         invoiceDate: Date?,
-        documentType: InvoiceDocumentType? = nil,
+        documentType: DocumentType? = nil,
         provider: LLMProvider,
         modelName: String,
         extractedAt: Date = .now,

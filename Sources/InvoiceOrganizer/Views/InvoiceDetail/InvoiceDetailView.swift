@@ -6,7 +6,7 @@ struct InvoiceDetailView: View {
 
     var body: some View {
         Group {
-            if let invoice = model.selectedInvoice {
+            if let invoice = model.selectedArtifact {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         PreviewCard(model: model, rotationCoordinator: rotationCoordinator, invoice: invoice)

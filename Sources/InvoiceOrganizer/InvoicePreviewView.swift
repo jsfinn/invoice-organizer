@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct InvoicePreviewView: View {
-    let invoice: InvoiceItem
+    let invoice: PhysicalArtifact
     let rotationCoordinator: PreviewRotationCoordinator
 
     @AppStorage("preview.height") private var previewHeight = 620.0
@@ -13,7 +13,7 @@ struct InvoicePreviewView: View {
     @State private var gestureBaseZoomScale: Double?
 
     init(
-        invoice: InvoiceItem,
+        invoice: PhysicalArtifact,
         rotationCoordinator: PreviewRotationCoordinator,
         assetProvider: any PreviewAssetProviding = PreviewAssetProvider.shared
     ) {

@@ -1,12 +1,12 @@
 import Foundation
 
-struct InvoiceDocumentMetadata: Equatable, Sendable {
+struct DocumentMetadata: Equatable, Sendable {
     var vendor: String?
     var invoiceDate: Date?
     var invoiceNumber: String?
-    var documentType: InvoiceDocumentType?
+    var documentType: DocumentType?
 
-    static let empty = InvoiceDocumentMetadata(
+    static let empty = DocumentMetadata(
         vendor: nil,
         invoiceDate: nil,
         invoiceNumber: nil,
@@ -20,7 +20,7 @@ struct InvoiceDocumentMetadata: Equatable, Sendable {
         documentType == nil
     }
 
-    init(vendor: String?, invoiceDate: Date?, invoiceNumber: String?, documentType: InvoiceDocumentType?) {
+    init(vendor: String?, invoiceDate: Date?, invoiceNumber: String?, documentType: DocumentType?) {
         self.vendor = vendor
         self.invoiceDate = invoiceDate
         self.invoiceNumber = invoiceNumber
@@ -36,7 +36,7 @@ struct InvoiceDocumentMetadata: Equatable, Sendable {
         )
     }
 
-    init(invoice: InvoiceItem) {
+    init(invoice: PhysicalArtifact) {
         self.init(
             vendor: invoice.vendor,
             invoiceDate: invoice.invoiceDate,
@@ -46,8 +46,8 @@ struct InvoiceDocumentMetadata: Equatable, Sendable {
     }
 }
 
-struct InvoiceDocumentMember: Identifiable, Equatable, Sendable {
-    let id: InvoiceItem.ID
+struct DocumentArtifactReference: Identifiable, Equatable, Sendable {
+    let id: PhysicalArtifact.ID
     let fileURL: URL
     let location: InvoiceLocation
     let addedAt: Date
@@ -65,15 +65,15 @@ struct InvoiceDocumentMember: Identifiable, Equatable, Sendable {
     }
 }
 
-struct InvoiceDocument: Identifiable, Equatable, Sendable {
-    let members: [InvoiceDocumentMember]
-    var metadata: InvoiceDocumentMetadata
+struct Document: Identifiable, Equatable, Sendable {
+    let members: [DocumentArtifactReference]
+    var metadata: DocumentMetadata
 
     var id: String {
         members.map(\.identityKey).sorted().joined(separator: "|")
     }
 
-    var memberIDs: Set<InvoiceItem.ID> {
+    var memberIDs: Set<PhysicalArtifact.ID> {
         Set(members.map(\.id))
     }
 
@@ -89,15 +89,46 @@ struct InvoiceDocument: Identifiable, Equatable, Sendable {
         members.contains { $0.location == .processing }
     }
 
-    func contains(memberID: InvoiceItem.ID) -> Bool {
+    func contains(memberID: PhysicalArtifact.ID) -> Bool {
         members.contains { $0.id == memberID }
     }
 
-    func member(for memberID: InvoiceItem.ID) -> InvoiceDocumentMember? {
+    func member(for memberID: PhysicalArtifact.ID) -> DocumentArtifactReference? {
         members.first { $0.id == memberID }
     }
 
-    func isSoftBlocked(memberID: InvoiceItem.ID) -> Bool {
+    func bestSimilarity(
+        to candidateTokens: Set<String>,
+        tokensByMemberID: [PhysicalArtifact.ID: Set<String>],
+        threshold: Double
+    ) -> InvoiceDuplicateSimilarity? {
+        let scoredMembers = members.compactMap { member -> (DocumentArtifactReference, Double)? in
+            guard let memberTokens = tokensByMemberID[member.id] else { return nil }
+            return (member, InvoiceDuplicateDetector.jaccardSimilarity(candidateTokens, memberTokens))
+        }
+
+        guard let bestMatch = scoredMembers.max(by: { lhs, rhs in
+            if lhs.1 != rhs.1 {
+                return lhs.1 < rhs.1
+            }
+
+            return lhs.0.id > rhs.0.id
+        }) else {
+            return nil
+        }
+
+        return InvoiceDuplicateSimilarity(
+            documentID: id,
+            matchedArtifactID: bestMatch.0.id,
+            matchedFileURL: bestMatch.0.fileURL,
+            matchedLocation: bestMatch.0.location,
+            memberCount: members.count,
+            score: bestMatch.1,
+            meetsThreshold: bestMatch.1 >= threshold
+        )
+    }
+
+    func isSoftBlocked(memberID: PhysicalArtifact.ID) -> Bool {
         guard isDuplicate,
               let member = member(for: memberID) else { return false }
 
@@ -112,14 +143,14 @@ struct InvoiceDocument: Identifiable, Equatable, Sendable {
         return false
     }
 
-    func referenceMember(for memberID: InvoiceItem.ID) -> InvoiceDocumentMember? {
+    func referenceMember(for memberID: PhysicalArtifact.ID) -> DocumentArtifactReference? {
         members
             .filter { $0.id != memberID }
             .sorted(by: documentReferencePriority)
             .first
     }
 
-    func duplicateInfo(for memberID: InvoiceItem.ID) -> InvoiceDuplicateInfo? {
+    func duplicateInfo(for memberID: PhysicalArtifact.ID) -> InvoiceDuplicateInfo? {
         guard isSoftBlocked(memberID: memberID),
               let referenceMember = referenceMember(for: memberID) else {
             return nil
@@ -131,7 +162,7 @@ struct InvoiceDocument: Identifiable, Equatable, Sendable {
         )
     }
 
-    func badgeTitle(for memberID: InvoiceItem.ID) -> String? {
+    func badgeTitle(for memberID: PhysicalArtifact.ID) -> String? {
         guard isSoftBlocked(memberID: memberID) else { return nil }
 
         if hasProcessedMember || hasInProgressMember {
@@ -141,7 +172,7 @@ struct InvoiceDocument: Identifiable, Equatable, Sendable {
         return "Duplicate"
     }
 
-    private func duplicateReason(for referenceMember: InvoiceDocumentMember) -> String {
+    private func duplicateReason(for referenceMember: DocumentArtifactReference) -> String {
         switch referenceMember.location {
         case .processed:
             return "Similar extracted text matches processed file \(referenceMember.fileURL.lastPathComponent)"
@@ -153,7 +184,7 @@ struct InvoiceDocument: Identifiable, Equatable, Sendable {
     }
 }
 
-private func documentReferencePriority(lhs: InvoiceDocumentMember, rhs: InvoiceDocumentMember) -> Bool {
+private func documentReferencePriority(lhs: DocumentArtifactReference, rhs: DocumentArtifactReference) -> Bool {
     let lhsLocationPriority = documentReferenceLocationPriority(lhs.location)
     let rhsLocationPriority = documentReferenceLocationPriority(rhs.location)
 

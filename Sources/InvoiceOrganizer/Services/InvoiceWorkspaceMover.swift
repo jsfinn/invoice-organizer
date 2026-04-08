@@ -1,19 +1,19 @@
 import Foundation
 
 enum InvoiceWorkspaceMover {
-    static func moveToProcessing(_ invoice: InvoiceItem, processingRoot: URL) throws -> URL {
+    static func moveToProcessing(_ invoice: PhysicalArtifact, processingRoot: URL) throws -> URL {
         try move(invoice, to: processingRoot)
     }
 
-    static func moveToDuplicates(_ invoice: InvoiceItem, duplicatesRoot: URL) throws -> URL {
+    static func moveToDuplicates(_ invoice: PhysicalArtifact, duplicatesRoot: URL) throws -> URL {
         try move(invoice, to: duplicatesRoot)
     }
 
-    static func moveToInbox(_ invoice: InvoiceItem, inboxRoot: URL) throws -> URL {
+    static func moveToInbox(_ invoice: PhysicalArtifact, inboxRoot: URL) throws -> URL {
         try move(invoice, to: inboxRoot)
     }
 
-    static func renameInProcessing(_ invoice: InvoiceItem, vendor: String?, invoiceDate: Date?, invoiceNumber: String?) throws -> URL {
+    static func renameInProcessing(_ invoice: PhysicalArtifact, vendor: String?, invoiceDate: Date?, invoiceNumber: String?) throws -> URL {
         let folder = invoice.fileURL.deletingLastPathComponent()
         let preferredName = ArchivePathBuilder.processingFilename(
             vendor: vendor,
@@ -36,7 +36,7 @@ enum InvoiceWorkspaceMover {
         return destinationURL
     }
 
-    private static func move(_ invoice: InvoiceItem, to folder: URL) throws -> URL {
+    private static func move(_ invoice: PhysicalArtifact, to folder: URL) throws -> URL {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
         let destinationURL = uniqueDestinationURL(

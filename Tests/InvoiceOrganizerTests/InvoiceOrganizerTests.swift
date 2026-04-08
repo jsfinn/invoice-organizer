@@ -27,7 +27,7 @@ private func localDateComponents(_ date: Date) -> DateComponents {
     return calendar.dateComponents([.year, .month, .day], from: date)
 }
 
-private func duplicateMember(from invoice: InvoiceItem) -> InvoiceDuplicateMember {
+private func duplicateMember(from invoice: PhysicalArtifact) -> InvoiceDuplicateMember {
     InvoiceDuplicateMember(
         id: invoice.id,
         fileURL: invoice.fileURL,
@@ -38,7 +38,7 @@ private func duplicateMember(from invoice: InvoiceItem) -> InvoiceDuplicateMembe
 }
 
 private func makeDuplicateGroup(
-    visibleInvoices: [InvoiceItem],
+    visibleInvoices: [PhysicalArtifact],
     hiddenMembers: [InvoiceDuplicateMember] = []
 ) -> InvoiceDuplicateGroup {
     InvoiceDuplicateGroup(
@@ -46,8 +46,8 @@ private func makeDuplicateGroup(
     )
 }
 
-private func documentMember(from invoice: InvoiceItem) -> InvoiceDocumentMember {
-    InvoiceDocumentMember(
+private func documentMember(from invoice: PhysicalArtifact) -> DocumentArtifactReference {
+    DocumentArtifactReference(
         id: invoice.id,
         fileURL: invoice.fileURL,
         location: invoice.location,
@@ -58,11 +58,11 @@ private func documentMember(from invoice: InvoiceItem) -> InvoiceDocumentMember 
 }
 
 private func makeDocument(
-    visibleInvoices: [InvoiceItem],
-    hiddenMembers: [InvoiceDocumentMember] = [],
-    metadata: InvoiceDocumentMetadata = .empty
-) -> InvoiceDocument {
-    InvoiceDocument(
+    visibleInvoices: [PhysicalArtifact],
+    hiddenMembers: [DocumentArtifactReference] = [],
+    metadata: DocumentMetadata = .empty
+) -> Document {
+    Document(
         members: visibleInvoices.map(documentMember(from:)) + hiddenMembers,
         metadata: metadata
     )
@@ -262,7 +262,7 @@ private final class RecordingPreviewPersistHandler {
     let inboxInvoiceURL = tempRoot.appendingPathComponent("incoming.pdf")
     try Data("inbox".utf8).write(to: inboxInvoiceURL)
 
-    let invoice = InvoiceItem(
+    let invoice = PhysicalArtifact(
         name: "incoming.pdf",
         fileURL: inboxInvoiceURL,
         location: .inbox,
@@ -287,7 +287,7 @@ private final class RecordingPreviewPersistHandler {
     let processingInvoiceURL = processingRoot.appendingPathComponent("incoming.pdf")
     try Data("inbox".utf8).write(to: processingInvoiceURL)
 
-    let invoice = InvoiceItem(
+    let invoice = PhysicalArtifact(
         name: "incoming.pdf",
         fileURL: processingInvoiceURL,
         location: .processing,
@@ -318,7 +318,7 @@ private final class RecordingPreviewPersistHandler {
     let processingInvoiceURL = processingRoot.appendingPathComponent("Amazon-2024-01-05-INV-42.pdf")
     try Data("inbox".utf8).write(to: processingInvoiceURL)
 
-    let invoice = InvoiceItem(
+    let invoice = PhysicalArtifact(
         name: processingInvoiceURL.lastPathComponent,
         fileURL: processingInvoiceURL,
         location: .processing,
@@ -563,7 +563,7 @@ private final class RecordingPreviewPersistHandler {
     let coordinator = PreviewRotationCoordinator()
     let state = PreviewViewState(assetProvider: provider, rotationCoordinator: coordinator)
 
-    let firstInvoice = InvoiceItem(
+    let firstInvoice = PhysicalArtifact(
         name: "first.png",
         fileURL: firstURL,
         location: .inbox,
@@ -572,7 +572,7 @@ private final class RecordingPreviewPersistHandler {
         status: .unprocessed,
         contentHash: "first"
     )
-    let secondInvoice = InvoiceItem(
+    let secondInvoice = PhysicalArtifact(
         name: "second.png",
         fileURL: secondURL,
         location: .inbox,
@@ -612,7 +612,7 @@ private final class RecordingPreviewPersistHandler {
     coordinator.persistHandler = recorder.persist
     let state = PreviewViewState(assetProvider: provider, rotationCoordinator: coordinator)
 
-    let firstInvoice = InvoiceItem(
+    let firstInvoice = PhysicalArtifact(
         name: "first.png",
         fileURL: firstURL,
         location: .inbox,
@@ -621,7 +621,7 @@ private final class RecordingPreviewPersistHandler {
         status: .unprocessed,
         contentHash: "first"
     )
-    let secondInvoice = InvoiceItem(
+    let secondInvoice = PhysicalArtifact(
         name: "second.png",
         fileURL: secondURL,
         location: .inbox,
@@ -661,7 +661,7 @@ private final class RecordingPreviewPersistHandler {
     coordinator.persistHandler = recorder.persist
     let state = PreviewViewState(assetProvider: provider, rotationCoordinator: coordinator)
 
-    let firstInvoice = InvoiceItem(
+    let firstInvoice = PhysicalArtifact(
         name: "first.png",
         fileURL: firstURL,
         location: .inbox,
@@ -670,7 +670,7 @@ private final class RecordingPreviewPersistHandler {
         status: .unprocessed,
         contentHash: "first"
     )
-    let secondInvoice = InvoiceItem(
+    let secondInvoice = PhysicalArtifact(
         name: "second.png",
         fileURL: secondURL,
         location: .inbox,
@@ -766,7 +766,7 @@ private final class RecordingPreviewPersistHandler {
     let coordinator = PreviewRotationCoordinator()
     coordinator.persistHandler = recorder.persist
 
-    let invoice = InvoiceItem(
+    let invoice = PhysicalArtifact(
         name: "draft.png",
         fileURL: URL(fileURLWithPath: "/tmp/draft.png"),
         location: .inbox,
@@ -850,7 +850,7 @@ private final class RecordingPreviewPersistHandler {
     let invoiceDate = utcDate(year: 2024, month: 1, day: 5)
     let processedAt = utcDate(year: 2024, month: 3, day: 30, hour: 6, minute: 24, second: 5)
 
-    let invoice = InvoiceItem(
+    let invoice = PhysicalArtifact(
         name: "invoice.pdf",
         fileURL: inboxURL,
         location: .inbox,
@@ -998,6 +998,66 @@ private final class RecordingPreviewPersistHandler {
     #expect(groups.first?.memberIDs == Set([firstInbox.id, secondInbox.id]))
 }
 
+@Test func extractedTextDuplicateDetectorMatchesAgainstExistingDocumentMembers() async throws {
+    let firstInbox = ScannedInvoiceFile(
+        id: "/Inbox/invoice-a.pdf",
+        name: "invoice-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-a.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        contentHash: "hash-a"
+    )
+    let secondInbox = ScannedInvoiceFile(
+        id: "/Inbox/invoice-b.pdf",
+        name: "invoice-b.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-b.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        contentHash: "hash-b"
+    )
+    let thirdInbox = ScannedInvoiceFile(
+        id: "/Inbox/invoice-c.pdf",
+        name: "invoice-c.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-c.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 30),
+        fileType: .pdf,
+        contentHash: "hash-c"
+    )
+
+    let groups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
+        for: [firstInbox, secondInbox, thirdInbox],
+        textRecordsByContentHash: [
+            "hash-a": InvoiceTextRecord(
+                text: (1...20).map { "token\($0)" }.joined(separator: " "),
+                source: .pdfText
+            ),
+            "hash-b": InvoiceTextRecord(
+                text: (1...19).map { "token\($0)" }.joined(separator: " ") + " token21",
+                source: .pdfText
+            ),
+            "hash-c": InvoiceTextRecord(
+                text: (1...18).map { "token\($0)" }.joined(separator: " ") + " token21 token22",
+                source: .pdfText
+            )
+        ]
+    )
+
+    #expect(groups.count == 1)
+    #expect(groups.first?.memberIDs == Set([firstInbox.id, secondInbox.id, thirdInbox.id]))
+}
+
 @Test func extractedTextDuplicateGroupPrefersJPEGPeerAsReference() async throws {
     let heicInbox = ScannedInvoiceFile(
         id: "/Inbox/invoice.heic",
@@ -1038,7 +1098,7 @@ private final class RecordingPreviewPersistHandler {
 }
 
 @Test func browserRowsCollapseAndExpandDuplicateGroups() async throws {
-    let first = InvoiceItem(
+    let first = PhysicalArtifact(
         name: "invoice.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice.pdf"),
         location: .inbox,
@@ -1046,7 +1106,7 @@ private final class RecordingPreviewPersistHandler {
         fileType: .pdf,
         status: .unprocessed
     )
-    let duplicateA = InvoiceItem(
+    let duplicateA = PhysicalArtifact(
         name: "invoice-copy-1.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-1.pdf"),
         location: .inbox,
@@ -1056,7 +1116,7 @@ private final class RecordingPreviewPersistHandler {
         duplicateOfPath: first.fileURL.path,
         duplicateReason: "Duplicate extracted text matches invoice.pdf"
     )
-    let duplicateB = InvoiceItem(
+    let duplicateB = PhysicalArtifact(
         name: "invoice-copy-2.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-2.pdf"),
         location: .inbox,
@@ -1090,7 +1150,7 @@ private final class RecordingPreviewPersistHandler {
 }
 
 @Test func disclosureNavigationExpandsAndCollapsesGroupHeaders() async throws {
-    let canonical = InvoiceItem(
+    let canonical = PhysicalArtifact(
         name: "invoice.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice.pdf"),
         location: .inbox,
@@ -1119,7 +1179,7 @@ private final class RecordingPreviewPersistHandler {
 }
 
 @Test func disclosureNavigationMovesChildSelectionToParent() async throws {
-    let canonical = InvoiceItem(
+    let canonical = PhysicalArtifact(
         name: "invoice.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice.pdf"),
         location: .inbox,
@@ -1127,7 +1187,7 @@ private final class RecordingPreviewPersistHandler {
         fileType: .pdf,
         status: .unprocessed
     )
-    let duplicate = InvoiceItem(
+    let duplicate = PhysicalArtifact(
         name: "invoice-copy.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy.pdf"),
         location: .inbox,
@@ -1151,7 +1211,7 @@ private final class RecordingPreviewPersistHandler {
 }
 
 @Test func browserRowsLeaveSingleOrphanDuplicateUngroupedWhenCanonicalHidden() async throws {
-    let orphanDuplicate = InvoiceItem(
+    let orphanDuplicate = PhysicalArtifact(
         name: "invoice-copy.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy.pdf"),
         location: .inbox,
@@ -1165,10 +1225,10 @@ private final class RecordingPreviewPersistHandler {
     let rows = buildInvoiceBrowserRows(
         from: [orphanDuplicate],
         documents: [
-            InvoiceDocument(
+            Document(
                 members: [
                     documentMember(from: orphanDuplicate),
-                    InvoiceDocumentMember(
+                    DocumentArtifactReference(
                         id: "/Processed/A/Amazon/invoice.pdf",
                         fileURL: URL(fileURLWithPath: "/Processed/A/Amazon/invoice.pdf"),
                         location: .processed,
@@ -1188,7 +1248,7 @@ private final class RecordingPreviewPersistHandler {
 }
 
 @Test func browserRowsGroupVisibleDuplicatesWhenCanonicalIsHidden() async throws {
-    let duplicateA = InvoiceItem(
+    let duplicateA = PhysicalArtifact(
         name: "invoice-copy-a.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-a.pdf"),
         location: .inbox,
@@ -1198,7 +1258,7 @@ private final class RecordingPreviewPersistHandler {
         duplicateOfPath: "/Processed/A/Amazon/invoice.pdf",
         duplicateReason: "Duplicate extracted text matches invoice.pdf"
     )
-    let duplicateB = InvoiceItem(
+    let duplicateB = PhysicalArtifact(
         name: "invoice-copy-b.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-b.pdf"),
         location: .inbox,
@@ -1209,7 +1269,7 @@ private final class RecordingPreviewPersistHandler {
         duplicateReason: "Duplicate extracted text matches invoice.pdf"
     )
 
-    let hiddenProcessedPeer = InvoiceDocumentMember(
+    let hiddenProcessedPeer = DocumentArtifactReference(
         id: "/Processed/A/Amazon/invoice.pdf",
         fileURL: URL(fileURLWithPath: "/Processed/A/Amazon/invoice.pdf"),
         location: .processed,
@@ -1240,7 +1300,7 @@ private final class RecordingPreviewPersistHandler {
 }
 
 @Test func duplicateGroupHeaderBadgeTitleShowsProcessedStateInUnprocessedQueue() async throws {
-    let duplicateA = InvoiceItem(
+    let duplicateA = PhysicalArtifact(
         name: "invoice-copy-a.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-a.pdf"),
         location: .inbox,
@@ -1248,7 +1308,7 @@ private final class RecordingPreviewPersistHandler {
         fileType: .pdf,
         status: .blockedDuplicate
     )
-    let duplicateB = InvoiceItem(
+    let duplicateB = PhysicalArtifact(
         name: "invoice-copy-b.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-b.pdf"),
         location: .inbox,
@@ -1266,7 +1326,7 @@ private final class RecordingPreviewPersistHandler {
     let duplicateDocument = makeDocument(
         visibleInvoices: [duplicateA, duplicateB],
         hiddenMembers: [
-            InvoiceDocumentMember(
+            DocumentArtifactReference(
                 id: "/Processed/A/Amazon/invoice.pdf",
                 fileURL: URL(fileURLWithPath: "/Processed/A/Amazon/invoice.pdf"),
                 location: .processed,
@@ -1363,6 +1423,64 @@ private final class RecordingPreviewPersistHandler {
     #expect(duplicateDocuments.first?.metadata.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
     #expect(visibleInvoices.allSatisfy { $0.vendor == "Acme Corp" })
     #expect(visibleInvoices.allSatisfy { $0.invoiceNumber == "INV-42" })
+}
+
+@Test func appModelReportsDedupSimilarityScoresForInvoice() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstInvoiceURL = inboxRoot.appendingPathComponent("incoming-1.pdf")
+    let secondInvoiceURL = inboxRoot.appendingPathComponent("incoming-2.pdf")
+    let thirdInvoiceURL = inboxRoot.appendingPathComponent("incoming-3.pdf")
+    try Data("first".utf8).write(to: firstInvoiceURL)
+    try Data("second".utf8).write(to: secondInvoiceURL)
+    try Data("third".utf8).write(to: thirdInvoiceURL)
+
+    let textStore = InMemoryInvoiceTextStore()
+    await textStore.save(InvoiceTextRecord(text: "alpha beta gamma delta", source: .pdfText), forContentHash: try FileHasher.sha256(for: firstInvoiceURL))
+    await textStore.save(InvoiceTextRecord(text: "alpha beta gamma epsilon", source: .pdfText), forContentHash: try FileHasher.sha256(for: secondInvoiceURL))
+    await textStore.save(InvoiceTextRecord(text: "alpha beta zeta eta", source: .pdfText), forContentHash: try FileHasher.sha256(for: thirdInvoiceURL))
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(
+                inboxURL: inboxRoot,
+                processedURL: processedRoot,
+                processingURL: processingRoot,
+                duplicatesURL: duplicatesRoot
+            ),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(),
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "", modelName: "", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+
+    let invoiceID = try #require(await MainActor.run {
+        model.invoices.first(where: { $0.name == "incoming-1.pdf" })?.id
+    })
+    let similarities = await MainActor.run {
+        model.duplicateSimilarities(for: invoiceID)
+    }
+
+    #expect(similarities.count == 2)
+    #expect(similarities[0].matchedFileURL.lastPathComponent == "incoming-2.pdf")
+    #expect(abs(similarities[0].score - 0.6) < 0.0001)
+    #expect(similarities[0].meetsThreshold == false)
+    #expect(similarities[0].memberCount == 1)
+    #expect(similarities[1].matchedFileURL.lastPathComponent == "incoming-3.pdf")
+    #expect(abs(similarities[1].score - (2.0 / 6.0)) < 0.0001)
 }
 
 @Test func appModelBuildsDistinctSingletonDocumentsForMatchingContentHashes() async throws {
@@ -1631,7 +1749,7 @@ private final class RecordingPreviewPersistHandler {
 @MainActor
 @Test func appModelRetainsPerTabSearchAndSelectionContext() async throws {
     let model = AppModel(autoRefresh: false)
-    let inboxInvoice = InvoiceItem(
+    let inboxInvoice = PhysicalArtifact(
         name: "alpha.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/alpha.pdf"),
         location: .inbox,
@@ -1639,7 +1757,7 @@ private final class RecordingPreviewPersistHandler {
         fileType: .pdf,
         status: .unprocessed
     )
-    let processingInvoice = InvoiceItem(
+    let processingInvoice = PhysicalArtifact(
         name: "beta.pdf",
         fileURL: URL(fileURLWithPath: "/Processing/beta.pdf"),
         location: .processing,
@@ -1650,22 +1768,22 @@ private final class RecordingPreviewPersistHandler {
 
     model.invoices = [inboxInvoice, processingInvoice]
     model.selectedQueueTab = .unprocessed
-    model.selectedInvoiceIDs = [inboxInvoice.id]
+    model.selectedArtifactIDs = [inboxInvoice.id]
     model.searchText = "alpha"
 
     model.selectedQueueTab = .inProgress
-    model.selectedInvoiceIDs = [processingInvoice.id]
+    model.selectedArtifactIDs = [processingInvoice.id]
     model.searchText = "beta"
 
     model.selectedQueueTab = .unprocessed
     #expect(model.searchText == "alpha")
-    #expect(model.selectedInvoiceIDs == [inboxInvoice.id])
-    #expect(model.selectedInvoiceID == inboxInvoice.id)
+    #expect(model.selectedArtifactIDs == [inboxInvoice.id])
+    #expect(model.selectedArtifactID == inboxInvoice.id)
 
     model.selectedQueueTab = .inProgress
     #expect(model.searchText == "beta")
-    #expect(model.selectedInvoiceIDs == [processingInvoice.id])
-    #expect(model.selectedInvoiceID == processingInvoice.id)
+    #expect(model.selectedArtifactIDs == [processingInvoice.id])
+    #expect(model.selectedArtifactID == processingInvoice.id)
 }
 
 @MainActor
@@ -1769,7 +1887,7 @@ private final class RecordingPreviewPersistHandler {
 
 @Test func invoiceTextExtractionQueueProcessesQueuedInvoices() async throws {
     let invoiceURL = URL(fileURLWithPath: "/tmp/incoming.pdf")
-    let invoice = InvoiceItem(
+    let invoice = PhysicalArtifact(
         name: "incoming.pdf",
         fileURL: invoiceURL,
         location: .inbox,
@@ -1872,7 +1990,7 @@ private final class RecordingPreviewPersistHandler {
         AppModel(autoRefresh: false)
     }
     let ignoredURL = URL(fileURLWithPath: "/Inbox/\(UUID().uuidString).pdf")
-    let ignoredInvoice = InvoiceItem(
+    let ignoredInvoice = PhysicalArtifact(
         name: "ignored.pdf",
         fileURL: ignoredURL,
         location: .inbox,
@@ -1936,7 +2054,7 @@ private final class RecordingPreviewPersistHandler {
 
     let badgeTitle = await MainActor.run {
         let inboxInvoice = model.invoices.first(where: { $0.location == .inbox })
-        return inboxInvoice.flatMap { model.duplicateBadgeTitlesByInvoiceID[$0.id] }
+        return inboxInvoice.flatMap { model.duplicateBadgeTitlesByArtifactID[$0.id] }
     }
     #expect(badgeTitle == "Duplicate Processed")
 }
@@ -1980,7 +2098,7 @@ private final class RecordingPreviewPersistHandler {
 
     await model.reloadLibraryForTesting()
 
-    let selectedInvoice = try #require(await MainActor.run {
+    let selectedArtifact = try #require(await MainActor.run {
         model.invoices
             .filter { $0.location == .inbox }
             .sorted { $0.name < $1.name }
@@ -1989,7 +2107,7 @@ private final class RecordingPreviewPersistHandler {
     #expect(await MainActor.run { model.duplicateGroups.count } == 1)
 
     await MainActor.run {
-        model.moveInvoicesToInProgress(ids: [selectedInvoice.id])
+        model.moveInvoicesToInProgress(ids: [selectedArtifact.id])
     }
     await model.reloadLibraryForTesting()
 
@@ -2001,7 +2119,7 @@ private final class RecordingPreviewPersistHandler {
     )
 
     #expect(remainingInvoices.count == 1)
-    #expect(movedInvoice.name == selectedInvoice.name)
+    #expect(movedInvoice.name == selectedArtifact.name)
     #expect(duplicateFolderFiles.map(\.lastPathComponent).sorted() == ["incoming-2.pdf"])
     #expect(!remainingInvoices.contains(where: { $0.name == "incoming-2.pdf" }))
     #expect(await MainActor.run { model.duplicateGroups.isEmpty })
@@ -2383,7 +2501,7 @@ private final class RecordingPreviewPersistHandler {
         structuredDataStore: structuredStore,
         client: client
     )
-    let invoice = InvoiceItem(
+    let invoice = PhysicalArtifact(
         name: "incoming.pdf",
         fileURL: URL(fileURLWithPath: "/tmp/incoming.pdf"),
         location: .inbox,
@@ -2682,7 +2800,7 @@ private final class RecordingPreviewPersistHandler {
         AppModel(
             folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
             workflowByID: [
-                InvoiceItem.stableID(for: invoiceURL): StoredInvoiceWorkflow(
+                PhysicalArtifact.stableID(for: invoiceURL): StoredInvoiceWorkflow(
                     vendor: "Old Corp",
                     invoiceDate: utcDate(year: 2024, month: 1, day: 5),
                     invoiceNumber: "OLD-1",
@@ -2702,7 +2820,7 @@ private final class RecordingPreviewPersistHandler {
     let invoiceID = try #require(await MainActor.run { model.invoices.first?.id })
 
     await MainActor.run {
-        model.selectedInvoiceIDs = [invoiceID]
+        model.selectedArtifactIDs = [invoiceID]
     }
     await model.rescanInvoices(ids: [invoiceID])
     await model.waitForBackgroundTextExtractionForTesting()
@@ -2766,7 +2884,7 @@ private final class RecordingPreviewPersistHandler {
         AppModel(
             folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
             workflowByID: [
-                InvoiceItem.stableID(for: invoiceURL): StoredInvoiceWorkflow(
+                PhysicalArtifact.stableID(for: invoiceURL): StoredInvoiceWorkflow(
                     vendor: "Old Corp",
                     invoiceDate: utcDate(year: 2024, month: 1, day: 5),
                     invoiceNumber: "OLD-1",
@@ -2786,7 +2904,7 @@ private final class RecordingPreviewPersistHandler {
     let invoiceID = try #require(await MainActor.run { model.invoices.first?.id })
 
     await MainActor.run {
-        model.selectedInvoiceIDs = [invoiceID]
+        model.selectedArtifactIDs = [invoiceID]
     }
     await model.rescanInvoices(ids: [invoiceID])
     await model.waitForBackgroundTextExtractionForTesting()

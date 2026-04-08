@@ -40,32 +40,32 @@ struct QueueScreenContext: Equatable {
 
 struct QueueTabContext: Equatable {
     var searchText: String
-    var selectedInvoiceIDs: Set<InvoiceItem.ID>
-    var selectedInvoiceID: InvoiceItem.ID?
+    var selectedArtifactIDs: Set<PhysicalArtifact.ID>
+    var selectedArtifactID: PhysicalArtifact.ID?
     var browserContext: InvoiceBrowserContext
 
     init(
         queueTab: InvoiceQueueTab,
         searchText: String = "",
-        selectedInvoiceIDs: Set<InvoiceItem.ID> = [],
-        selectedInvoiceID: InvoiceItem.ID? = nil,
+        selectedArtifactIDs: Set<PhysicalArtifact.ID> = [],
+        selectedArtifactID: PhysicalArtifact.ID? = nil,
         browserContext: InvoiceBrowserContext? = nil
     ) {
         self.searchText = searchText
-        self.selectedInvoiceIDs = selectedInvoiceIDs
-        self.selectedInvoiceID = selectedInvoiceID
+        self.selectedArtifactIDs = selectedArtifactIDs
+        self.selectedArtifactID = selectedArtifactID
         self.browserContext = browserContext ?? InvoiceBrowserContext(queueTab: queueTab)
     }
 }
 
 struct InvoiceBrowserContext: Equatable {
     var sortDescriptors: [InvoiceBrowserSortDescriptor]
-    var expandedGroupIDs: Set<InvoiceItem.ID>
+    var expandedGroupIDs: Set<PhysicalArtifact.ID>
 
     init(
         queueTab: InvoiceQueueTab,
         sortDescriptors: [InvoiceBrowserSortDescriptor]? = nil,
-        expandedGroupIDs: Set<InvoiceItem.ID> = []
+        expandedGroupIDs: Set<PhysicalArtifact.ID> = []
     ) {
         self.sortDescriptors = sortDescriptors ?? defaultInvoiceBrowserSortDescriptors(for: queueTab)
         self.expandedGroupIDs = expandedGroupIDs

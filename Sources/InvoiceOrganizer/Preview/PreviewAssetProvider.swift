@@ -64,7 +64,7 @@ final class PreviewAssetProvider: PreviewAssetProviding {
         return try value.makeAsset()
     }
 
-    func asset(for invoice: InvoiceItem, forceReload: Bool = false) async throws -> PreviewAsset {
+    func asset(for invoice: PhysicalArtifact, forceReload: Bool = false) async throws -> PreviewAsset {
         try await asset(
             for: invoice.fileURL,
             contentHash: invoice.contentHash,

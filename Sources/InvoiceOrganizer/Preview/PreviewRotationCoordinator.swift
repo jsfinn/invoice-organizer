@@ -28,8 +28,8 @@ final class PreviewRotationCoordinator: ObservableObject {
 
     var persistHandler: PersistHandler?
 
-    private var entriesByInvoiceID: [InvoiceItem.ID: CommitEntry] = [:]
-    private var commitTasksByInvoiceID: [InvoiceItem.ID: Task<Void, Never>] = [:]
+    private var entriesByInvoiceID: [PhysicalArtifact.ID: CommitEntry] = [:]
+    private var commitTasksByInvoiceID: [PhysicalArtifact.ID: Task<Void, Never>] = [:]
 
     /// Returns `true` when there are queued commit requests or save tasks still running.
     var hasPendingWork: Bool {
@@ -47,12 +47,12 @@ final class PreviewRotationCoordinator: ObservableObject {
     }
 
     /// Returns the currently queued or in-flight quarter-turn value for an invoice, if any.
-    func pendingQuarterTurns(for invoiceID: InvoiceItem.ID) -> Int? {
+    func pendingQuarterTurns(for invoiceID: PhysicalArtifact.ID) -> Int? {
         entriesByInvoiceID[invoiceID]?.request.quarterTurns
     }
 
     /// Returns the current save status for an invoice's queued rotation commit.
-    func saveStatus(for invoiceID: InvoiceItem.ID) -> SaveStatus {
+    func saveStatus(for invoiceID: PhysicalArtifact.ID) -> SaveStatus {
         if let entry = entriesByInvoiceID[invoiceID] {
             return entry.saveStatus
         }
@@ -62,7 +62,7 @@ final class PreviewRotationCoordinator: ObservableObject {
     /// Starts saving a queued request in a background task if one exists and is not already saving.
     ///
     /// This method is not async and returns immediately.
-    func scheduleCommitIfNeeded(for invoiceID: InvoiceItem.ID?) {
+    func scheduleCommitIfNeeded(for invoiceID: PhysicalArtifact.ID?) {
         guard let invoiceID,
               commitTasksByInvoiceID[invoiceID] == nil,
               entriesByInvoiceID[invoiceID] != nil else {
@@ -77,7 +77,7 @@ final class PreviewRotationCoordinator: ObservableObject {
     /// Saves a queued request immediately if needed and waits for the save to finish.
     ///
     /// If a save for the same invoice is already running, this awaits the existing task.
-    func commitRequestIfNeeded(for invoiceID: InvoiceItem.ID?) async {
+    func commitRequestIfNeeded(for invoiceID: PhysicalArtifact.ID?) async {
         guard let invoiceID,
               let entry = entriesByInvoiceID[invoiceID],
               let persistHandler else {

@@ -46,7 +46,7 @@ actor InvoiceStructuredExtractionQueue {
         onRequestFailed = handler
     }
 
-    func enqueue(invoices: [InvoiceItem], knownStructuredHashes: Set<String>, settings: LLMSettings, force: Bool = false) {
+    func enqueue(invoices: [PhysicalArtifact], knownStructuredHashes: Set<String>, settings: LLMSettings, force: Bool = false) {
         for invoice in invoices {
             guard let contentHash = invoice.contentHash,
                   (force || invoice.canPreExtractText),

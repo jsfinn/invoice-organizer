@@ -46,7 +46,7 @@ enum InboxFileScanner {
             let contentHash = try? FileHasher.sha256(for: fileURL)
 
             return ScannedInvoiceFile(
-                id: InvoiceItem.stableID(for: fileURL),
+                id: PhysicalArtifact.stableID(for: fileURL),
                 name: fileURL.lastPathComponent,
                 fileURL: fileURL,
                 location: location,
@@ -62,7 +62,7 @@ enum InboxFileScanner {
         return scannedFiles.sorted { $0.addedAt > $1.addedAt }
     }
 
-    static func makeActiveInvoice(from file: ScannedInvoiceFile, workflow: StoredInvoiceWorkflow?, duplicateInfo: InvoiceDuplicateInfo?) -> InvoiceItem {
+    static func makeActiveInvoice(from file: ScannedInvoiceFile, workflow: StoredInvoiceWorkflow?, duplicateInfo: InvoiceDuplicateInfo?) -> PhysicalArtifact {
         let status: InvoiceStatus
         if duplicateInfo != nil {
             status = .blockedDuplicate
@@ -72,7 +72,7 @@ enum InboxFileScanner {
             status = .unprocessed
         }
 
-        return InvoiceItem(
+        return PhysicalArtifact(
             name: file.name,
             fileURL: file.fileURL,
             location: file.location,
@@ -89,8 +89,8 @@ enum InboxFileScanner {
         )
     }
 
-    static func makeProcessedInvoice(from file: ScannedInvoiceFile, workflow: StoredInvoiceWorkflow?) -> InvoiceItem {
-        InvoiceItem(
+    static func makeProcessedInvoice(from file: ScannedInvoiceFile, workflow: StoredInvoiceWorkflow?) -> PhysicalArtifact {
+        PhysicalArtifact(
             name: file.name,
             fileURL: file.fileURL,
             location: .processed,

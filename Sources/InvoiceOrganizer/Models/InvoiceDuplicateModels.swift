@@ -5,6 +5,18 @@ struct InvoiceDuplicateInfo: Equatable, Sendable {
     let reason: String
 }
 
+struct InvoiceDuplicateSimilarity: Identifiable, Equatable, Sendable {
+    let documentID: String
+    let matchedArtifactID: String
+    let matchedFileURL: URL
+    let matchedLocation: InvoiceLocation
+    let memberCount: Int
+    let score: Double
+    let meetsThreshold: Bool
+
+    var id: String { documentID }
+}
+
 struct InvoiceDuplicateGroup: Equatable, Identifiable, Sendable {
     let members: [InvoiceDuplicateMember]
 

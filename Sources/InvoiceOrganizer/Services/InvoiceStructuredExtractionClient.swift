@@ -438,7 +438,7 @@ private func makeLocalCalendarDate(year: Int, month: Int, day: Int) -> Date? {
     ))
 }
 
-private func parseDocumentType(_ rawValue: String?) -> InvoiceDocumentType? {
+private func parseDocumentType(_ rawValue: String?) -> DocumentType? {
     guard let normalizedValue = normalizeField(rawValue)?.lowercased() else { return nil }
 
     switch normalizedValue {
