@@ -34,6 +34,16 @@ struct MetadataCard: View {
         }
     }
 
+    private var shouldShowOCRComparison: Bool {
+        guard let extractedTextRecord,
+              extractedTextRecord.source == .ocr,
+              let originalText = extractedTextRecord.ocrOriginalText else {
+            return false
+        }
+
+        return originalText != extractedTextRecord.text
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Metadata")
@@ -50,6 +60,21 @@ struct MetadataCard: View {
             if let extractedTextSourceLabel {
                 LabeledContent("Text Source", value: extractedTextSourceLabel)
             }
+            if shouldShowOCRComparison, let extractedTextRecord {
+                DisclosureGroup("OCR Text Comparison") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Active OCR Text")
+                            .font(.headline)
+                        selectableTextBlock(extractedTextRecord.text)
+
+                        Text("Original Vision Order")
+                            .font(.headline)
+                        selectableTextBlock(extractedTextRecord.ocrOriginalText ?? "")
+                    }
+                    .padding(.top, 6)
+                }
+                .font(.headline)
+            }
 
             if let duplicateReason = invoice.duplicateReason {
                 Text(duplicateReason)
@@ -58,50 +83,62 @@ struct MetadataCard: View {
             }
 
             if invoice.location != .processed {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Dedup Scores")
-                        .font(.headline)
-
-                    Text("Threshold: \(model.duplicateSimilarityThreshold.formatted(.number.precision(.fractionLength(2))))")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    if !model.extractedTextArtifactIDs.contains(invoice.id) {
-                        Text("Score unavailable until OCR/extracted text finishes.")
+                DisclosureGroup("Dedup Scores") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Threshold: \(model.duplicateSimilarityThreshold.formatted(.number.precision(.fractionLength(2))))")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
-                    } else if duplicateSimilarities.isEmpty {
-                        Text("No comparable extracted-text matches found yet.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(duplicateSimilarities) { similarity in
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(alignment: .firstTextBaseline) {
-                                    Text(similarity.matchedFileURL.lastPathComponent)
-                                        .lineLimit(1)
 
-                                    Spacer()
+                        if !model.extractedTextArtifactIDs.contains(invoice.id) {
+                            Text("Score unavailable until OCR/extracted text finishes.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        } else if duplicateSimilarities.isEmpty {
+                            Text("No comparable extracted-text matches found yet.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(duplicateSimilarities) { similarity in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(alignment: .firstTextBaseline) {
+                                        Text(similarity.matchedFileURL.lastPathComponent)
+                                            .lineLimit(1)
 
-                                    Text(similarity.score.formatted(.number.precision(.fractionLength(2))))
-                                        .foregroundStyle(similarity.meetsThreshold ? .primary : .secondary)
+                                        Spacer()
+
+                                        Text(similarity.score.formatted(.number.precision(.fractionLength(2))))
+                                            .foregroundStyle(similarity.meetsThreshold ? .primary : .secondary)
+                                    }
+
+                                    Text(similarity.artifactCount == 1
+                                         ? "Best match in 1-file document"
+                                         : "Best match in \(similarity.artifactCount)-file document")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
-
-                                Text(similarity.artifactCount == 1
-                                     ? "Best match in 1-file document"
-                                     : "Best match in \(similarity.artifactCount)-file document")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                .font(.footnote)
                             }
-                            .font(.footnote)
                         }
                     }
+                    .padding(.top, 6)
                 }
+                .font(.headline)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(.quaternary.opacity(0.25))
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    @ViewBuilder
+    private func selectableTextBlock(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.monospaced())
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(.quaternary.opacity(0.2))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .textSelection(.enabled)
     }
 }

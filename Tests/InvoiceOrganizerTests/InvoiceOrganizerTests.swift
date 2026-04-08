@@ -1858,11 +1858,11 @@ private final class RecordingPreviewPersistHandler {
         },
         recognizePDFText: { _ in
             callLog.append("pdfOCR")
-            return OCRTextResult(text: "Should not run", confidence: 0.25)
+            return OCRTextResult(text: "Should not run", originalText: nil, confidence: 0.25)
         },
         recognizeImageText: { _ in
             callLog.append("imageOCR")
-            return OCRTextResult(text: "Should not run", confidence: 0.25)
+            return OCRTextResult(text: "Should not run", originalText: nil, confidence: 0.25)
         }
     )
 
@@ -1883,7 +1883,11 @@ private final class RecordingPreviewPersistHandler {
         },
         recognizePDFText: { _ in
             callLog.append("pdfOCR")
-            return OCRTextResult(text: "Scanned Invoice\nTotal 42.00", confidence: 0.74)
+            return OCRTextResult(
+                text: "Scanned Invoice\nTotal 42.00",
+                originalText: "Scanned Invoice\nTotal 42.00",
+                confidence: 0.74
+            )
         },
         recognizeImageText: { _ in
             callLog.append("imageOCR")
@@ -1897,6 +1901,38 @@ private final class RecordingPreviewPersistHandler {
     #expect(record?.text == "Scanned Invoice\nTotal 42.00")
     #expect(record?.ocrConfidence == 0.74)
     #expect(callLog.snapshot() == ["pdfText", "pdfOCR"])
+}
+
+@Test func layoutOrderedTextGroupsInlineHeaderFieldsByRow() {
+    let observations = [
+        OCRLineObservation(
+            text: "ROUTE",
+            confidence: 0.99,
+            boundingBox: CGRect(x: 0.10, y: 0.78, width: 0.10, height: 0.03)
+        ),
+        OCRLineObservation(
+            text: "3319",
+            confidence: 0.99,
+            boundingBox: CGRect(x: 0.10, y: 0.72, width: 0.08, height: 0.03)
+        ),
+        OCRLineObservation(
+            text: "INVOICE NO.",
+            confidence: 0.99,
+            boundingBox: CGRect(x: 0.55, y: 0.78, width: 0.18, height: 0.03)
+        ),
+        OCRLineObservation(
+            text: "3432354",
+            confidence: 0.99,
+            boundingBox: CGRect(x: 0.55, y: 0.72, width: 0.12, height: 0.03)
+        )
+    ]
+
+    let ordered = layoutOrderedText(for: observations)
+
+    #expect(ordered == """
+    ROUTE INVOICE NO.
+    3319 3432354
+    """)
 }
 
 @Test func invoiceTextExtractionQueueProcessesQueuedInvoices() async throws {

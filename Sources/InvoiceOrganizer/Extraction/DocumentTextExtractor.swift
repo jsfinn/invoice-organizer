@@ -13,6 +13,7 @@ struct InvoiceTextRecord: Codable, Equatable, Sendable {
     let text: String
     let source: InvoiceTextSource
     let ocrConfidence: Double?
+    let ocrOriginalText: String?
     let extractedAt: Date
     let schemaVersion: Int
 
@@ -20,12 +21,14 @@ struct InvoiceTextRecord: Codable, Equatable, Sendable {
         text: String,
         source: InvoiceTextSource,
         ocrConfidence: Double? = nil,
+        ocrOriginalText: String? = nil,
         extractedAt: Date = .now,
-        schemaVersion: Int = 2
+        schemaVersion: Int = 3
     ) {
         self.text = text
         self.source = source
         self.ocrConfidence = ocrConfidence
+        self.ocrOriginalText = ocrOriginalText
         self.extractedAt = extractedAt
         self.schemaVersion = schemaVersion
     }
@@ -62,7 +65,12 @@ struct DocumentTextExtractor: DocumentTextExtracting {
 
             if let ocrResult = try await recognizePDFText(fileURL),
                let text = Self.normalizeText(ocrResult.text) {
-                return InvoiceTextRecord(text: text, source: .ocr, ocrConfidence: ocrResult.confidence)
+                return InvoiceTextRecord(
+                    text: text,
+                    source: .ocr,
+                    ocrConfidence: ocrResult.confidence,
+                    ocrOriginalText: Self.normalizeText(ocrResult.originalText)
+                )
             }
 
             return nil
@@ -72,7 +80,12 @@ struct DocumentTextExtractor: DocumentTextExtracting {
                   let text = Self.normalizeText(ocrResult.text) else {
                 return nil
             }
-            return InvoiceTextRecord(text: text, source: .ocr, ocrConfidence: ocrResult.confidence)
+            return InvoiceTextRecord(
+                text: text,
+                source: .ocr,
+                ocrConfidence: ocrResult.confidence,
+                ocrOriginalText: Self.normalizeText(ocrResult.originalText)
+            )
         }
     }
 
@@ -147,7 +160,8 @@ private enum VisionInvoiceOCR {
         guard !images.isEmpty else { return nil }
 
         return try await Task.detached(priority: .utility) {
-            var chunks: [String] = []
+            var reflowedChunks: [String] = []
+            var originalChunks: [String] = []
             var weightedConfidenceSum = 0.0
             var weightedConfidenceCount = 0
 
@@ -159,8 +173,8 @@ private enum VisionInvoiceOCR {
                 let handler = VNImageRequestHandler(cgImage: image)
                 try handler.perform([request])
 
-                let pageLines = (request.results ?? [])
-                    .compactMap { observation -> String? in
+                let observations = (request.results ?? [])
+                    .compactMap { observation -> OCRLineObservation? in
                         guard let candidate = observation.topCandidates(1).first else {
                             return nil
                         }
@@ -170,24 +184,40 @@ private enum VisionInvoiceOCR {
 
                         weightedConfidenceSum += Double(candidate.confidence) * Double(line.count)
                         weightedConfidenceCount += line.count
-                        return line
+                        return OCRLineObservation(
+                            text: line,
+                            confidence: Double(candidate.confidence),
+                            boundingBox: observation.boundingBox
+                        )
                     }
-                let recognizedText = pageLines
+                let originalPageText = observations
+                    .map(\.text)
                     .joined(separator: "\n")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
+                let reflowedPageText = layoutOrderedText(for: observations)
 
-                if !recognizedText.isEmpty {
-                    chunks.append(recognizedText)
+                if !originalPageText.isEmpty {
+                    originalChunks.append(originalPageText)
+                }
+
+                if !reflowedPageText.isEmpty {
+                    reflowedChunks.append(reflowedPageText)
                 }
             }
 
-            let combined = chunks.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !combined.isEmpty else { return nil }
+            let reflowedText = reflowedChunks.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            let originalText = originalChunks.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            let chosenText = reflowedText.isEmpty ? originalText : reflowedText
+            guard !chosenText.isEmpty else { return nil }
 
             let confidence = weightedConfidenceCount > 0
                 ? weightedConfidenceSum / Double(weightedConfidenceCount)
                 : nil
-            return OCRTextResult(text: combined, confidence: confidence)
+            return OCRTextResult(
+                text: chosenText,
+                originalText: originalText.isEmpty ? nil : originalText,
+                confidence: confidence
+            )
         }.value
     }
 
@@ -230,5 +260,92 @@ private enum VisionInvoiceOCR {
 
 struct OCRTextResult: Equatable, Sendable {
     let text: String
+    let originalText: String?
     let confidence: Double?
+}
+
+struct OCRLineObservation: Equatable, Sendable {
+    let text: String
+    let confidence: Double
+    let boundingBox: CGRect
+
+    var midY: Double {
+        Double(boundingBox.midY)
+    }
+
+    var minX: Double {
+        Double(boundingBox.minX)
+    }
+
+    var height: Double {
+        Double(boundingBox.height)
+    }
+}
+
+func layoutOrderedText(for observations: [OCRLineObservation]) -> String {
+    guard !observations.isEmpty else { return "" }
+
+    var rows: [OCRRow] = []
+    let sorted = observations.sorted { lhs, rhs in
+        if abs(lhs.midY - rhs.midY) > 0.0001 {
+            return lhs.midY > rhs.midY
+        }
+
+        return lhs.minX < rhs.minX
+    }
+
+    for observation in sorted {
+        if let index = rows.firstIndex(where: { $0.accepts(observation) }) {
+            rows[index].append(observation)
+        } else {
+            rows.append(OCRRow(observation: observation))
+        }
+    }
+
+    return rows
+        .sorted { lhs, rhs in
+            if abs(lhs.midY - rhs.midY) > 0.0001 {
+                return lhs.midY > rhs.midY
+            }
+
+            return lhs.minX < rhs.minX
+        }
+        .map(\.text)
+        .filter { !$0.isEmpty }
+        .joined(separator: "\n")
+}
+
+private struct OCRRow {
+    private(set) var observations: [OCRLineObservation]
+    private(set) var midY: Double
+    private(set) var averageHeight: Double
+
+    init(observation: OCRLineObservation) {
+        observations = [observation]
+        midY = observation.midY
+        averageHeight = observation.height
+    }
+
+    var minX: Double {
+        observations.map(\.minX).min() ?? 0
+    }
+
+    var text: String {
+        observations
+            .sorted { lhs, rhs in lhs.minX < rhs.minX }
+            .map(\.text)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func accepts(_ observation: OCRLineObservation) -> Bool {
+        let tolerance = max(averageHeight * 0.7, 0.02)
+        return abs(observation.midY - midY) <= tolerance
+    }
+
+    mutating func append(_ observation: OCRLineObservation) {
+        observations.append(observation)
+        midY = observations.map(\.midY).reduce(0, +) / Double(observations.count)
+        averageHeight = observations.map(\.height).reduce(0, +) / Double(observations.count)
+    }
 }
