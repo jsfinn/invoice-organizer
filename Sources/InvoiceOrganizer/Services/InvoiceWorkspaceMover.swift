@@ -5,6 +5,10 @@ enum InvoiceWorkspaceMover {
         try move(invoice, to: processingRoot)
     }
 
+    static func moveToDuplicates(_ invoice: InvoiceItem, duplicatesRoot: URL) throws -> URL {
+        try move(invoice, to: duplicatesRoot)
+    }
+
     static func moveToInbox(_ invoice: InvoiceItem, inboxRoot: URL) throws -> URL {
         try move(invoice, to: inboxRoot)
     }

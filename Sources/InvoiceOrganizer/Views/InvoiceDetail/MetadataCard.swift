@@ -4,6 +4,10 @@ struct MetadataCard: View {
     @ObservedObject var model: AppModel
     let invoice: InvoiceItem
 
+    private var document: InvoiceDocument? {
+        model.document(for: invoice.id)
+    }
+
     private var processedFolderPath: String? {
         switch invoice.location {
         case .inbox:
@@ -28,6 +32,9 @@ struct MetadataCard: View {
             Text("Metadata")
                 .font(.title3.bold())
 
+            if let document {
+                LabeledContent("Document Members", value: "\(document.members.count)")
+            }
             LabeledContent("Source Path", value: invoice.fileURL.path)
             if let processedFolderPath {
                 LabeledContent("Processed Folder", value: processedFolderPath)

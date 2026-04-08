@@ -9,6 +9,7 @@ final class AppModel: ObservableObject {
     @Published var llmSettings: LLMSettings
     @Published var settingsErrorMessage: String?
     @Published private(set) var llmPreflightStatus: LLMPreflightStatus
+    @Published private(set) var documents: [InvoiceDocument] = []
     @Published private(set) var duplicateGroups: [InvoiceDuplicateGroup] = []
     @Published private(set) var extractedTextHashes: Set<String> = []
     @Published private(set) var structuredDataHashes: Set<String> = []
@@ -27,7 +28,8 @@ final class AppModel: ObservableObject {
     private var extractedTextByHash: [String: InvoiceTextRecord] = [:]
     private var structuredDataByHash: [String: InvoiceStructuredDataRecord] = [:]
     private var workflowByID: [String: StoredInvoiceWorkflow]
-    private var rescannedInvoiceIDsByHash: [String: Set<InvoiceItem.ID>] = [:]
+    private var rescannedDocumentContextsByID: [InvoiceDocument.ID: DocumentRescanContext] = [:]
+    private var rescannedDocumentIDsByHash: [String: Set<InvoiceDocument.ID>] = [:]
     private var watcher: FileSystemWatcher?
     private var refreshTask: Task<Void, Never>?
     private var suppressWatcherRefreshUntil: Date?
@@ -73,6 +75,7 @@ final class AppModel: ObservableObject {
             await textExtractionQueue.setOnRequestFailed { contentHash in
                 self.textPendingHashes.remove(contentHash)
                 self.textFailedHashes.insert(contentHash)
+                self.handleRescannedDocumentContentHashCompleted(contentHash)
                 self.applyDuplicateStateFromExtractedText()
             }
             await structuredExtractionQueue.setOnRequestStarted { contentHash in
@@ -85,7 +88,7 @@ final class AppModel: ObservableObject {
             await structuredExtractionQueue.setOnRequestFailed { contentHash, status in
                 self.structuredPendingHashes.remove(contentHash)
                 self.structuredFailedHashes.insert(contentHash)
-                self.rescannedInvoiceIDsByHash.removeValue(forKey: contentHash)
+                self.handleRescannedDocumentContentHashCompleted(contentHash)
                 self.llmPreflightStatus = status
             }
         }
@@ -138,6 +141,10 @@ final class AppModel: ObservableObject {
     var selectedInvoice: InvoiceItem? {
         guard let selectedInvoiceID else { return nil }
         return invoices.first(where: { $0.id == selectedInvoiceID })
+    }
+
+    func document(for invoiceID: InvoiceItem.ID) -> InvoiceDocument? {
+        documentByInvoiceID[invoiceID]
     }
 
     var visibleInvoices: [InvoiceItem] {
@@ -199,7 +206,7 @@ final class AppModel: ObservableObject {
     var duplicateBadgeTitlesByInvoiceID: [InvoiceItem.ID: String] {
         return Dictionary(
             uniqueKeysWithValues: invoices.compactMap { invoice in
-                guard let title = duplicateGroupByInvoiceID[invoice.id]?.badgeTitle(for: invoice.id) else {
+                guard let title = documentByInvoiceID[invoice.id]?.badgeTitle(for: invoice.id) else {
                     return nil
                 }
 
@@ -211,8 +218,8 @@ final class AppModel: ObservableObject {
     var knownVendors: [String] {
         Array(
             Set(
-                invoices.compactMap { invoice in
-                    let trimmed = invoice.vendor?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                documents.compactMap { document in
+                    let trimmed = document.metadata.vendor?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     return trimmed.isEmpty ? nil : trimmed
                 }
             )
@@ -223,7 +230,10 @@ final class AppModel: ObservableObject {
     }
 
     var hasRequiredFolders: Bool {
-        folderSettings.inboxURL != nil && folderSettings.processingURL != nil && folderSettings.processedURL != nil
+        folderSettings.inboxURL != nil &&
+        folderSettings.processingURL != nil &&
+        folderSettings.processedURL != nil &&
+        folderSettings.duplicatesURL != nil
     }
 
     var inboxFolderDisplayPath: String {
@@ -236,6 +246,10 @@ final class AppModel: ObservableObject {
 
     var processingFolderDisplayPath: String {
         folderSettings.processingURL?.path ?? "Not selected"
+    }
+
+    var duplicatesFolderDisplayPath: String {
+        folderSettings.duplicatesURL?.path ?? "Not selected"
     }
 
     var isWatchingFolders: Bool {
@@ -455,28 +469,52 @@ final class AppModel: ObservableObject {
     }
 
     func moveSelectedToInProgress() {
-        moveInvoicesToInProgress(ids: selectedInvoiceIDs, switchToQueue: true)
+        let orderedSelectedIDs = visibleInvoices
+            .map(\.id)
+            .filter { selectedInvoiceIDs.contains($0) }
+        moveInvoicesToInProgress(ids: orderedSelectedIDs)
     }
 
     func rescanInvoices(ids: Set<InvoiceItem.ID>) async {
         await queueHandlerSetupTask?.value
         let selectedInvoices = invoices.filter { ids.contains($0.id) }
-        let contentHashes = Set(selectedInvoices.compactMap(\.contentHash))
-        guard !contentHashes.isEmpty else { return }
+        guard !selectedInvoices.isEmpty else { return }
 
-        for invoice in selectedInvoices {
-            guard let contentHash = invoice.contentHash else { continue }
-            let existingWorkflow = workflowByID[invoice.id]
-            let clearedWorkflow = StoredInvoiceWorkflow(
-                vendor: nil,
-                invoiceDate: nil,
-                invoiceNumber: nil,
-                documentType: nil,
-                isInProgress: existingWorkflow?.isInProgress ?? false
-            )
-            let rescannedInvoiceID = applyWorkflow(clearedWorkflow, to: invoice.id) ?? invoice.id
-            rescannedInvoiceIDsByHash[contentHash, default: []].insert(rescannedInvoiceID)
+        let selectedInvoicesByDocumentID = Dictionary(grouping: selectedInvoices, by: \.documentID)
+        var invoicesToRescan: [InvoiceItem] = []
+        var contentHashes: Set<String> = []
+
+        for (documentID, documentInvoices) in selectedInvoicesByDocumentID {
+            guard let document = documentByID[documentID] else { continue }
+            let selectedMemberIDs = Set(documentInvoices.map(\.id))
+            let documentMemberIDs = document.memberIDs
+            let shouldClearDocumentMetadata = selectedMemberIDs == documentMemberIDs
+
+            if shouldClearDocumentMetadata {
+                clearDocumentMetadata(for: document.id)
+                let rescannedMembers = invoices.filter { documentMemberIDs.contains($0.id) }
+                let rescannedHashes = Set(rescannedMembers.compactMap(\.contentHash))
+
+                invoicesToRescan.append(contentsOf: rescannedMembers)
+                contentHashes.formUnion(rescannedHashes)
+
+                if !rescannedHashes.isEmpty {
+                    rescannedDocumentContextsByID[document.id] = DocumentRescanContext(
+                        documentID: document.id,
+                        memberIDs: documentMemberIDs,
+                        pendingContentHashes: rescannedHashes
+                    )
+                    for contentHash in rescannedHashes {
+                        rescannedDocumentIDsByHash[contentHash, default: []].insert(document.id)
+                    }
+                }
+            } else {
+                invoicesToRescan.append(contentsOf: documentInvoices)
+                contentHashes.formUnion(documentInvoices.compactMap(\.contentHash))
+            }
         }
+
+        guard !contentHashes.isEmpty else { return }
 
         for contentHash in contentHashes {
             await textStore.removeCachedText(forContentHash: contentHash)
@@ -494,7 +532,7 @@ final class AppModel: ObservableObject {
         applyDuplicateStateFromExtractedText()
 
         await textExtractionQueue.enqueue(
-            invoices: selectedInvoices,
+            invoices: Array(Dictionary(uniqueKeysWithValues: invoicesToRescan.map { ($0.id, $0) }).values),
             knownCachedHashes: extractedTextHashes.union(textFailedHashes),
             force: true
         )
@@ -517,18 +555,35 @@ final class AppModel: ObservableObject {
         ignoredInvoiceIDs.contains(invoiceID)
     }
 
-    func moveInvoicesToInProgress(ids: Set<InvoiceItem.ID>, switchToQueue: Bool = false) {
-        let eligibleIDs = Set(invoices.filter { ids.contains($0.id) && $0.canMoveToInProgress }.map(\.id))
-        guard !eligibleIDs.isEmpty else { return }
+    func moveInvoicesToInProgress(ids: Set<InvoiceItem.ID>) {
+        moveInvoicesToInProgress(
+            ids: orderedInvoiceIDsForProcessingMove(from: ids)
+        )
+    }
+
+    func moveInvoicesToInProgress(ids: [InvoiceItem.ID]) {
+        let invoiceByID = Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
+        let eligibleInvoices = ids.compactMap { invoiceByID[$0] }.filter(\.canMoveToInProgress)
+        guard !eligibleInvoices.isEmpty else { return }
         guard let processingRoot = folderSettings.processingURL else {
             settingsErrorMessage = "Choose a Processing folder before moving invoices into In Progress."
+            return
+        }
+        guard let duplicatesRoot = folderSettings.duplicatesURL else {
+            settingsErrorMessage = "Choose a Duplicates folder before moving invoices into In Progress."
             return
         }
 
         do {
             var movedIDs: Set<InvoiceItem.ID> = []
+            let movePlan = processingMovePlan(for: eligibleInvoices.map(\.id))
 
-            for invoice in invoices where eligibleIDs.contains(invoice.id) {
+            for invoice in invoices where movePlan.duplicateIDs.contains(invoice.id) {
+                _ = try InvoiceWorkspaceMover.moveToDuplicates(invoice, duplicatesRoot: duplicatesRoot)
+            }
+
+            for invoiceID in movePlan.processingIDs {
+                guard let invoice = invoiceByID[invoiceID] else { continue }
                 let destinationURL = try InvoiceWorkspaceMover.moveToProcessing(invoice, processingRoot: processingRoot)
                 let oldID = invoice.id
                 var finalURL = destinationURL
@@ -573,9 +628,6 @@ final class AppModel: ObservableObject {
 
             persistWorkflow()
             settingsErrorMessage = nil
-            if switchToQueue {
-                selectedQueueTab = .inProgress
-            }
             refreshLibrary()
             selectedInvoiceIDs = movedIDs
         } catch {
@@ -583,7 +635,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func moveInvoicesToUnprocessed(ids: Set<InvoiceItem.ID>, switchToQueue: Bool = false) {
+    func moveInvoicesToUnprocessed(ids: Set<InvoiceItem.ID>) {
         guard !ids.isEmpty else { return }
         guard let inboxRoot = folderSettings.inboxURL else {
             settingsErrorMessage = "Choose an Inbox folder before moving invoices back to Unprocessed."
@@ -615,9 +667,6 @@ final class AppModel: ObservableObject {
 
             persistWorkflow()
             settingsErrorMessage = nil
-            if switchToQueue {
-                selectedQueueTab = .unprocessed
-            }
             refreshLibrary()
             selectedInvoiceIDs = movedIDs
         } catch {
@@ -625,7 +674,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func moveInvoicesToProcessed(ids: Set<InvoiceItem.ID>, switchToQueue: Bool = false) {
+    func moveInvoicesToProcessed(ids: Set<InvoiceItem.ID>) {
         guard !ids.isEmpty else { return }
         guard let processedRoot = folderSettings.processedURL else {
             settingsErrorMessage = "Choose a Processed folder before archiving invoices."
@@ -675,9 +724,6 @@ final class AppModel: ObservableObject {
 
             persistWorkflow()
             settingsErrorMessage = nil
-            if switchToQueue {
-                selectedQueueTab = .processed
-            }
             refreshLibrary()
             selectedInvoiceIDs = archivedIDs
         } catch {
@@ -693,17 +739,14 @@ final class AppModel: ObservableObject {
 
         let trimmedVendor = vendor.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedVendor = trimmedVendor.isEmpty ? nil : trimmedVendor
-        guard invoice.vendor != normalizedVendor else {
+        guard let document = documentByInvoiceID[invoiceID],
+              document.metadata.vendor != normalizedVendor else {
             return
         }
 
-        var workflow = workflowByID[invoiceID] ?? StoredInvoiceWorkflow(vendor: nil, invoiceDate: nil, invoiceNumber: nil, documentType: nil, isInProgress: false)
-        workflow.vendor = normalizedVendor
-        workflow.invoiceDate = workflow.invoiceDate ?? invoice.invoiceDate
-        workflow.invoiceNumber = workflow.invoiceNumber ?? invoice.invoiceNumber
-        workflow.documentType = workflow.documentType ?? invoice.documentType
-        workflow.isInProgress = false
-        applyWorkflow(workflow, to: invoiceID)
+        var metadata = document.metadata
+        metadata.vendor = normalizedVendor
+        setDocumentMetadata(metadata, for: document.id, renameProcessingFiles: true)
     }
 
     func updateInvoiceDate(_ invoiceDate: Date, for invoiceID: InvoiceItem.ID) {
@@ -712,18 +755,18 @@ final class AppModel: ObservableObject {
             return
         }
 
-        let currentInvoiceDate = invoice.invoiceDate ?? invoice.addedAt
+        guard let document = documentByInvoiceID[invoiceID] else {
+            return
+        }
+
+        let currentInvoiceDate = document.metadata.invoiceDate ?? invoice.addedAt
         guard currentInvoiceDate != invoiceDate else {
             return
         }
 
-        var workflow = workflowByID[invoiceID] ?? StoredInvoiceWorkflow(vendor: nil, invoiceDate: nil, invoiceNumber: nil, documentType: nil, isInProgress: false)
-        workflow.vendor = workflow.vendor ?? invoice.vendor
-        workflow.invoiceDate = invoiceDate
-        workflow.invoiceNumber = workflow.invoiceNumber ?? invoice.invoiceNumber
-        workflow.documentType = workflow.documentType ?? invoice.documentType
-        workflow.isInProgress = false
-        applyWorkflow(workflow, to: invoiceID)
+        var metadata = document.metadata
+        metadata.invoiceDate = invoiceDate
+        setDocumentMetadata(metadata, for: document.id, renameProcessingFiles: true)
     }
 
     func updateInvoiceNumber(_ invoiceNumber: String, for invoiceID: InvoiceItem.ID) {
@@ -733,17 +776,14 @@ final class AppModel: ObservableObject {
         }
 
         let normalizedInvoiceNumber = normalizedInvoiceNumber(from: invoiceNumber)
-        guard invoice.invoiceNumber != normalizedInvoiceNumber else {
+        guard let document = documentByInvoiceID[invoiceID],
+              document.metadata.invoiceNumber != normalizedInvoiceNumber else {
             return
         }
 
-        var workflow = workflowByID[invoiceID] ?? StoredInvoiceWorkflow(vendor: nil, invoiceDate: nil, invoiceNumber: nil, documentType: nil, isInProgress: false)
-        workflow.vendor = workflow.vendor ?? invoice.vendor
-        workflow.invoiceDate = workflow.invoiceDate ?? invoice.invoiceDate
-        workflow.invoiceNumber = normalizedInvoiceNumber
-        workflow.documentType = workflow.documentType ?? invoice.documentType
-        workflow.isInProgress = false
-        applyWorkflow(workflow, to: invoiceID)
+        var metadata = document.metadata
+        metadata.invoiceNumber = normalizedInvoiceNumber
+        setDocumentMetadata(metadata, for: document.id, renameProcessingFiles: invoice.location == .processing)
     }
 
     func updateDocumentType(_ documentType: InvoiceDocumentType?, for invoiceID: InvoiceItem.ID) {
@@ -752,17 +792,14 @@ final class AppModel: ObservableObject {
             return
         }
 
-        guard invoice.documentType != documentType else {
+        guard let document = documentByInvoiceID[invoiceID],
+              document.metadata.documentType != documentType else {
             return
         }
 
-        var workflow = workflowByID[invoiceID] ?? StoredInvoiceWorkflow(vendor: nil, invoiceDate: nil, invoiceNumber: nil, documentType: nil, isInProgress: false)
-        workflow.vendor = workflow.vendor ?? invoice.vendor
-        workflow.invoiceDate = workflow.invoiceDate ?? invoice.invoiceDate
-        workflow.invoiceNumber = workflow.invoiceNumber ?? invoice.invoiceNumber
-        workflow.documentType = documentType
-        workflow.isInProgress = false
-        applyWorkflow(workflow, to: invoiceID)
+        var metadata = document.metadata
+        metadata.documentType = documentType
+        setDocumentMetadata(metadata, for: document.id, renameProcessingFiles: false)
     }
 
     func persistPreviewRotation(for invoiceID: InvoiceItem.ID, quarterTurns: Int) async -> PreviewRotationSaveResult? {
@@ -841,6 +878,7 @@ final class AppModel: ObservableObject {
         await queueHandlerSetupTask?.value
         guard let inboxURL = folderSettings.inboxURL else {
             invoices = []
+            documents = []
             duplicateGroups = []
             extractedTextHashes = []
             extractedTextByHash = [:]
@@ -857,6 +895,7 @@ final class AppModel: ObservableObject {
 
         let processedURL = folderSettings.processedURL
         let processingURL = folderSettings.processingURL
+        let duplicatesURL = folderSettings.duplicatesURL
         let workflowSnapshot = workflowByID
 
         do {
@@ -865,7 +904,7 @@ final class AppModel: ObservableObject {
                     in: inboxURL,
                     location: .inbox,
                     recursive: false,
-                    excluding: [processingURL, processedURL].compactMap { $0 }
+                    excluding: [processingURL, processedURL, duplicatesURL].compactMap { $0 }
                 )
                 let processingFiles = try processingURL.map {
                     try InboxFileScanner.scanFiles(in: $0, location: .processing, recursive: false)
@@ -895,16 +934,17 @@ final class AppModel: ObservableObject {
             let cachedTextRecords = await textStore.cachedRecords()
             extractedTextByHash = cachedTextRecords
             extractedTextHashes = Set(cachedTextRecords.keys)
-            applyDuplicateStateFromExtractedText()
             let cachedStructuredRecords = await structuredDataStore.cachedRecords()
             structuredDataByHash = cachedStructuredRecords
             structuredDataHashes = Set(cachedStructuredRecords.keys)
+            applyDuplicateStateFromExtractedText()
             await textExtractionQueue.enqueue(invoices: loadedInvoices, knownCachedHashes: extractedTextHashes.union(textFailedHashes))
             if canAttemptStructuredExtraction(with: llmSettings) {
                 await enqueueStructuredExtraction(for: loadedInvoices)
             }
         } catch {
             invoices = []
+            documents = []
             duplicateGroups = []
             extractedTextHashes = []
             extractedTextByHash = [:]
@@ -966,6 +1006,54 @@ final class AppModel: ObservableObject {
         InvoiceWorkflowStore.save(workflowByID)
     }
 
+    private func orderedInvoiceIDsForProcessingMove(from ids: Set<InvoiceItem.ID>) -> [InvoiceItem.ID] {
+        let visibleOrderedIDs = visibleInvoices
+            .map(\.id)
+            .filter { ids.contains($0) }
+        let visibleOrderedSet = Set(visibleOrderedIDs)
+        let remainingIDs = invoices
+            .map(\.id)
+            .filter { ids.contains($0) && !visibleOrderedSet.contains($0) }
+        return visibleOrderedIDs + remainingIDs
+    }
+
+    private func processingMovePlan(for orderedIDs: [InvoiceItem.ID]) -> (processingIDs: [InvoiceItem.ID], duplicateIDs: Set<InvoiceItem.ID>) {
+        let documentByMemberID = Dictionary(
+            uniqueKeysWithValues: documents.flatMap { document in
+                document.memberIDs.map { ($0, document) }
+            }
+        )
+
+        var processingIDs: [InvoiceItem.ID] = []
+        var duplicateIDs: Set<InvoiceItem.ID> = []
+        var handledDocumentIDs: Set<String> = []
+
+        for invoiceID in orderedIDs {
+            guard let document = documentByMemberID[invoiceID], document.isDuplicate else {
+                processingIDs.append(invoiceID)
+                continue
+            }
+
+            if handledDocumentIDs.insert(document.id).inserted {
+                processingIDs.append(invoiceID)
+                duplicateIDs.formUnion(
+                    document.members.compactMap { member in
+                        guard member.location != .processed,
+                              member.id != invoiceID else {
+                            return nil
+                        }
+
+                        return member.id
+                    }
+                )
+            } else {
+                duplicateIDs.insert(invoiceID)
+            }
+        }
+
+        return (processingIDs, duplicateIDs)
+    }
+
     private var activeQueueTabContext: QueueTabContext {
         queueScreenContext.activeTabContext
     }
@@ -989,12 +1077,38 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private var duplicateGroupByInvoiceID: [InvoiceItem.ID: InvoiceDuplicateGroup] {
+    private var documentByID: [InvoiceDocument.ID: InvoiceDocument] {
+        Dictionary(uniqueKeysWithValues: documents.map { ($0.id, $0) })
+    }
+
+    private var documentByInvoiceID: [InvoiceItem.ID: InvoiceDocument] {
         Dictionary(
-            uniqueKeysWithValues: duplicateGroups.flatMap { group in
-                group.members.map { ($0.id, group) }
+            uniqueKeysWithValues: documents.flatMap { document in
+                document.memberIDs.map { ($0, document) }
             }
         )
+    }
+
+    private var duplicateGroupByInvoiceID: [InvoiceItem.ID: InvoiceDuplicateGroup] {
+        let entries: [(InvoiceItem.ID, InvoiceDuplicateGroup)] = documents.flatMap { document -> [(InvoiceItem.ID, InvoiceDuplicateGroup)] in
+            guard document.isDuplicate else { return [] }
+
+            let group = InvoiceDuplicateGroup(
+                members: document.members.map {
+                    InvoiceDuplicateMember(
+                        id: $0.id,
+                        fileURL: $0.fileURL,
+                        location: $0.location,
+                        addedAt: $0.addedAt,
+                        fileType: $0.fileType
+                    )
+                }
+            )
+
+            return group.members.map { ($0.id, group) }
+        }
+
+        return Dictionary(uniqueKeysWithValues: entries)
     }
 
     private func syncSelectionForVisibleInvoices() {
@@ -1205,6 +1319,7 @@ final class AppModel: ObservableObject {
         defaults.set(folderSettings.inboxURL?.path, forKey: UserDefaultsKey.inboxPath)
         defaults.set(folderSettings.processedURL?.path, forKey: UserDefaultsKey.processedPath)
         defaults.set(folderSettings.processingURL?.path, forKey: UserDefaultsKey.processingPath)
+        defaults.set(folderSettings.duplicatesURL?.path, forKey: UserDefaultsKey.duplicatesPath)
     }
 
     private func persistIgnoredInvoiceIDs() {
@@ -1226,7 +1341,8 @@ final class AppModel: ObservableObject {
         return FolderSettings(
             inboxURL: defaults.string(forKey: UserDefaultsKey.inboxPath).map { URL(fileURLWithPath: $0) },
             processedURL: defaults.string(forKey: UserDefaultsKey.processedPath).map { URL(fileURLWithPath: $0) },
-            processingURL: defaults.string(forKey: UserDefaultsKey.processingPath).map { URL(fileURLWithPath: $0) }
+            processingURL: defaults.string(forKey: UserDefaultsKey.processingPath).map { URL(fileURLWithPath: $0) },
+            duplicatesURL: defaults.string(forKey: UserDefaultsKey.duplicatesPath).map { URL(fileURLWithPath: $0) }
         )
     }
 
@@ -1318,14 +1434,36 @@ final class AppModel: ObservableObject {
     }
 
     private func applyDuplicateStateFromExtractedText() {
-        duplicateGroups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
+        let detectedGroups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
             for: invoices,
             textRecordsByContentHash: extractedTextByHash
         )
+        documents = buildDocuments(from: invoices, duplicateGroups: detectedGroups)
+        duplicateGroups = documents.compactMap { document in
+            guard document.isDuplicate else { return nil }
+            return InvoiceDuplicateGroup(
+                members: document.members.map {
+                    InvoiceDuplicateMember(
+                        id: $0.id,
+                        fileURL: $0.fileURL,
+                        location: $0.location,
+                        addedAt: $0.addedAt,
+                        fileType: $0.fileType
+                    )
+                }
+            )
+        }
 
         for index in invoices.indices {
             let invoiceID = invoices[index].id
+            let document = documentByInvoiceID[invoiceID]
             let duplicateGroup = duplicateGroupByInvoiceID[invoiceID]
+
+            invoices[index].documentID = document?.id ?? invoices[index].id
+            invoices[index].vendor = document?.metadata.vendor
+            invoices[index].invoiceDate = document?.metadata.invoiceDate
+            invoices[index].invoiceNumber = document?.metadata.invoiceNumber
+            invoices[index].documentType = document?.metadata.documentType
 
             if let duplicateInfo = duplicateGroup?.duplicateInfo(for: invoiceID) {
                 invoices[index].status = .blockedDuplicate
@@ -1356,70 +1494,264 @@ final class AppModel: ObservableObject {
         structuredFailedHashes.remove(contentHash)
         structuredDataHashes.insert(contentHash)
         structuredDataByHash[contentHash] = record
-        applyRescannedStructuredDataIfNeeded(contentHash: contentHash, record: record)
+        handleRescannedDocumentContentHashCompleted(contentHash)
         applyStructuredDataIfNeeded(contentHash: contentHash, record: record)
     }
 
     private func applyStructuredDataIfNeeded(contentHash: String, record: InvoiceStructuredDataRecord) {
-        let matchingInvoices = invoices.filter { $0.contentHash == contentHash && $0.location == .inbox }
+        let matchingInvoices = invoices.filter { $0.contentHash == contentHash }
 
         for invoice in matchingInvoices {
-            var workflow = workflowByID[invoice.id] ?? StoredInvoiceWorkflow(
-                vendor: invoice.vendor,
-                invoiceDate: invoice.invoiceDate,
-                invoiceNumber: invoice.invoiceNumber,
-                documentType: invoice.documentType,
-                isInProgress: false
-            )
-            var didChange = false
+            guard let document = documentByInvoiceID[invoice.id] else { continue }
+            let candidateMetadata: InvoiceDocumentMetadata
 
-            if (workflow.vendor ?? invoice.vendor)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true,
-               let companyName = record.companyName {
-                workflow.vendor = companyName
-                didChange = true
+            if document.members.count == 1 {
+                let metadata = document.metadata
+                candidateMetadata = InvoiceDocumentMetadata(
+                    vendor: metadata.vendor ?? record.companyName,
+                    invoiceDate: metadata.invoiceDate ?? record.invoiceDate,
+                    invoiceNumber: metadata.invoiceNumber ?? normalizedInvoiceNumber(from: record.invoiceNumber ?? ""),
+                    documentType: metadata.documentType ?? record.documentType
+                )
+            } else {
+                guard let mergedMetadata = inferredStructuredDocumentMetadata(for: document) else {
+                    continue
+                }
+
+                let metadata = document.metadata
+                candidateMetadata = InvoiceDocumentMetadata(
+                    vendor: metadata.vendor ?? mergedMetadata.vendor,
+                    invoiceDate: metadata.invoiceDate ?? mergedMetadata.invoiceDate,
+                    invoiceNumber: metadata.invoiceNumber ?? mergedMetadata.invoiceNumber,
+                    documentType: metadata.documentType ?? mergedMetadata.documentType
+                )
             }
 
-            if workflow.invoiceDate == nil,
-               invoice.invoiceDate == nil,
-               let invoiceDate = record.invoiceDate {
-                workflow.invoiceDate = invoiceDate
-                didChange = true
-            }
-
-            if (workflow.invoiceNumber ?? invoice.invoiceNumber)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true,
-               let invoiceNumber = record.invoiceNumber {
-                workflow.invoiceNumber = invoiceNumber
-                didChange = true
-            }
-
-            if workflow.documentType == nil,
-               invoice.documentType == nil,
-               let documentType = record.documentType {
-                workflow.documentType = documentType
-                didChange = true
-            }
-
-            guard didChange else { continue }
-            applyWorkflow(workflow, to: invoice.id)
+            guard candidateMetadata != document.metadata else { continue }
+            setDocumentMetadata(candidateMetadata, for: document.id, renameProcessingFiles: false)
         }
     }
 
-    private func applyRescannedStructuredDataIfNeeded(contentHash: String, record: InvoiceStructuredDataRecord) {
-        guard let invoiceIDs = rescannedInvoiceIDsByHash.removeValue(forKey: contentHash) else {
+    private func buildDocuments(from invoices: [InvoiceItem], duplicateGroups: [InvoiceDuplicateGroup]) -> [InvoiceDocument] {
+        let invoiceByID = Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
+        var documents: [InvoiceDocument] = []
+        var groupedInvoiceIDs: Set<InvoiceItem.ID> = []
+
+        for group in duplicateGroups {
+            let members = group.members.compactMap { member -> InvoiceDocumentMember? in
+                guard let invoice = invoiceByID[member.id] else { return nil }
+                return makeDocumentMember(from: invoice)
+            }
+            guard members.count > 1 else { continue }
+
+            groupedInvoiceIDs.formUnion(members.map(\.id))
+            documents.append(
+                InvoiceDocument(
+                    members: members,
+                    metadata: resolvedDocumentMetadata(for: members, invoiceByID: invoiceByID)
+                )
+            )
+        }
+
+        for invoice in invoices where !groupedInvoiceIDs.contains(invoice.id) {
+            let member = makeDocumentMember(from: invoice)
+            documents.append(
+                InvoiceDocument(
+                    members: [member],
+                    metadata: resolvedDocumentMetadata(for: [member], invoiceByID: invoiceByID)
+                )
+            )
+        }
+
+        return documents.sorted { lhs, rhs in
+            let lhsDate = lhs.members.map(\.addedAt).max() ?? .distantPast
+            let rhsDate = rhs.members.map(\.addedAt).max() ?? .distantPast
+            if lhsDate != rhsDate {
+                return lhsDate > rhsDate
+            }
+
+            return lhs.id < rhs.id
+        }
+    }
+
+    private func makeDocumentMember(from invoice: InvoiceItem) -> InvoiceDocumentMember {
+        InvoiceDocumentMember(
+            id: invoice.id,
+            fileURL: invoice.fileURL,
+            location: invoice.location,
+            addedAt: invoice.addedAt,
+            fileType: invoice.fileType,
+            contentHash: invoice.contentHash
+        )
+    }
+
+    private func resolvedDocumentMetadata(
+        for members: [InvoiceDocumentMember],
+        invoiceByID: [InvoiceItem.ID: InvoiceItem]
+    ) -> InvoiceDocumentMetadata {
+        if members.count == 1, let member = members.first {
+            return singletonDocumentMetadata(for: member, invoiceByID: invoiceByID)
+        }
+
+        let workflowMetadata = sharedDuplicateDocumentMetadata(for: members)
+        guard workflowMetadata.isEmpty else {
+            return workflowMetadata
+        }
+
+        return inferredStructuredDocumentMetadata(for: members) ?? .empty
+    }
+
+    private func singletonDocumentMetadata(
+        for member: InvoiceDocumentMember,
+        invoiceByID: [InvoiceItem.ID: InvoiceItem]
+    ) -> InvoiceDocumentMetadata {
+        if let workflow = workflowByID[member.id] {
+            return InvoiceDocumentMetadata(workflow: workflow)
+        }
+
+        guard let invoice = invoiceByID[member.id] else {
+            return .empty
+        }
+
+        return InvoiceDocumentMetadata(invoice: invoice)
+    }
+
+    private func sharedDuplicateDocumentMetadata(for members: [InvoiceDocumentMember]) -> InvoiceDocumentMetadata {
+        let workflows = members.compactMap { workflowByID[$0.id] }
+        guard workflows.count == members.count,
+              workflows.allSatisfy({ $0.metadataScope == .document }) else {
+            return .empty
+        }
+
+        let metadata = workflows.map(InvoiceDocumentMetadata.init(workflow:))
+        guard let first = metadata.first,
+              metadata.dropFirst().allSatisfy({ $0 == first }) else {
+            return .empty
+        }
+
+        return first
+    }
+
+    private func setDocumentMetadata(
+        _ metadata: InvoiceDocumentMetadata,
+        for documentID: InvoiceDocument.ID,
+        renameProcessingFiles: Bool
+    ) {
+        guard let document = documentByID[documentID] else { return }
+        applyDocumentMetadata(metadata, toMemberIDs: document.memberIDs, renameProcessingFiles: renameProcessingFiles)
+    }
+
+    private func applyDocumentMetadata(
+        _ metadata: InvoiceDocumentMetadata,
+        toMemberIDs memberIDs: Set<InvoiceItem.ID>,
+        renameProcessingFiles: Bool
+    ) {
+        let members = invoices.filter { memberIDs.contains($0.id) }
+
+        var requiresPersist = false
+
+        for member in members {
+            let existingWorkflow = workflowByID[member.id]
+            let nextWorkflow = StoredInvoiceWorkflow(
+                vendor: metadata.vendor,
+                invoiceDate: metadata.invoiceDate,
+                invoiceNumber: metadata.invoiceNumber,
+                documentType: metadata.documentType,
+                isInProgress: existingWorkflow?.isInProgress ?? false,
+                metadataScope: metadata.isEmpty ? nil : .document
+            )
+
+            if renameProcessingFiles && member.location == .processing {
+                _ = applyWorkflow(nextWorkflow, to: member.id)
+            } else {
+                workflowByID[member.id] = nextWorkflow
+                requiresPersist = true
+            }
+        }
+
+        if requiresPersist {
+            persistWorkflow()
+        }
+
+        applyDuplicateStateFromExtractedText()
+    }
+
+    private func clearDocumentMetadata(for documentID: InvoiceDocument.ID) {
+        guard let document = documentByID[documentID] else { return }
+
+        for member in document.members {
+            let existingWorkflow = workflowByID[member.id]
+            workflowByID[member.id] = StoredInvoiceWorkflow(
+                vendor: nil,
+                invoiceDate: nil,
+                invoiceNumber: nil,
+                documentType: nil,
+                isInProgress: existingWorkflow?.isInProgress ?? false,
+                metadataScope: nil
+            )
+        }
+
+        persistWorkflow()
+        applyDuplicateStateFromExtractedText()
+    }
+
+    private func handleRescannedDocumentContentHashCompleted(_ contentHash: String) {
+        guard let documentIDs = rescannedDocumentIDsByHash.removeValue(forKey: contentHash) else {
             return
         }
 
-        for invoiceID in invoiceIDs {
-            let existingWorkflow = workflowByID[invoiceID]
-            let refreshedWorkflow = StoredInvoiceWorkflow(
-                vendor: record.companyName,
-                invoiceDate: record.invoiceDate,
-                invoiceNumber: record.invoiceNumber,
-                documentType: record.documentType,
-                isInProgress: existingWorkflow?.isInProgress ?? false
-            )
-            applyWorkflow(refreshedWorkflow, to: invoiceID)
+        for documentID in documentIDs {
+            guard var context = rescannedDocumentContextsByID[documentID] else { continue }
+            context.pendingContentHashes.remove(contentHash)
+
+            if context.pendingContentHashes.isEmpty {
+                rescannedDocumentContextsByID.removeValue(forKey: documentID)
+                finalizeRescannedDocument(context)
+            } else {
+                rescannedDocumentContextsByID[documentID] = context
+            }
         }
+    }
+
+    private func finalizeRescannedDocument(_ context: DocumentRescanContext) {
+        let metadata = mergedDocumentMetadata(for: context.memberIDs)
+        applyDocumentMetadata(metadata, toMemberIDs: context.memberIDs, renameProcessingFiles: false)
+    }
+
+    private func mergedDocumentMetadata(for memberIDs: Set<InvoiceItem.ID>) -> InvoiceDocumentMetadata {
+        let records = invoices
+            .filter { memberIDs.contains($0.id) }
+            .compactMap { invoice -> InvoiceStructuredDataRecord? in
+                guard let contentHash = invoice.contentHash else { return nil }
+                return structuredDataByHash[contentHash]
+            }
+
+        return InvoiceDocumentMetadata(
+            vendor: mergedStructuredValue(records.map(\.companyName)),
+            invoiceDate: mergedStructuredValue(records.map(\.invoiceDate)),
+            invoiceNumber: normalizedInvoiceNumber(from: mergedStructuredValue(records.map(\.invoiceNumber)) ?? ""),
+            documentType: mergedStructuredValue(records.map(\.documentType))
+        )
+    }
+
+    private func inferredStructuredDocumentMetadata(for document: InvoiceDocument) -> InvoiceDocumentMetadata? {
+        inferredStructuredDocumentMetadata(for: document.members)
+    }
+
+    private func inferredStructuredDocumentMetadata(for members: [InvoiceDocumentMember]) -> InvoiceDocumentMetadata? {
+        let contentHashes = members.compactMap(\.contentHash)
+        guard contentHashes.count == members.count,
+              contentHashes.allSatisfy({ structuredDataByHash[$0] != nil }) else {
+            return nil
+        }
+
+        return mergedDocumentMetadata(for: Set(members.map(\.id)))
+    }
+
+    private func mergedStructuredValue<T: Hashable>(_ values: [T?]) -> T? {
+        let uniqueValues = Set(values.compactMap { $0 })
+        guard uniqueValues.count == 1 else { return nil }
+        return uniqueValues.first
     }
 
     private func shouldRenameOnMoveToInProgress(invoice: InvoiceItem, workflow: StoredInvoiceWorkflow) -> Bool {
@@ -1446,10 +1778,17 @@ final class AppModel: ObservableObject {
 
 }
 
+private struct DocumentRescanContext {
+    let documentID: InvoiceDocument.ID
+    let memberIDs: Set<InvoiceItem.ID>
+    var pendingContentHashes: Set<String>
+}
+
 private enum UserDefaultsKey {
     static let inboxPath = "settings.inboxPath"
     static let processedPath = "settings.processedPath"
     static let processingPath = "settings.processingPath"
+    static let duplicatesPath = "settings.duplicatesPath"
     static let ignoredInvoiceIDs = "settings.ignoredInvoiceIDs"
     static let llmProvider = "settings.llmProvider"
     static let llmBaseURL = "settings.llmBaseURL"

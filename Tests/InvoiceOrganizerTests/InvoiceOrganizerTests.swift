@@ -46,6 +46,28 @@ private func makeDuplicateGroup(
     )
 }
 
+private func documentMember(from invoice: InvoiceItem) -> InvoiceDocumentMember {
+    InvoiceDocumentMember(
+        id: invoice.id,
+        fileURL: invoice.fileURL,
+        location: invoice.location,
+        addedAt: invoice.addedAt,
+        fileType: invoice.fileType,
+        contentHash: invoice.contentHash
+    )
+}
+
+private func makeDocument(
+    visibleInvoices: [InvoiceItem],
+    hiddenMembers: [InvoiceDocumentMember] = [],
+    metadata: InvoiceDocumentMetadata = .empty
+) -> InvoiceDocument {
+    InvoiceDocument(
+        members: visibleInvoices.map(documentMember(from:)) + hiddenMembers,
+        metadata: metadata
+    )
+}
+
 private func writePNG(width: Int, height: Int, to url: URL) throws {
     guard let context = CGContext(
         data: nil,
@@ -356,9 +378,11 @@ private final class RecordingPreviewPersistHandler {
     let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
     let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
     let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
     try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: tempRoot) }
 
     let invoiceURL = inboxRoot.appendingPathComponent("incoming.png")
@@ -366,7 +390,7 @@ private final class RecordingPreviewPersistHandler {
 
     let model = await MainActor.run {
         AppModel(
-            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot, duplicatesURL: duplicatesRoot),
             workflowByID: [:],
             autoRefresh: false
         )
@@ -1043,10 +1067,10 @@ private final class RecordingPreviewPersistHandler {
         duplicateReason: "Duplicate extracted text matches invoice.pdf"
     )
 
-    let group = makeDuplicateGroup(visibleInvoices: [first, duplicateA, duplicateB])
+    let group = makeDocument(visibleInvoices: [first, duplicateA, duplicateB])
     let collapsedRows = buildInvoiceBrowserRows(
         from: [first, duplicateA, duplicateB],
-        duplicateGroups: [group],
+        documents: [group],
         expandedGroupIDs: []
     )
     #expect(collapsedRows.count == 1)
@@ -1055,7 +1079,7 @@ private final class RecordingPreviewPersistHandler {
 
     let expandedRows = buildInvoiceBrowserRows(
         from: [first, duplicateA, duplicateB],
-        duplicateGroups: [group],
+        documents: [group],
         expandedGroupIDs: [first.id]
     )
     #expect(expandedRows.count == 3)
@@ -1140,18 +1164,20 @@ private final class RecordingPreviewPersistHandler {
 
     let rows = buildInvoiceBrowserRows(
         from: [orphanDuplicate],
-        duplicateGroups: [
-            InvoiceDuplicateGroup(
+        documents: [
+            InvoiceDocument(
                 members: [
-                    duplicateMember(from: orphanDuplicate),
-                    InvoiceDuplicateMember(
+                    documentMember(from: orphanDuplicate),
+                    InvoiceDocumentMember(
                         id: "/Processed/A/Amazon/invoice.pdf",
                         fileURL: URL(fileURLWithPath: "/Processed/A/Amazon/invoice.pdf"),
                         location: .processed,
                         addedAt: Date(timeIntervalSince1970: 1),
-                        fileType: .pdf
+                        fileType: .pdf,
+                        contentHash: nil
                     )
-                ]
+                ],
+                metadata: .empty
             )
         ],
         expandedGroupIDs: []
@@ -1183,17 +1209,18 @@ private final class RecordingPreviewPersistHandler {
         duplicateReason: "Duplicate extracted text matches invoice.pdf"
     )
 
-    let hiddenProcessedPeer = InvoiceDuplicateMember(
+    let hiddenProcessedPeer = InvoiceDocumentMember(
         id: "/Processed/A/Amazon/invoice.pdf",
         fileURL: URL(fileURLWithPath: "/Processed/A/Amazon/invoice.pdf"),
         location: .processed,
         addedAt: Date(timeIntervalSince1970: 1),
-        fileType: .pdf
+        fileType: .pdf,
+        contentHash: nil
     )
-    let group = makeDuplicateGroup(visibleInvoices: [duplicateA, duplicateB], hiddenMembers: [hiddenProcessedPeer])
+    let group = makeDocument(visibleInvoices: [duplicateA, duplicateB], hiddenMembers: [hiddenProcessedPeer])
     let collapsedRows = buildInvoiceBrowserRows(
         from: [duplicateA, duplicateB],
-        duplicateGroups: [group],
+        documents: [group],
         expandedGroupIDs: []
     )
     #expect(collapsedRows.count == 1)
@@ -1203,7 +1230,7 @@ private final class RecordingPreviewPersistHandler {
 
     let expandedRows = buildInvoiceBrowserRows(
         from: [duplicateA, duplicateB],
-        duplicateGroups: [group],
+        documents: [group],
         expandedGroupIDs: [duplicateA.id]
     )
     #expect(expandedRows.count == 2)
@@ -1236,15 +1263,16 @@ private final class RecordingPreviewPersistHandler {
         indentationLevel: 0,
         disclosureState: .collapsed
     )
-    let duplicateGroup = makeDuplicateGroup(
+    let duplicateDocument = makeDocument(
         visibleInvoices: [duplicateA, duplicateB],
         hiddenMembers: [
-            InvoiceDuplicateMember(
+            InvoiceDocumentMember(
                 id: "/Processed/A/Amazon/invoice.pdf",
                 fileURL: URL(fileURLWithPath: "/Processed/A/Amazon/invoice.pdf"),
                 location: .processed,
                 addedAt: Date(timeIntervalSince1970: 1),
-                fileType: .pdf
+                fileType: .pdf,
+                contentHash: nil
             )
         ]
     )
@@ -1252,11 +1280,328 @@ private final class RecordingPreviewPersistHandler {
     let title = duplicateGroupHeaderBadgeTitle(
         for: row,
         duplicateCount: 1,
-        duplicateGroups: [duplicateGroup],
+        documents: [duplicateDocument],
         queueTab: .unprocessed
     )
 
     #expect(title == "1 Duplicate - processed")
+}
+
+@Test func appModelPopulatesDuplicateDocumentMetadataWhenStructuredDataAgrees() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstInvoiceURL = inboxRoot.appendingPathComponent("incoming-1.pdf")
+    let secondInvoiceURL = inboxRoot.appendingPathComponent("incoming-2.pdf")
+    try Data("first-file-body".utf8).write(to: firstInvoiceURL)
+    try Data("second-file-body".utf8).write(to: secondInvoiceURL)
+
+    let sharedText = InvoiceTextRecord(text: "Vendor: Acme Corp\nInvoice: INV-42", source: .pdfText)
+    let textStore = InMemoryInvoiceTextStore()
+    let structuredStore = InMemoryInvoiceStructuredDataStore()
+    let firstHash = try FileHasher.sha256(for: firstInvoiceURL)
+    let secondHash = try FileHasher.sha256(for: secondInvoiceURL)
+    await textStore.save(sharedText, forContentHash: firstHash)
+    await textStore.save(sharedText, forContentHash: secondHash)
+    await structuredStore.save(
+        InvoiceStructuredDataRecord(
+            companyName: "Acme Corp",
+            invoiceNumber: "INV-42",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            documentType: .invoice,
+            provider: .lmStudio,
+            modelName: "qwen-local"
+        ),
+        forContentHash: firstHash
+    )
+    await structuredStore.save(
+        InvoiceStructuredDataRecord(
+            companyName: "Acme Corp",
+            invoiceNumber: "INV-42",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            documentType: .invoice,
+            provider: .lmStudio,
+            modelName: "qwen-local"
+        ),
+        forContentHash: secondHash
+    )
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(
+                inboxURL: inboxRoot,
+                processedURL: processedRoot,
+                processingURL: processingRoot,
+                duplicatesURL: duplicatesRoot
+            ),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(),
+            structuredDataStore: structuredStore,
+            structuredExtractionClient: MockStructuredExtractionClient(),
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "", modelName: "", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+
+    let duplicateDocuments = await MainActor.run { model.documents.filter(\.isDuplicate) }
+    let visibleInvoices = await MainActor.run { model.invoices.filter { $0.location == .inbox } }
+
+    #expect(duplicateDocuments.count == 1)
+    #expect(duplicateDocuments.first?.metadata.vendor == "Acme Corp")
+    #expect(duplicateDocuments.first?.metadata.invoiceNumber == "INV-42")
+    #expect(duplicateDocuments.first?.metadata.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
+    #expect(visibleInvoices.allSatisfy { $0.vendor == "Acme Corp" })
+    #expect(visibleInvoices.allSatisfy { $0.invoiceNumber == "INV-42" })
+}
+
+@Test func appModelBuildsDistinctSingletonDocumentsForMatchingContentHashes() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstInvoiceURL = inboxRoot.appendingPathComponent("incoming-1.pdf")
+    let secondInvoiceURL = inboxRoot.appendingPathComponent("incoming-2.pdf")
+    let sharedBytes = Data("same-file-body".utf8)
+    try sharedBytes.write(to: firstInvoiceURL)
+    try sharedBytes.write(to: secondInvoiceURL)
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(
+                inboxURL: inboxRoot,
+                processedURL: processedRoot,
+                processingURL: processingRoot,
+                duplicatesURL: duplicatesRoot
+            ),
+            workflowByID: [:],
+            textStore: InMemoryInvoiceTextStore(),
+            textExtractor: MockDocumentTextExtractor(),
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "", modelName: "", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+
+    let documents = await MainActor.run { model.documents }
+    #expect(documents.count == 2)
+    #expect(Set(documents.map(\.id)).count == 2)
+}
+
+@Test func appModelManualDocumentEditUpdatesAllChildren() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstInvoiceURL = processedRoot.appendingPathComponent("doc-1.pdf")
+    let secondInvoiceURL = processedRoot.appendingPathComponent("doc-2.pdf")
+    try Data("first-file-body".utf8).write(to: firstInvoiceURL)
+    try Data("second-file-body".utf8).write(to: secondInvoiceURL)
+
+    let sharedText = InvoiceTextRecord(text: "Vendor: Acme Corp\nInvoice: INV-42", source: .pdfText)
+    let textStore = InMemoryInvoiceTextStore()
+    await textStore.save(sharedText, forContentHash: try FileHasher.sha256(for: firstInvoiceURL))
+    await textStore.save(sharedText, forContentHash: try FileHasher.sha256(for: secondInvoiceURL))
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(
+                inboxURL: inboxRoot,
+                processedURL: processedRoot,
+                processingURL: processingRoot,
+                duplicatesURL: duplicatesRoot
+            ),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(),
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "", modelName: "", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+
+    let processedIDs = try #require(await MainActor.run {
+        let ids = model.invoices.filter { $0.location == .processed }.map(\.id).sorted()
+        return ids.count == 2 ? ids : nil
+    })
+
+    await MainActor.run {
+        model.updateInvoiceNumber("DOC-42", for: processedIDs[0])
+    }
+
+    let processedInvoices = await MainActor.run { model.invoices.filter { $0.location == .processed } }
+    let document = try #require(await MainActor.run {
+        model.document(for: processedIDs[0])
+    })
+
+    #expect(processedInvoices.allSatisfy { $0.invoiceNumber == "DOC-42" })
+    #expect(document.metadata.invoiceNumber == "DOC-42")
+}
+
+@Test func appModelPartialDocumentRescanKeepsMetadata() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstInvoiceURL = processedRoot.appendingPathComponent("doc-1.pdf")
+    let secondInvoiceURL = processedRoot.appendingPathComponent("doc-2.pdf")
+    try Data("first-file-body".utf8).write(to: firstInvoiceURL)
+    try Data("second-file-body".utf8).write(to: secondInvoiceURL)
+
+    let sharedText = InvoiceTextRecord(text: "Vendor: Acme Corp\nInvoice: INV-42", source: .pdfText)
+    let textStore = InMemoryInvoiceTextStore()
+    await textStore.save(sharedText, forContentHash: try FileHasher.sha256(for: firstInvoiceURL))
+    await textStore.save(sharedText, forContentHash: try FileHasher.sha256(for: secondInvoiceURL))
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(
+                inboxURL: inboxRoot,
+                processedURL: processedRoot,
+                processingURL: processingRoot,
+                duplicatesURL: duplicatesRoot
+            ),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(defaultResult: sharedText),
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "", modelName: "", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+
+    let processedIDs = try #require(await MainActor.run {
+        let ids = model.invoices.filter { $0.location == .processed }.map(\.id).sorted()
+        return ids.count == 2 ? ids : nil
+    })
+
+    await MainActor.run {
+        model.updateInvoiceNumber("DOC-42", for: processedIDs[0])
+    }
+    await model.rescanInvoices(ids: [processedIDs[0]])
+    await model.waitForBackgroundTextExtractionForTesting()
+
+    let processedInvoices = await MainActor.run { model.invoices.filter { $0.location == .processed } }
+    let document = try #require(await MainActor.run {
+        model.document(for: processedIDs[0])
+    })
+
+    #expect(processedInvoices.allSatisfy { $0.invoiceNumber == "DOC-42" })
+    #expect(document.metadata.invoiceNumber == "DOC-42")
+}
+
+@Test func appModelFullDocumentRescanClearsAndRebuildsMetadata() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstInvoiceURL = processedRoot.appendingPathComponent("doc-1.pdf")
+    let secondInvoiceURL = processedRoot.appendingPathComponent("doc-2.pdf")
+    try Data("first-file-body".utf8).write(to: firstInvoiceURL)
+    try Data("second-file-body".utf8).write(to: secondInvoiceURL)
+
+    let sharedText = InvoiceTextRecord(text: "Vendor: Acme Corp\nInvoice: INV-42", source: .pdfText)
+    let textStore = InMemoryInvoiceTextStore()
+    await textStore.save(sharedText, forContentHash: try FileHasher.sha256(for: firstInvoiceURL))
+    await textStore.save(sharedText, forContentHash: try FileHasher.sha256(for: secondInvoiceURL))
+
+    let structuredClient = MockStructuredExtractionClient(
+        defaultResult: InvoiceStructuredDataRecord(
+            companyName: "Fresh Corp",
+            invoiceNumber: "INV-99",
+            invoiceDate: utcDate(year: 2024, month: 2, day: 7),
+            documentType: .invoice,
+            provider: .lmStudio,
+            modelName: "qwen-local"
+        )
+    )
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(
+                inboxURL: inboxRoot,
+                processedURL: processedRoot,
+                processingURL: processingRoot,
+                duplicatesURL: duplicatesRoot
+            ),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(defaultResult: sharedText),
+            structuredDataStore: InMemoryInvoiceStructuredDataStore(),
+            structuredExtractionClient: structuredClient,
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "http://localhost:1234/v1", modelName: "qwen-local", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+
+    let processedIDs = try #require(await MainActor.run {
+        let ids = model.invoices.filter { $0.location == .processed }.map(\.id).sorted()
+        return ids.count == 2 ? ids : nil
+    })
+
+    await MainActor.run {
+        model.updateInvoiceNumber("OLD-42", for: processedIDs[0])
+    }
+
+    await model.rescanInvoices(ids: Set(processedIDs))
+    let clearedInvoices = await MainActor.run { model.invoices.filter { processedIDs.contains($0.id) } }
+    #expect(clearedInvoices.allSatisfy { $0.invoiceNumber == nil && $0.vendor == nil && $0.invoiceDate == nil })
+
+    await model.waitForBackgroundTextExtractionForTesting()
+
+    let rebuiltInvoices = await MainActor.run { model.invoices.filter { $0.location == .processed } }
+    let document = try #require(await MainActor.run {
+        rebuiltInvoices.first.flatMap { model.document(for: $0.id) }
+    })
+
+    #expect(rebuiltInvoices.allSatisfy { $0.vendor == "Fresh Corp" })
+    #expect(rebuiltInvoices.allSatisfy { $0.invoiceNumber == "INV-99" })
+    #expect(rebuiltInvoices.allSatisfy { $0.invoiceDate == utcDate(year: 2024, month: 2, day: 7) })
+    #expect(document.metadata.vendor == "Fresh Corp")
+    #expect(document.metadata.invoiceNumber == "INV-99")
 }
 
 @Test func invoiceBrowserResolvedSortDescriptorsKeepsVisibleSortForQueue() async throws {
@@ -1594,6 +1939,138 @@ private final class RecordingPreviewPersistHandler {
         return inboxInvoice.flatMap { model.duplicateBadgeTitlesByInvoiceID[$0.id] }
     }
     #expect(badgeTitle == "Duplicate Processed")
+}
+
+@Test func appModelMovesUnprocessedDuplicatePeersToDuplicatesFolderWhenProcessingStarts() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstInvoiceURL = inboxRoot.appendingPathComponent("incoming-1.pdf")
+    let secondInvoiceURL = inboxRoot.appendingPathComponent("incoming-2.pdf")
+    try Data("first-file-body".utf8).write(to: firstInvoiceURL)
+    try Data("second-file-body".utf8).write(to: secondInvoiceURL)
+
+    let sharedRecord = InvoiceTextRecord(text: "Vendor: Acme Corp\nInvoice: INV-42", source: .pdfText)
+    let textStore = InMemoryInvoiceTextStore()
+    await textStore.save(sharedRecord, forContentHash: try FileHasher.sha256(for: firstInvoiceURL))
+    await textStore.save(sharedRecord, forContentHash: try FileHasher.sha256(for: secondInvoiceURL))
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(
+                inboxURL: inboxRoot,
+                processedURL: processedRoot,
+                processingURL: processingRoot,
+                duplicatesURL: duplicatesRoot
+            ),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+
+    let selectedInvoice = try #require(await MainActor.run {
+        model.invoices
+            .filter { $0.location == .inbox }
+            .sorted { $0.name < $1.name }
+            .first
+    })
+    #expect(await MainActor.run { model.duplicateGroups.count } == 1)
+
+    await MainActor.run {
+        model.moveInvoicesToInProgress(ids: [selectedInvoice.id])
+    }
+    await model.reloadLibraryForTesting()
+
+    let remainingInvoices = await MainActor.run { model.invoices }
+    let movedInvoice = try #require(remainingInvoices.first(where: { $0.location == .processing }))
+    let duplicateFolderFiles = try FileManager.default.contentsOfDirectory(
+        at: duplicatesRoot,
+        includingPropertiesForKeys: nil
+    )
+
+    #expect(remainingInvoices.count == 1)
+    #expect(movedInvoice.name == selectedInvoice.name)
+    #expect(duplicateFolderFiles.map(\.lastPathComponent).sorted() == ["incoming-2.pdf"])
+    #expect(!remainingInvoices.contains(where: { $0.name == "incoming-2.pdf" }))
+    #expect(await MainActor.run { model.duplicateGroups.isEmpty })
+}
+
+@Test func appModelMovesOnlyFirstSelectedDuplicateIntoProcessing() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstInvoiceURL = inboxRoot.appendingPathComponent("incoming-1.pdf")
+    let secondInvoiceURL = inboxRoot.appendingPathComponent("incoming-2.pdf")
+    try Data("first-file-body".utf8).write(to: firstInvoiceURL)
+    try Data("second-file-body".utf8).write(to: secondInvoiceURL)
+
+    let sharedRecord = InvoiceTextRecord(text: "Vendor: Acme Corp\nInvoice: INV-42", source: .pdfText)
+    let textStore = InMemoryInvoiceTextStore()
+    await textStore.save(sharedRecord, forContentHash: try FileHasher.sha256(for: firstInvoiceURL))
+    await textStore.save(sharedRecord, forContentHash: try FileHasher.sha256(for: secondInvoiceURL))
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(
+                inboxURL: inboxRoot,
+                processedURL: processedRoot,
+                processingURL: processingRoot,
+                duplicatesURL: duplicatesRoot
+            ),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+
+    let orderedInvoices = try #require(await MainActor.run {
+        let invoices = model.invoices
+            .filter { $0.location == .inbox }
+            .sorted { $0.name < $1.name }
+        return invoices.count == 2 ? invoices : nil
+    })
+
+    await MainActor.run {
+        model.moveInvoicesToInProgress(ids: orderedInvoices.map(\.id))
+    }
+    await model.reloadLibraryForTesting()
+
+    let remainingInvoices = await MainActor.run { model.invoices }
+    let processingNames = remainingInvoices
+        .filter { $0.location == .processing }
+        .map(\.name)
+        .sorted()
+    let duplicateFolderFiles = try FileManager.default.contentsOfDirectory(
+        at: duplicatesRoot,
+        includingPropertiesForKeys: nil
+    )
+
+    #expect(processingNames == ["incoming-1.pdf"])
+    #expect(duplicateFolderFiles.map(\.lastPathComponent).sorted() == ["incoming-2.pdf"])
+    #expect(remainingInvoices.count == 1)
 }
 
 @Test func appModelLeavesAllInboxPeersActionableAfterExtractionBackedReload() async throws {
@@ -1986,9 +2463,11 @@ private final class RecordingPreviewPersistHandler {
     let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
     let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
     let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
     try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: tempRoot) }
 
     let invoiceURL = inboxRoot.appendingPathComponent("incoming.pdf")
@@ -2013,7 +2492,7 @@ private final class RecordingPreviewPersistHandler {
     )
     let model = await MainActor.run {
         AppModel(
-            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot, duplicatesURL: duplicatesRoot),
             workflowByID: [:],
             textStore: textStore,
             textExtractor: MockDocumentTextExtractor(),
@@ -2048,9 +2527,11 @@ private final class RecordingPreviewPersistHandler {
     let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
     let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
     let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
     try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: tempRoot) }
 
     let invoiceURL = inboxRoot.appendingPathComponent("receipt.pdf")
@@ -2075,7 +2556,7 @@ private final class RecordingPreviewPersistHandler {
     )
     let model = await MainActor.run {
         AppModel(
-            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot, duplicatesURL: duplicatesRoot),
             workflowByID: [:],
             textStore: textStore,
             textExtractor: MockDocumentTextExtractor(),

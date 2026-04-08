@@ -45,6 +45,7 @@ struct InvoiceItem: Identifiable, Hashable, Sendable {
     typealias ID = String
 
     let id: ID
+    var documentID: String
     var name: String
     var fileURL: URL
     var location: InvoiceLocation
@@ -77,6 +78,7 @@ struct InvoiceItem: Identifiable, Hashable, Sendable {
         duplicateReason: String? = nil
     ) {
         self.id = Self.stableID(for: fileURL)
+        self.documentID = Self.stableID(for: fileURL)
         self.name = name
         self.fileURL = fileURL
         self.location = location
@@ -134,25 +136,32 @@ struct InvoiceItem: Identifiable, Hashable, Sendable {
     }
 }
 
+enum InvoiceWorkflowMetadataScope: String, Codable, Sendable {
+    case document
+}
+
 struct StoredInvoiceWorkflow: Codable, Equatable, Sendable {
     var vendor: String?
     var invoiceDate: Date?
     var invoiceNumber: String?
     var documentType: InvoiceDocumentType?
     var isInProgress: Bool
+    var metadataScope: InvoiceWorkflowMetadataScope?
 
     init(
         vendor: String?,
         invoiceDate: Date?,
         invoiceNumber: String?,
         documentType: InvoiceDocumentType? = nil,
-        isInProgress: Bool
+        isInProgress: Bool,
+        metadataScope: InvoiceWorkflowMetadataScope? = nil
     ) {
         self.vendor = vendor
         self.invoiceDate = invoiceDate
         self.invoiceNumber = invoiceNumber
         self.documentType = documentType
         self.isInProgress = isInProgress
+        self.metadataScope = metadataScope
     }
 }
 
@@ -269,6 +278,7 @@ enum FolderRole: String, CaseIterable, Identifiable, Sendable {
     case inbox = "Inbox"
     case processing = "Processing"
     case processed = "Processed"
+    case duplicates = "Duplicates"
 
     var id: String { rawValue }
 
@@ -278,9 +288,10 @@ enum FolderRole: String, CaseIterable, Identifiable, Sendable {
 }
 
 struct FolderSettings: Equatable, Sendable {
-    var inboxURL: URL?
-    var processedURL: URL?
-    var processingURL: URL?
+    var inboxURL: URL? = nil
+    var processedURL: URL? = nil
+    var processingURL: URL? = nil
+    var duplicatesURL: URL? = nil
 
     func url(for role: FolderRole) -> URL? {
         switch role {
@@ -290,6 +301,8 @@ struct FolderSettings: Equatable, Sendable {
             return processedURL
         case .processing:
             return processingURL
+        case .duplicates:
+            return duplicatesURL
         }
     }
 
@@ -301,6 +314,8 @@ struct FolderSettings: Equatable, Sendable {
             processedURL = url
         case .processing:
             processingURL = url
+        case .duplicates:
+            duplicatesURL = url
         }
     }
 }

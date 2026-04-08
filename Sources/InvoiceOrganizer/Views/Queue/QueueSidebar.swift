@@ -114,7 +114,7 @@ struct QueueSidebar: View {
             } else {
                 InvoiceBrowserView(
                     invoices: model.visibleInvoices,
-                    duplicateGroups: model.duplicateGroups,
+                    documents: model.documents,
                     queueTab: model.selectedQueueTab,
                     browserContext: browserContextBinding,
                     ocrStatesByInvoiceID: model.ocrStatesByInvoiceID,
@@ -122,8 +122,8 @@ struct QueueSidebar: View {
                     duplicateBadgeTitlesByInvoiceID: model.duplicateBadgeTitlesByInvoiceID,
                     ignoredInvoiceIDs: model.ignoredInvoiceIDs,
                     selectedInvoiceIDs: selectedInvoiceIDsBinding,
-                    onMoveToInProgress: {
-                        model.moveSelectedToInProgress()
+                    onMoveToInProgress: { orderedIDs in
+                        model.moveInvoicesToInProgress(ids: orderedIDs)
                     },
                     onMoveToUnprocessed: {
                         model.moveInvoicesToUnprocessed(ids: model.selectedInvoiceIDs)
@@ -266,7 +266,7 @@ struct QueueSidebar: View {
 
         let activeInvoiceIDs = InvoiceInternalDrag.consumeActiveInvoiceIDs()
         if !activeInvoiceIDs.isEmpty {
-            model.moveInvoicesToInProgress(ids: Set(activeInvoiceIDs))
+            model.moveInvoicesToInProgress(ids: activeInvoiceIDs)
             return true
         }
 
@@ -276,7 +276,7 @@ struct QueueSidebar: View {
             }
 
             Task { @MainActor in
-                model.moveInvoicesToInProgress(ids: Set(draggedIDs))
+                model.moveInvoicesToInProgress(ids: draggedIDs)
             }
         }
 

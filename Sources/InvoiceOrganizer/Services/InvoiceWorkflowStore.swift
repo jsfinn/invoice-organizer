@@ -27,6 +27,7 @@ private extension StoredInvoiceWorkflow {
         invoiceDate == nil &&
         invoiceNumber?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false &&
         documentType == nil &&
-        !isInProgress
+        !isInProgress &&
+        metadataScope == nil
     }
 }

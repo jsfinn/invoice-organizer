@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 struct InvoiceBrowserView: NSViewRepresentable {
     let invoices: [InvoiceItem]
-    let duplicateGroups: [InvoiceDuplicateGroup]
+    let documents: [InvoiceDocument]
     let queueTab: InvoiceQueueTab
     @Binding var browserContext: InvoiceBrowserContext
     let ocrStatesByInvoiceID: [InvoiceItem.ID: InvoiceOCRState]
@@ -12,7 +12,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
     let duplicateBadgeTitlesByInvoiceID: [InvoiceItem.ID: String]
     let ignoredInvoiceIDs: Set<InvoiceItem.ID>
     @Binding var selectedInvoiceIDs: Set<InvoiceItem.ID>
-    let onMoveToInProgress: () -> Void
+    let onMoveToInProgress: ([InvoiceItem.ID]) -> Void
     let onMoveToUnprocessed: () -> Void
     let onMoveToProcessed: () -> Void
     let onRescan: () -> Void
@@ -62,7 +62,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
         context.coordinator.update(
             invoices: invoices,
-            duplicateGroups: duplicateGroups,
+            documents: documents,
             ocrStatesByInvoiceID: ocrStatesByInvoiceID,
             readStatesByInvoiceID: readStatesByInvoiceID,
             selectedIDs: selectedInvoiceIDs
@@ -77,7 +77,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
         }
         context.coordinator.update(
             invoices: invoices,
-            duplicateGroups: duplicateGroups,
+            documents: documents,
             ocrStatesByInvoiceID: ocrStatesByInvoiceID,
             readStatesByInvoiceID: readStatesByInvoiceID,
             selectedIDs: selectedInvoiceIDs
@@ -128,7 +128,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
         func update(
             invoices: [InvoiceItem],
-            duplicateGroups: [InvoiceDuplicateGroup],
+            documents: [InvoiceDocument],
             ocrStatesByInvoiceID: [InvoiceItem.ID: InvoiceOCRState],
             readStatesByInvoiceID: [InvoiceItem.ID: InvoiceReadState],
             selectedIDs: Set<InvoiceItem.ID>
@@ -140,7 +140,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
             let sortedInvoices = sort(invoices: invoices)
             let nextRows = buildInvoiceBrowserRows(
                 from: sortedInvoices,
-                duplicateGroups: duplicateGroups,
+                documents: documents,
                 expandedGroupIDs: parent.browserContext.expandedGroupIDs
             )
             if displayedRows != nextRows {
@@ -260,7 +260,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
             displayedRows = buildInvoiceBrowserRows(
                 from: sort(invoices: parent.invoices),
-                duplicateGroups: parent.duplicateGroups,
+                documents: parent.documents,
                 expandedGroupIDs: parent.browserContext.expandedGroupIDs
             )
             tableView.reloadData()
@@ -331,6 +331,12 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 : [displayedRows[row].invoice]
 
             return selection.map(\.id)
+        }
+
+        private func orderedSelectedInvoiceIDs() -> [InvoiceItem.ID] {
+            displayedRows
+                .map(\.invoice.id)
+                .filter { parent.selectedInvoiceIDs.contains($0) }
         }
 
         func contextMenu(forRow row: Int) -> NSMenu? {
@@ -408,7 +414,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
         @objc
         private func moveSelectionToInProgress() {
-            parent.onMoveToInProgress()
+            parent.onMoveToInProgress(orderedSelectedInvoiceIDs())
         }
 
         @objc
@@ -469,7 +475,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
             parent.browserContext.expandedGroupIDs = expandedGroupIDs
             displayedRows = buildInvoiceBrowserRows(
                 from: sort(invoices: parent.invoices),
-                duplicateGroups: parent.duplicateGroups,
+                documents: parent.documents,
                 expandedGroupIDs: parent.browserContext.expandedGroupIDs
             )
             tableView?.reloadData()
@@ -510,7 +516,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 let label = duplicateGroupHeaderBadgeTitle(
                     for: row,
                     duplicateCount: duplicateCount,
-                    duplicateGroups: parent.duplicateGroups,
+                    documents: parent.documents,
                     queueTab: parent.queueTab
                 )
                 badges.append(.duplicate(label))
@@ -620,12 +626,12 @@ struct InvoiceBrowserView: NSViewRepresentable {
 func duplicateGroupHeaderBadgeTitle(
     for row: InvoiceBrowserRow,
     duplicateCount: Int,
-    duplicateGroups: [InvoiceDuplicateGroup],
+    documents: [InvoiceDocument],
     queueTab: InvoiceQueueTab
 ) -> String {
     let defaultLabel = duplicateCount == 1 ? "1 duplicate" : "\(duplicateCount) duplicates"
     guard queueTab == .unprocessed,
-          duplicateGroups.contains(where: { $0.contains(memberID: row.invoice.id) && $0.hasProcessedMember }) else {
+          documents.contains(where: { $0.contains(memberID: row.invoice.id) && $0.hasProcessedMember }) else {
         return defaultLabel
     }
 
@@ -820,14 +826,14 @@ enum InvoiceBrowserBadge: Equatable {
 
 func buildInvoiceBrowserRows(
     from invoices: [InvoiceItem],
-    duplicateGroups: [InvoiceDuplicateGroup],
+    documents: [InvoiceDocument],
     expandedGroupIDs: Set<InvoiceItem.ID>
 ) -> [InvoiceBrowserRow] {
     let visibleInvoicesByID = Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
     var childrenByRepresentativeID: [InvoiceItem.ID: [InvoiceItem]] = [:]
 
-    for group in duplicateGroups {
-        let visibleMembers = invoices.filter { group.memberIDs.contains($0.id) && visibleInvoicesByID[$0.id] != nil }
+    for document in documents where document.isDuplicate {
+        let visibleMembers = invoices.filter { document.memberIDs.contains($0.id) && visibleInvoicesByID[$0.id] != nil }
         guard visibleMembers.count > 1,
               let representative = visibleMembers.first else {
             continue
