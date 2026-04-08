@@ -1,18 +1,13 @@
 import Foundation
 
-struct InvoiceDuplicateInfo: Equatable, Sendable {
-    let duplicateOfPath: String
-    let reason: String
-}
-
 enum InvoiceDuplicateDetector {
     private static let similarityThreshold = 0.9
 
-    static func extractedTextDuplicateMap(
+    static func extractedTextDuplicateGroups(
         for files: [ScannedInvoiceFile],
         textRecordsByContentHash: [String: InvoiceTextRecord]
-    ) -> [String: InvoiceDuplicateInfo] {
-        duplicateMap(
+    ) -> [InvoiceDuplicateGroup] {
+        duplicateGroups(
             candidates: files.map {
                 DuplicateCandidate(
                     id: $0.id,
@@ -27,11 +22,11 @@ enum InvoiceDuplicateDetector {
         )
     }
 
-    static func extractedTextDuplicateMap(
+    static func extractedTextDuplicateGroups(
         for invoices: [InvoiceItem],
         textRecordsByContentHash: [String: InvoiceTextRecord]
-    ) -> [InvoiceItem.ID: InvoiceDuplicateInfo] {
-        duplicateMap(
+    ) -> [InvoiceDuplicateGroup] {
+        duplicateGroups(
             candidates: invoices.map {
                 DuplicateCandidate(
                     id: $0.id,
@@ -46,10 +41,34 @@ enum InvoiceDuplicateDetector {
         )
     }
 
-    private static func duplicateMap(
-        candidates: [DuplicateCandidate],
+    static func extractedTextDuplicateMap(
+        for files: [ScannedInvoiceFile],
         textRecordsByContentHash: [String: InvoiceTextRecord]
     ) -> [String: InvoiceDuplicateInfo] {
+        duplicateMap(
+            groups: extractedTextDuplicateGroups(
+                for: files,
+                textRecordsByContentHash: textRecordsByContentHash
+            )
+        )
+    }
+
+    static func extractedTextDuplicateMap(
+        for invoices: [InvoiceItem],
+        textRecordsByContentHash: [String: InvoiceTextRecord]
+    ) -> [InvoiceItem.ID: InvoiceDuplicateInfo] {
+        duplicateMap(
+            groups: extractedTextDuplicateGroups(
+                for: invoices,
+                textRecordsByContentHash: textRecordsByContentHash
+            )
+        )
+    }
+
+    private static func duplicateGroups(
+        candidates: [DuplicateCandidate],
+        textRecordsByContentHash: [String: InvoiceTextRecord]
+    ) -> [InvoiceDuplicateGroup] {
         let candidatesWithTokens = candidates.compactMap { candidate -> CandidateTextSignature? in
             guard let contentHash = candidate.contentHash,
                   let record = textRecordsByContentHash[contentHash],
@@ -60,19 +79,32 @@ enum InvoiceDuplicateDetector {
             return CandidateTextSignature(candidate: candidate, tokens: tokens)
         }
 
-        let groups = buildSimilarityGroups(from: candidatesWithTokens)
+        return buildSimilarityGroups(from: candidatesWithTokens)
+            .filter { $0.count > 1 }
+            .map { group in
+                InvoiceDuplicateGroup(
+                    members: group.map {
+                        InvoiceDuplicateMember(
+                            id: $0.candidate.id,
+                            fileURL: $0.candidate.fileURL,
+                            location: $0.candidate.location,
+                            addedAt: $0.candidate.addedAt,
+                            fileType: $0.candidate.fileType
+                        )
+                    }
+                )
+            }
+    }
+
+    private static func duplicateMap(
+        groups: [InvoiceDuplicateGroup]
+    ) -> [String: InvoiceDuplicateInfo] {
         var duplicates: [String: InvoiceDuplicateInfo] = [:]
 
         for group in groups {
-            guard group.count > 1 else { continue }
-
-            guard let canonical = group.first?.candidate else { continue }
-
-            for entry in group.dropFirst() where entry.candidate.location != .processed {
-                duplicates[entry.candidate.id] = InvoiceDuplicateInfo(
-                    duplicateOfPath: canonical.fileURL.path,
-                    reason: "Similar extracted text matches \(canonical.fileURL.lastPathComponent)"
-                )
+            for member in group.members where group.isSoftBlocked(memberID: member.id) {
+                guard let duplicateInfo = group.duplicateInfo(for: member.id) else { continue }
+                duplicates[member.id] = duplicateInfo
             }
         }
 

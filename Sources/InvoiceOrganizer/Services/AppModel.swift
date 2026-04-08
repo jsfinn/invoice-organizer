@@ -9,6 +9,7 @@ final class AppModel: ObservableObject {
     @Published var llmSettings: LLMSettings
     @Published var settingsErrorMessage: String?
     @Published private(set) var llmPreflightStatus: LLMPreflightStatus
+    @Published private(set) var duplicateGroups: [InvoiceDuplicateGroup] = []
     @Published private(set) var extractedTextHashes: Set<String> = []
     @Published private(set) var structuredDataHashes: Set<String> = []
     @Published private(set) var textPendingHashes: Set<String> = []
@@ -196,19 +197,11 @@ final class AppModel: ObservableObject {
     }
 
     var duplicateBadgeTitlesByInvoiceID: [InvoiceItem.ID: String] {
-        let invoicesByID = Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
-
         return Dictionary(
             uniqueKeysWithValues: invoices.compactMap { invoice in
-                guard invoice.status == .blockedDuplicate else { return nil }
-
-                let canonicalLocation = invoice.duplicateOfPath
-                    .map { InvoiceItem.stableID(for: URL(fileURLWithPath: $0)) }
-                    .flatMap { invoicesByID[$0]?.location }
-
-                let title = canonicalLocation == .processing || canonicalLocation == .processed
-                    ? "Duplicate Processed"
-                    : "Duplicate"
+                guard let title = duplicateGroupByInvoiceID[invoice.id]?.badgeTitle(for: invoice.id) else {
+                    return nil
+                }
 
                 return (invoice.id, title)
             }
@@ -848,6 +841,7 @@ final class AppModel: ObservableObject {
         await queueHandlerSetupTask?.value
         guard let inboxURL = folderSettings.inboxURL else {
             invoices = []
+            duplicateGroups = []
             extractedTextHashes = []
             extractedTextByHash = [:]
             structuredDataHashes = []
@@ -911,6 +905,7 @@ final class AppModel: ObservableObject {
             }
         } catch {
             invoices = []
+            duplicateGroups = []
             extractedTextHashes = []
             extractedTextByHash = [:]
             structuredDataHashes = []
@@ -992,6 +987,14 @@ final class AppModel: ObservableObject {
         updateQueueScreenContext { context in
             context.updateContext(for: tab, transform)
         }
+    }
+
+    private var duplicateGroupByInvoiceID: [InvoiceItem.ID: InvoiceDuplicateGroup] {
+        Dictionary(
+            uniqueKeysWithValues: duplicateGroups.flatMap { group in
+                group.members.map { ($0.id, group) }
+            }
+        )
     }
 
     private func syncSelectionForVisibleInvoices() {
@@ -1315,15 +1318,16 @@ final class AppModel: ObservableObject {
     }
 
     private func applyDuplicateStateFromExtractedText() {
-        let duplicateMap = InvoiceDuplicateDetector.extractedTextDuplicateMap(
+        duplicateGroups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
             for: invoices,
             textRecordsByContentHash: extractedTextByHash
         )
 
         for index in invoices.indices {
             let invoiceID = invoices[index].id
+            let duplicateGroup = duplicateGroupByInvoiceID[invoiceID]
 
-            if let duplicateInfo = duplicateMap[invoiceID] {
+            if let duplicateInfo = duplicateGroup?.duplicateInfo(for: invoiceID) {
                 invoices[index].status = .blockedDuplicate
                 invoices[index].duplicateOfPath = duplicateInfo.duplicateOfPath
                 invoices[index].duplicateReason = duplicateInfo.reason

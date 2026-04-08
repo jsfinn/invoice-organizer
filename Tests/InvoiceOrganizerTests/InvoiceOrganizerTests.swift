@@ -27,6 +27,25 @@ private func localDateComponents(_ date: Date) -> DateComponents {
     return calendar.dateComponents([.year, .month, .day], from: date)
 }
 
+private func duplicateMember(from invoice: InvoiceItem) -> InvoiceDuplicateMember {
+    InvoiceDuplicateMember(
+        id: invoice.id,
+        fileURL: invoice.fileURL,
+        location: invoice.location,
+        addedAt: invoice.addedAt,
+        fileType: invoice.fileType
+    )
+}
+
+private func makeDuplicateGroup(
+    visibleInvoices: [InvoiceItem],
+    hiddenMembers: [InvoiceDuplicateMember] = []
+) -> InvoiceDuplicateGroup {
+    InvoiceDuplicateGroup(
+        members: visibleInvoices.map(duplicateMember(from:)) + hiddenMembers
+    )
+}
+
 private func writePNG(width: Int, height: Int, to url: URL) throws {
     guard let context = CGContext(
         data: nil,
@@ -829,7 +848,7 @@ private final class RecordingPreviewPersistHandler {
     #expect(FileManager.default.fileExists(atPath: archivedURL.path))
 }
 
-@Test func extractedTextDuplicateDetectorPrefersProcessedCopy() async throws {
+@Test func extractedTextDuplicateDetectorSoftBlocksInboxPeerWhenProcessedMemberExists() async throws {
     let processedFile = ScannedInvoiceFile(
         id: "/Processed/A/Amazon/invoice.pdf",
         name: "Amazon-2024-01-05-20240330-062405.pdf",
@@ -856,18 +875,22 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "inbox-hash"
     )
 
-    let duplicateMap = InvoiceDuplicateDetector.extractedTextDuplicateMap(
+    let groups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
         for: [processedFile, inboxFile],
         textRecordsByContentHash: [
             "processed-hash": InvoiceTextRecord(text: "Amazon\nInvoice INV-42", source: .pdfText),
             "inbox-hash": InvoiceTextRecord(text: "  Amazon  \nInvoice INV-42  ", source: .ocr)
         ]
     )
-    #expect(duplicateMap[inboxFile.id]?.duplicateOfPath == processedFile.fileURL.path)
-    #expect(duplicateMap[processedFile.id] == nil)
+    let group = try #require(groups.first)
+    #expect(groups.count == 1)
+    #expect(group.memberIDs == Set([processedFile.id, inboxFile.id]))
+    #expect(group.isSoftBlocked(memberID: inboxFile.id))
+    #expect(!group.isSoftBlocked(memberID: processedFile.id))
+    #expect(group.duplicateInfo(for: inboxFile.id)?.duplicateOfPath == processedFile.fileURL.path)
 }
 
-@Test func extractedTextDuplicateDetectorBlocksLaterInboxCopy() async throws {
+@Test func extractedTextDuplicateDetectorKeepsAllInboxPeersActionable() async throws {
     let firstInbox = ScannedInvoiceFile(
         id: "/Inbox/invoice-1.pdf",
         name: "invoice.pdf",
@@ -894,15 +917,17 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "hash-456"
     )
 
-    let duplicateMap = InvoiceDuplicateDetector.extractedTextDuplicateMap(
+    let groups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
         for: [firstInbox, secondInbox],
         textRecordsByContentHash: [
             "hash-123": InvoiceTextRecord(text: "Vendor: Acme\nInvoice: INV-42", source: .pdfText),
             "hash-456": InvoiceTextRecord(text: "Vendor: Acme\nInvoice: INV-42", source: .ocr)
         ]
     )
-    #expect(duplicateMap[firstInbox.id] == nil)
-    #expect(duplicateMap[secondInbox.id]?.duplicateOfPath == firstInbox.fileURL.path)
+    let group = try #require(groups.first)
+    #expect(groups.count == 1)
+    #expect(!group.isSoftBlocked(memberID: firstInbox.id))
+    #expect(!group.isSoftBlocked(memberID: secondInbox.id))
 }
 
 @Test func extractedTextDuplicateDetectorMatchesNearEquivalentOCRText() async throws {
@@ -932,7 +957,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "hash-b"
     )
 
-    let duplicateMap = InvoiceDuplicateDetector.extractedTextDuplicateMap(
+    let groups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
         for: [firstInbox, secondInbox],
         textRecordsByContentHash: [
             "hash-a": InvoiceTextRecord(
@@ -945,12 +970,11 @@ private final class RecordingPreviewPersistHandler {
             )
         ]
     )
-
-    #expect(duplicateMap[firstInbox.id] == nil)
-    #expect(duplicateMap[secondInbox.id]?.duplicateOfPath == firstInbox.fileURL.path)
+    #expect(groups.count == 1)
+    #expect(groups.first?.memberIDs == Set([firstInbox.id, secondInbox.id]))
 }
 
-@Test func extractedTextDuplicateDetectorPrefersJPEGCopyAsCanonical() async throws {
+@Test func extractedTextDuplicateGroupPrefersJPEGPeerAsReference() async throws {
     let heicInbox = ScannedInvoiceFile(
         id: "/Inbox/invoice.heic",
         name: "invoice.heic",
@@ -977,20 +1001,20 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "hash-jpeg"
     )
 
-    let duplicateMap = InvoiceDuplicateDetector.extractedTextDuplicateMap(
+    let groups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
         for: [heicInbox, jpegInbox],
         textRecordsByContentHash: [
             "hash-heic": InvoiceTextRecord(text: "Amazon invoice INV-42 date 2024-01-05 total 123.45", source: .ocr),
             "hash-jpeg": InvoiceTextRecord(text: "amazon invoice inv 42 date 2024 01 05 total 123 45", source: .ocr)
         ]
     )
-
-    #expect(duplicateMap[jpegInbox.id] == nil)
-    #expect(duplicateMap[heicInbox.id]?.duplicateOfPath == jpegInbox.fileURL.path)
+    let group = try #require(groups.first)
+    #expect(groups.count == 1)
+    #expect(group.referenceMember(for: heicInbox.id)?.fileURL.path == jpegInbox.fileURL.path)
 }
 
 @Test func browserRowsCollapseAndExpandDuplicateGroups() async throws {
-    let canonical = InvoiceItem(
+    let first = InvoiceItem(
         name: "invoice.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice.pdf"),
         location: .inbox,
@@ -1005,7 +1029,7 @@ private final class RecordingPreviewPersistHandler {
         addedAt: Date(timeIntervalSince1970: 9),
         fileType: .pdf,
         status: .blockedDuplicate,
-        duplicateOfPath: canonical.fileURL.path,
+        duplicateOfPath: first.fileURL.path,
         duplicateReason: "Duplicate extracted text matches invoice.pdf"
     )
     let duplicateB = InvoiceItem(
@@ -1015,21 +1039,30 @@ private final class RecordingPreviewPersistHandler {
         addedAt: Date(timeIntervalSince1970: 8),
         fileType: .pdf,
         status: .blockedDuplicate,
-        duplicateOfPath: canonical.fileURL.path,
+        duplicateOfPath: first.fileURL.path,
         duplicateReason: "Duplicate extracted text matches invoice.pdf"
     )
 
-    let collapsedRows = buildInvoiceBrowserRows(from: [canonical, duplicateA, duplicateB], expandedGroupIDs: [])
+    let group = makeDuplicateGroup(visibleInvoices: [first, duplicateA, duplicateB])
+    let collapsedRows = buildInvoiceBrowserRows(
+        from: [first, duplicateA, duplicateB],
+        duplicateGroups: [group],
+        expandedGroupIDs: []
+    )
     #expect(collapsedRows.count == 1)
     #expect(collapsedRows.first?.kind == .groupHeader(duplicateCount: 2))
     #expect(collapsedRows.first?.disclosureState == .collapsed)
 
-    let expandedRows = buildInvoiceBrowserRows(from: [canonical, duplicateA, duplicateB], expandedGroupIDs: [canonical.id])
+    let expandedRows = buildInvoiceBrowserRows(
+        from: [first, duplicateA, duplicateB],
+        duplicateGroups: [group],
+        expandedGroupIDs: [first.id]
+    )
     #expect(expandedRows.count == 3)
     #expect(expandedRows[0].kind == .groupHeader(duplicateCount: 2))
     #expect(expandedRows[0].disclosureState == .expanded)
-    #expect(expandedRows[1].kind == .groupChild(parentID: canonical.id))
-    #expect(expandedRows[2].kind == .groupChild(parentID: canonical.id))
+    #expect(expandedRows[1].kind == .groupChild(parentID: first.id))
+    #expect(expandedRows[2].kind == .groupChild(parentID: first.id))
 }
 
 @Test func disclosureNavigationExpandsAndCollapsesGroupHeaders() async throws {
@@ -1105,7 +1138,24 @@ private final class RecordingPreviewPersistHandler {
         duplicateReason: "Duplicate extracted text matches invoice.pdf"
     )
 
-    let rows = buildInvoiceBrowserRows(from: [orphanDuplicate], expandedGroupIDs: [])
+    let rows = buildInvoiceBrowserRows(
+        from: [orphanDuplicate],
+        duplicateGroups: [
+            InvoiceDuplicateGroup(
+                members: [
+                    duplicateMember(from: orphanDuplicate),
+                    InvoiceDuplicateMember(
+                        id: "/Processed/A/Amazon/invoice.pdf",
+                        fileURL: URL(fileURLWithPath: "/Processed/A/Amazon/invoice.pdf"),
+                        location: .processed,
+                        addedAt: Date(timeIntervalSince1970: 1),
+                        fileType: .pdf
+                    )
+                ]
+            )
+        ],
+        expandedGroupIDs: []
+    )
     #expect(rows.count == 1)
     #expect(rows[0].kind == .invoice)
     #expect(rows[0].invoice.id == orphanDuplicate.id)
@@ -1133,17 +1183,80 @@ private final class RecordingPreviewPersistHandler {
         duplicateReason: "Duplicate extracted text matches invoice.pdf"
     )
 
-    let collapsedRows = buildInvoiceBrowserRows(from: [duplicateA, duplicateB], expandedGroupIDs: [])
+    let hiddenProcessedPeer = InvoiceDuplicateMember(
+        id: "/Processed/A/Amazon/invoice.pdf",
+        fileURL: URL(fileURLWithPath: "/Processed/A/Amazon/invoice.pdf"),
+        location: .processed,
+        addedAt: Date(timeIntervalSince1970: 1),
+        fileType: .pdf
+    )
+    let group = makeDuplicateGroup(visibleInvoices: [duplicateA, duplicateB], hiddenMembers: [hiddenProcessedPeer])
+    let collapsedRows = buildInvoiceBrowserRows(
+        from: [duplicateA, duplicateB],
+        duplicateGroups: [group],
+        expandedGroupIDs: []
+    )
     #expect(collapsedRows.count == 1)
     #expect(collapsedRows[0].invoice.id == duplicateA.id)
     #expect(collapsedRows[0].kind == .groupHeader(duplicateCount: 1))
     #expect(collapsedRows[0].memberIDs == Set([duplicateA.id, duplicateB.id]))
 
-    let expandedRows = buildInvoiceBrowserRows(from: [duplicateA, duplicateB], expandedGroupIDs: [duplicateA.id])
+    let expandedRows = buildInvoiceBrowserRows(
+        from: [duplicateA, duplicateB],
+        duplicateGroups: [group],
+        expandedGroupIDs: [duplicateA.id]
+    )
     #expect(expandedRows.count == 2)
     #expect(expandedRows[0].kind == .groupHeader(duplicateCount: 1))
     #expect(expandedRows[1].kind == .groupChild(parentID: duplicateA.id))
     #expect(expandedRows[1].invoice.id == duplicateB.id)
+}
+
+@Test func duplicateGroupHeaderBadgeTitleShowsProcessedStateInUnprocessedQueue() async throws {
+    let duplicateA = InvoiceItem(
+        name: "invoice-copy-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-a.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 9),
+        fileType: .pdf,
+        status: .blockedDuplicate
+    )
+    let duplicateB = InvoiceItem(
+        name: "invoice-copy-b.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-b.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 8),
+        fileType: .pdf,
+        status: .blockedDuplicate
+    )
+    let row = InvoiceBrowserRow(
+        invoice: duplicateA,
+        kind: .groupHeader(duplicateCount: 1),
+        memberIDs: Set([duplicateA.id, duplicateB.id]),
+        indentationLevel: 0,
+        disclosureState: .collapsed
+    )
+    let duplicateGroup = makeDuplicateGroup(
+        visibleInvoices: [duplicateA, duplicateB],
+        hiddenMembers: [
+            InvoiceDuplicateMember(
+                id: "/Processed/A/Amazon/invoice.pdf",
+                fileURL: URL(fileURLWithPath: "/Processed/A/Amazon/invoice.pdf"),
+                location: .processed,
+                addedAt: Date(timeIntervalSince1970: 1),
+                fileType: .pdf
+            )
+        ]
+    )
+
+    let title = duplicateGroupHeaderBadgeTitle(
+        for: row,
+        duplicateCount: 1,
+        duplicateGroups: [duplicateGroup],
+        queueTab: .unprocessed
+    )
+
+    #expect(title == "1 Duplicate - processed")
 }
 
 @Test func invoiceBrowserResolvedSortDescriptorsKeepsVisibleSortForQueue() async throws {
@@ -1439,37 +1552,51 @@ private final class RecordingPreviewPersistHandler {
     #expect(await MainActor.run { model.isIgnored(ignoredInvoice.id) })
 }
 
-@Test func appModelUsesDuplicateProcessedBadgeWhenCanonicalIsPromoted() async throws {
+@Test func appModelUsesDuplicateProcessedBadgeForProcessedPeerGroup() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let inboxInvoiceURL = inboxRoot.appendingPathComponent("incoming.pdf")
+    let processedInvoiceURL = processedRoot
+        .appendingPathComponent("A", isDirectory: true)
+        .appendingPathComponent("Amazon", isDirectory: true)
+        .appendingPathComponent("Amazon-2024-01-05-20240330-062405.pdf")
+    try FileManager.default.createDirectory(at: processedInvoiceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("first-file-body".utf8).write(to: inboxInvoiceURL)
+    try Data("second-file-body".utf8).write(to: processedInvoiceURL)
+
+    let textStore = InMemoryInvoiceTextStore()
+    let inboxHash = try FileHasher.sha256(for: inboxInvoiceURL)
+    let processedHash = try FileHasher.sha256(for: processedInvoiceURL)
+    let sharedRecord = InvoiceTextRecord(text: "Vendor: Acme Corp\nInvoice: INV-42", source: .pdfText)
+    await textStore.save(sharedRecord, forContentHash: inboxHash)
+    await textStore.save(sharedRecord, forContentHash: processedHash)
     let model = await MainActor.run {
-        AppModel(autoRefresh: false)
+        AppModel(
+            folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(),
+            autoRefresh: false
+        )
     }
-    let canonical = InvoiceItem(
-        name: "processed.pdf",
-        fileURL: URL(fileURLWithPath: "/Processing/processed.pdf"),
-        location: .processing,
-        addedAt: Date(timeIntervalSince1970: 10),
-        fileType: .pdf,
-        status: .inProgress
-    )
-    let duplicate = InvoiceItem(
-        name: "incoming.pdf",
-        fileURL: URL(fileURLWithPath: "/Inbox/incoming.pdf"),
-        location: .inbox,
-        addedAt: Date(timeIntervalSince1970: 12),
-        fileType: .pdf,
-        status: .blockedDuplicate,
-        duplicateOfPath: canonical.fileURL.path,
-        duplicateReason: "Duplicate extracted text matches processed.pdf"
-    )
+
+    await model.reloadLibraryForTesting()
 
     let badgeTitle = await MainActor.run {
-        model.invoices = [duplicate, canonical]
-        return model.duplicateBadgeTitlesByInvoiceID[duplicate.id]
+        let inboxInvoice = model.invoices.first(where: { $0.location == .inbox })
+        return inboxInvoice.flatMap { model.duplicateBadgeTitlesByInvoiceID[$0.id] }
     }
     #expect(badgeTitle == "Duplicate Processed")
 }
 
-@Test func appModelBlocksDuplicatesAfterExtractionBackedReload() async throws {
+@Test func appModelLeavesAllInboxPeersActionableAfterExtractionBackedReload() async throws {
     let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
     let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
@@ -1511,9 +1638,10 @@ private final class RecordingPreviewPersistHandler {
     await model.reloadLibraryForTesting()
 
     let invoicesAfterExtraction = await MainActor.run { model.invoices }
-    #expect(invoicesAfterExtraction.filter { $0.status == .blockedDuplicate }.count == 1)
-    #expect(invoicesAfterExtraction.filter { $0.status == .unprocessed }.count == 1)
-    #expect(invoicesAfterExtraction.contains { $0.duplicateReason?.contains("Similar extracted text matches") == true })
+    #expect(invoicesAfterExtraction.filter { $0.status == .blockedDuplicate }.isEmpty)
+    #expect(invoicesAfterExtraction.filter { $0.status == .unprocessed }.count == 2)
+    #expect(invoicesAfterExtraction.allSatisfy { $0.duplicateReason == nil })
+    #expect(await MainActor.run { model.duplicateGroups.count == 1 })
     #expect(await extractor.totalCallCount() == 2)
 }
 

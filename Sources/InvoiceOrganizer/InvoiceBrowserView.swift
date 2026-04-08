@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct InvoiceBrowserView: NSViewRepresentable {
     let invoices: [InvoiceItem]
+    let duplicateGroups: [InvoiceDuplicateGroup]
     let queueTab: InvoiceQueueTab
     @Binding var browserContext: InvoiceBrowserContext
     let ocrStatesByInvoiceID: [InvoiceItem.ID: InvoiceOCRState]
@@ -61,6 +62,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
         context.coordinator.update(
             invoices: invoices,
+            duplicateGroups: duplicateGroups,
             ocrStatesByInvoiceID: ocrStatesByInvoiceID,
             readStatesByInvoiceID: readStatesByInvoiceID,
             selectedIDs: selectedInvoiceIDs
@@ -75,6 +77,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
         }
         context.coordinator.update(
             invoices: invoices,
+            duplicateGroups: duplicateGroups,
             ocrStatesByInvoiceID: ocrStatesByInvoiceID,
             readStatesByInvoiceID: readStatesByInvoiceID,
             selectedIDs: selectedInvoiceIDs
@@ -125,6 +128,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
         func update(
             invoices: [InvoiceItem],
+            duplicateGroups: [InvoiceDuplicateGroup],
             ocrStatesByInvoiceID: [InvoiceItem.ID: InvoiceOCRState],
             readStatesByInvoiceID: [InvoiceItem.ID: InvoiceReadState],
             selectedIDs: Set<InvoiceItem.ID>
@@ -134,7 +138,11 @@ struct InvoiceBrowserView: NSViewRepresentable {
             self.readStatesByInvoiceID = readStatesByInvoiceID
             syncTableSortDescriptorsFromContext()
             let sortedInvoices = sort(invoices: invoices)
-            let nextRows = buildInvoiceBrowserRows(from: sortedInvoices, expandedGroupIDs: parent.browserContext.expandedGroupIDs)
+            let nextRows = buildInvoiceBrowserRows(
+                from: sortedInvoices,
+                duplicateGroups: duplicateGroups,
+                expandedGroupIDs: parent.browserContext.expandedGroupIDs
+            )
             if displayedRows != nextRows {
                 displayedRows = nextRows
                 tableView?.reloadData()
@@ -252,6 +260,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
             displayedRows = buildInvoiceBrowserRows(
                 from: sort(invoices: parent.invoices),
+                duplicateGroups: parent.duplicateGroups,
                 expandedGroupIDs: parent.browserContext.expandedGroupIDs
             )
             tableView.reloadData()
@@ -460,6 +469,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
             parent.browserContext.expandedGroupIDs = expandedGroupIDs
             displayedRows = buildInvoiceBrowserRows(
                 from: sort(invoices: parent.invoices),
+                duplicateGroups: parent.duplicateGroups,
                 expandedGroupIDs: parent.browserContext.expandedGroupIDs
             )
             tableView?.reloadData()
@@ -497,7 +507,12 @@ struct InvoiceBrowserView: NSViewRepresentable {
             var badges: [InvoiceBrowserBadge] = []
 
             if case let .groupHeader(duplicateCount) = row.kind, duplicateCount > 0 {
-                let label = duplicateCount == 1 ? "1 duplicate" : "\(duplicateCount) duplicates"
+                let label = duplicateGroupHeaderBadgeTitle(
+                    for: row,
+                    duplicateCount: duplicateCount,
+                    duplicateGroups: parent.duplicateGroups,
+                    queueTab: parent.queueTab
+                )
                 badges.append(.duplicate(label))
             } else if let duplicateBadge = parent.duplicateBadgeTitlesByInvoiceID[row.invoice.id] {
                 badges.append(.duplicate(duplicateBadge))
@@ -600,6 +615,23 @@ struct InvoiceBrowserView: NSViewRepresentable {
             return lhsRank < rhsRank ? .orderedAscending : .orderedDescending
         }
     }
+}
+
+func duplicateGroupHeaderBadgeTitle(
+    for row: InvoiceBrowserRow,
+    duplicateCount: Int,
+    duplicateGroups: [InvoiceDuplicateGroup],
+    queueTab: InvoiceQueueTab
+) -> String {
+    let defaultLabel = duplicateCount == 1 ? "1 duplicate" : "\(duplicateCount) duplicates"
+    guard queueTab == .unprocessed,
+          duplicateGroups.contains(where: { $0.contains(memberID: row.invoice.id) && $0.hasProcessedMember }) else {
+        return defaultLabel
+    }
+
+    return duplicateCount == 1
+        ? "1 Duplicate - processed"
+        : "\(duplicateCount) Duplicates - processed"
 }
 
 private extension InvoiceBrowserColumnID {
@@ -788,36 +820,31 @@ enum InvoiceBrowserBadge: Equatable {
 
 func buildInvoiceBrowserRows(
     from invoices: [InvoiceItem],
+    duplicateGroups: [InvoiceDuplicateGroup],
     expandedGroupIDs: Set<InvoiceItem.ID>
 ) -> [InvoiceBrowserRow] {
     let visibleInvoicesByID = Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
-    var childrenByCanonicalID: [InvoiceItem.ID: [InvoiceItem]] = [:]
-    var orphanDuplicatesByCanonicalPath: [String: [InvoiceItem]] = [:]
+    var childrenByRepresentativeID: [InvoiceItem.ID: [InvoiceItem]] = [:]
 
-    for invoice in invoices {
-        guard let duplicateOfPath = invoice.duplicateOfPath else { continue }
-        let canonicalID = InvoiceItem.stableID(for: URL(fileURLWithPath: duplicateOfPath))
-        if visibleInvoicesByID[canonicalID] != nil {
-            childrenByCanonicalID[canonicalID, default: []].append(invoice)
-        } else {
-            orphanDuplicatesByCanonicalPath[duplicateOfPath, default: []].append(invoice)
+    for group in duplicateGroups {
+        let visibleMembers = invoices.filter { group.memberIDs.contains($0.id) && visibleInvoicesByID[$0.id] != nil }
+        guard visibleMembers.count > 1,
+              let representative = visibleMembers.first else {
+            continue
         }
-    }
 
-    for orphanDuplicates in orphanDuplicatesByCanonicalPath.values where orphanDuplicates.count > 1 {
-        guard let representative = orphanDuplicates.first else { continue }
-        childrenByCanonicalID[representative.id] = Array(orphanDuplicates.dropFirst())
+        childrenByRepresentativeID[representative.id] = Array(visibleMembers.dropFirst())
     }
 
     var rows: [InvoiceBrowserRow] = []
-    let groupedChildIDs = Set(childrenByCanonicalID.values.flatMap { $0.map(\.id) })
+    let groupedChildIDs = Set(childrenByRepresentativeID.values.flatMap { $0.map(\.id) })
 
     for invoice in invoices {
         if groupedChildIDs.contains(invoice.id) {
             continue
         }
 
-        guard let children = childrenByCanonicalID[invoice.id], !children.isEmpty else {
+        guard let children = childrenByRepresentativeID[invoice.id], !children.isEmpty else {
             rows.append(
                 InvoiceBrowserRow(
                     invoice: invoice,

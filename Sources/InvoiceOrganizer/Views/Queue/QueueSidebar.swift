@@ -114,6 +114,7 @@ struct QueueSidebar: View {
             } else {
                 InvoiceBrowserView(
                     invoices: model.visibleInvoices,
+                    duplicateGroups: model.duplicateGroups,
                     queueTab: model.selectedQueueTab,
                     browserContext: browserContextBinding,
                     ocrStatesByInvoiceID: model.ocrStatesByInvoiceID,
