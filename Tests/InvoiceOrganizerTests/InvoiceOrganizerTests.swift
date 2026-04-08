@@ -27,26 +27,7 @@ private func localDateComponents(_ date: Date) -> DateComponents {
     return calendar.dateComponents([.year, .month, .day], from: date)
 }
 
-private func duplicateMember(from invoice: PhysicalArtifact) -> InvoiceDuplicateMember {
-    InvoiceDuplicateMember(
-        id: invoice.id,
-        fileURL: invoice.fileURL,
-        location: invoice.location,
-        addedAt: invoice.addedAt,
-        fileType: invoice.fileType
-    )
-}
-
-private func makeDuplicateGroup(
-    visibleInvoices: [PhysicalArtifact],
-    hiddenMembers: [InvoiceDuplicateMember] = []
-) -> InvoiceDuplicateGroup {
-    InvoiceDuplicateGroup(
-        members: visibleInvoices.map(duplicateMember(from:)) + hiddenMembers
-    )
-}
-
-private func documentMember(from invoice: PhysicalArtifact) -> DocumentArtifactReference {
+private func documentArtifact(from invoice: PhysicalArtifact) -> DocumentArtifactReference {
     DocumentArtifactReference(
         id: invoice.id,
         fileURL: invoice.fileURL,
@@ -57,13 +38,24 @@ private func documentMember(from invoice: PhysicalArtifact) -> DocumentArtifactR
     )
 }
 
+private func documentArtifact(from file: ScannedInvoiceFile) -> DocumentArtifactReference {
+    DocumentArtifactReference(
+        id: file.id,
+        fileURL: file.fileURL,
+        location: file.location,
+        addedAt: file.addedAt,
+        fileType: file.fileType,
+        contentHash: file.contentHash
+    )
+}
+
 private func makeDocument(
-    visibleInvoices: [PhysicalArtifact],
-    hiddenMembers: [DocumentArtifactReference] = [],
+    visibleArtifacts: [PhysicalArtifact],
+    hiddenArtifacts: [DocumentArtifactReference] = [],
     metadata: DocumentMetadata = .empty
 ) -> Document {
     Document(
-        members: visibleInvoices.map(documentMember(from:)) + hiddenMembers,
+        artifacts: visibleArtifacts.map(documentArtifact(from:)) + hiddenArtifacts,
         metadata: metadata
     )
 }
@@ -805,7 +797,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: nil
     )
 
-    let invoice = InboxFileScanner.makeActiveInvoice(from: file, workflow: nil, duplicateInfo: nil)
+    let invoice = InboxFileScanner.makeActiveArtifact(from: file, workflow: nil, duplicateInfo: nil)
     #expect(invoice.location == .processing)
     #expect(invoice.status == .inProgress)
 }
@@ -825,7 +817,7 @@ private final class RecordingPreviewPersistHandler {
     )
 
     let staleWorkflow = StoredInvoiceWorkflow(vendor: nil, invoiceDate: nil, invoiceNumber: nil, isInProgress: true)
-    let invoice = InboxFileScanner.makeActiveInvoice(from: file, workflow: staleWorkflow, duplicateInfo: nil)
+    let invoice = InboxFileScanner.makeActiveArtifact(from: file, workflow: staleWorkflow, duplicateInfo: nil)
 
     #expect(invoice.location == .inbox)
     #expect(invoice.status == .unprocessed)
@@ -899,7 +891,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "inbox-hash"
     )
 
-    let groups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.extractedTextDuplicateGroups(
         for: [processedFile, inboxFile],
         textRecordsByContentHash: [
             "processed-hash": InvoiceTextRecord(text: "Amazon\nInvoice INV-42", source: .pdfText),
@@ -908,10 +900,15 @@ private final class RecordingPreviewPersistHandler {
     )
     let group = try #require(groups.first)
     #expect(groups.count == 1)
-    #expect(group.memberIDs == Set([processedFile.id, inboxFile.id]))
-    #expect(group.isSoftBlocked(memberID: inboxFile.id))
-    #expect(!group.isSoftBlocked(memberID: processedFile.id))
-    #expect(group.duplicateInfo(for: inboxFile.id)?.duplicateOfPath == processedFile.fileURL.path)
+    #expect(Set(group.artifactIDs) == Set([processedFile.id, inboxFile.id]))
+
+    let document = Document(
+        artifacts: [documentArtifact(from: processedFile), documentArtifact(from: inboxFile)],
+        metadata: .empty
+    )
+    #expect(document.isSoftBlocked(artifactID: inboxFile.id))
+    #expect(!document.isSoftBlocked(artifactID: processedFile.id))
+    #expect(document.duplicateInfo(forArtifactID: inboxFile.id)?.duplicateOfPath == processedFile.fileURL.path)
 }
 
 @Test func extractedTextDuplicateDetectorKeepsAllInboxPeersActionable() async throws {
@@ -941,7 +938,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "hash-456"
     )
 
-    let groups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.extractedTextDuplicateGroups(
         for: [firstInbox, secondInbox],
         textRecordsByContentHash: [
             "hash-123": InvoiceTextRecord(text: "Vendor: Acme\nInvoice: INV-42", source: .pdfText),
@@ -950,8 +947,14 @@ private final class RecordingPreviewPersistHandler {
     )
     let group = try #require(groups.first)
     #expect(groups.count == 1)
-    #expect(!group.isSoftBlocked(memberID: firstInbox.id))
-    #expect(!group.isSoftBlocked(memberID: secondInbox.id))
+    #expect(Set(group.artifactIDs) == Set([firstInbox.id, secondInbox.id]))
+
+    let document = Document(
+        artifacts: [documentArtifact(from: firstInbox), documentArtifact(from: secondInbox)],
+        metadata: .empty
+    )
+    #expect(!document.isSoftBlocked(artifactID: firstInbox.id))
+    #expect(!document.isSoftBlocked(artifactID: secondInbox.id))
 }
 
 @Test func extractedTextDuplicateDetectorMatchesNearEquivalentOCRText() async throws {
@@ -981,7 +984,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "hash-b"
     )
 
-    let groups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.extractedTextDuplicateGroups(
         for: [firstInbox, secondInbox],
         textRecordsByContentHash: [
             "hash-a": InvoiceTextRecord(
@@ -995,7 +998,7 @@ private final class RecordingPreviewPersistHandler {
         ]
     )
     #expect(groups.count == 1)
-    #expect(groups.first?.memberIDs == Set([firstInbox.id, secondInbox.id]))
+    #expect(groups.first.map { Set($0.artifactIDs) } == Set([firstInbox.id, secondInbox.id]))
 }
 
 @Test func extractedTextDuplicateDetectorMatchesAgainstExistingDocumentMembers() async throws {
@@ -1036,7 +1039,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "hash-c"
     )
 
-    let groups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.extractedTextDuplicateGroups(
         for: [firstInbox, secondInbox, thirdInbox],
         textRecordsByContentHash: [
             "hash-a": InvoiceTextRecord(
@@ -1055,7 +1058,7 @@ private final class RecordingPreviewPersistHandler {
     )
 
     #expect(groups.count == 1)
-    #expect(groups.first?.memberIDs == Set([firstInbox.id, secondInbox.id, thirdInbox.id]))
+    #expect(groups.first.map { Set($0.artifactIDs) } == Set([firstInbox.id, secondInbox.id, thirdInbox.id]))
 }
 
 @Test func extractedTextDuplicateGroupPrefersJPEGPeerAsReference() async throws {
@@ -1085,7 +1088,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "hash-jpeg"
     )
 
-    let groups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.extractedTextDuplicateGroups(
         for: [heicInbox, jpegInbox],
         textRecordsByContentHash: [
             "hash-heic": InvoiceTextRecord(text: "Amazon invoice INV-42 date 2024-01-05 total 123.45", source: .ocr),
@@ -1094,7 +1097,13 @@ private final class RecordingPreviewPersistHandler {
     )
     let group = try #require(groups.first)
     #expect(groups.count == 1)
-    #expect(group.referenceMember(for: heicInbox.id)?.fileURL.path == jpegInbox.fileURL.path)
+    #expect(Set(group.artifactIDs) == Set([heicInbox.id, jpegInbox.id]))
+
+    let document = Document(
+        artifacts: [documentArtifact(from: heicInbox), documentArtifact(from: jpegInbox)],
+        metadata: .empty
+    )
+    #expect(document.referenceArtifact(for: heicInbox.id)?.fileURL.path == jpegInbox.fileURL.path)
 }
 
 @Test func browserRowsCollapseAndExpandDuplicateGroups() async throws {
@@ -1127,7 +1136,7 @@ private final class RecordingPreviewPersistHandler {
         duplicateReason: "Duplicate extracted text matches invoice.pdf"
     )
 
-    let group = makeDocument(visibleInvoices: [first, duplicateA, duplicateB])
+    let group = makeDocument(visibleArtifacts: [first, duplicateA, duplicateB])
     let collapsedRows = buildInvoiceBrowserRows(
         from: [first, duplicateA, duplicateB],
         documents: [group],
@@ -1162,14 +1171,14 @@ private final class RecordingPreviewPersistHandler {
     let collapsedHeader = InvoiceBrowserRow(
         invoice: canonical,
         kind: .groupHeader(duplicateCount: 2),
-        memberIDs: Set([canonical.id]),
+        artifactIDs: Set([canonical.id]),
         indentationLevel: 0,
         disclosureState: .collapsed
     )
     let expandedHeader = InvoiceBrowserRow(
         invoice: canonical,
         kind: .groupHeader(duplicateCount: 2),
-        memberIDs: Set([canonical.id]),
+        artifactIDs: Set([canonical.id]),
         indentationLevel: 0,
         disclosureState: .expanded
     )
@@ -1201,7 +1210,7 @@ private final class RecordingPreviewPersistHandler {
     let childRow = InvoiceBrowserRow(
         invoice: duplicate,
         kind: .groupChild(parentID: canonical.id),
-        memberIDs: Set([duplicate.id]),
+        artifactIDs: Set([duplicate.id]),
         indentationLevel: 1,
         disclosureState: .hidden
     )
@@ -1226,8 +1235,8 @@ private final class RecordingPreviewPersistHandler {
         from: [orphanDuplicate],
         documents: [
             Document(
-                members: [
-                    documentMember(from: orphanDuplicate),
+                artifacts: [
+                    documentArtifact(from: orphanDuplicate),
                     DocumentArtifactReference(
                         id: "/Processed/A/Amazon/invoice.pdf",
                         fileURL: URL(fileURLWithPath: "/Processed/A/Amazon/invoice.pdf"),
@@ -1277,7 +1286,7 @@ private final class RecordingPreviewPersistHandler {
         fileType: .pdf,
         contentHash: nil
     )
-    let group = makeDocument(visibleInvoices: [duplicateA, duplicateB], hiddenMembers: [hiddenProcessedPeer])
+    let group = makeDocument(visibleArtifacts: [duplicateA, duplicateB], hiddenArtifacts: [hiddenProcessedPeer])
     let collapsedRows = buildInvoiceBrowserRows(
         from: [duplicateA, duplicateB],
         documents: [group],
@@ -1286,7 +1295,7 @@ private final class RecordingPreviewPersistHandler {
     #expect(collapsedRows.count == 1)
     #expect(collapsedRows[0].invoice.id == duplicateA.id)
     #expect(collapsedRows[0].kind == .groupHeader(duplicateCount: 1))
-    #expect(collapsedRows[0].memberIDs == Set([duplicateA.id, duplicateB.id]))
+    #expect(collapsedRows[0].artifactIDs == Set([duplicateA.id, duplicateB.id]))
 
     let expandedRows = buildInvoiceBrowserRows(
         from: [duplicateA, duplicateB],
@@ -1319,13 +1328,13 @@ private final class RecordingPreviewPersistHandler {
     let row = InvoiceBrowserRow(
         invoice: duplicateA,
         kind: .groupHeader(duplicateCount: 1),
-        memberIDs: Set([duplicateA.id, duplicateB.id]),
+        artifactIDs: Set([duplicateA.id, duplicateB.id]),
         indentationLevel: 0,
         disclosureState: .collapsed
     )
     let duplicateDocument = makeDocument(
-        visibleInvoices: [duplicateA, duplicateB],
-        hiddenMembers: [
+        visibleArtifacts: [duplicateA, duplicateB],
+        hiddenArtifacts: [
             DocumentArtifactReference(
                 id: "/Processed/A/Amazon/invoice.pdf",
                 fileURL: URL(fileURLWithPath: "/Processed/A/Amazon/invoice.pdf"),
@@ -1415,14 +1424,14 @@ private final class RecordingPreviewPersistHandler {
     await model.reloadLibraryForTesting()
 
     let duplicateDocuments = await MainActor.run { model.documents.filter(\.isDuplicate) }
-    let visibleInvoices = await MainActor.run { model.invoices.filter { $0.location == .inbox } }
+    let visibleArtifacts = await MainActor.run { model.invoices.filter { $0.location == .inbox } }
 
     #expect(duplicateDocuments.count == 1)
     #expect(duplicateDocuments.first?.metadata.vendor == "Acme Corp")
     #expect(duplicateDocuments.first?.metadata.invoiceNumber == "INV-42")
     #expect(duplicateDocuments.first?.metadata.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
-    #expect(visibleInvoices.allSatisfy { $0.vendor == "Acme Corp" })
-    #expect(visibleInvoices.allSatisfy { $0.invoiceNumber == "INV-42" })
+    #expect(visibleArtifacts.allSatisfy { $0.vendor == "Acme Corp" })
+    #expect(visibleArtifacts.allSatisfy { $0.invoiceNumber == "INV-42" })
 }
 
 @Test func appModelReportsDedupSimilarityScoresForInvoice() async throws {
@@ -1478,7 +1487,7 @@ private final class RecordingPreviewPersistHandler {
     #expect(similarities[0].matchedFileURL.lastPathComponent == "incoming-2.pdf")
     #expect(abs(similarities[0].score - 0.6) < 0.0001)
     #expect(similarities[0].meetsThreshold == false)
-    #expect(similarities[0].memberCount == 1)
+    #expect(similarities[0].artifactCount == 1)
     #expect(similarities[1].matchedFileURL.lastPathComponent == "incoming-3.pdf")
     #expect(abs(similarities[1].score - (2.0 / 6.0)) < 0.0001)
 }
@@ -2004,12 +2013,12 @@ private final class RecordingPreviewPersistHandler {
         model.setIgnored(true, for: [ignoredInvoice.id])
     }
 
-    let hiddenVisibleInvoices = await MainActor.run { model.visibleInvoices }
+    let hiddenVisibleInvoices = await MainActor.run { model.visibleArtifacts }
     #expect(hiddenVisibleInvoices.isEmpty)
 
     let shownVisibleInvoices = await MainActor.run {
         model.showIgnoredInvoices = true
-        return model.visibleInvoices
+        return model.visibleArtifacts
     }
     #expect(shownVisibleInvoices.map(\.id) == [ignoredInvoice.id])
     #expect(await MainActor.run { model.isIgnored(ignoredInvoice.id) })
@@ -2104,7 +2113,7 @@ private final class RecordingPreviewPersistHandler {
             .sorted { $0.name < $1.name }
             .first
     })
-    #expect(await MainActor.run { model.duplicateGroups.count } == 1)
+    #expect(await MainActor.run { model.documents.filter { $0.isDuplicate }.count } == 1)
 
     await MainActor.run {
         model.moveInvoicesToInProgress(ids: [selectedArtifact.id])
@@ -2122,7 +2131,7 @@ private final class RecordingPreviewPersistHandler {
     #expect(movedInvoice.name == selectedArtifact.name)
     #expect(duplicateFolderFiles.map(\.lastPathComponent).sorted() == ["incoming-2.pdf"])
     #expect(!remainingInvoices.contains(where: { $0.name == "incoming-2.pdf" }))
-    #expect(await MainActor.run { model.duplicateGroups.isEmpty })
+    #expect(await MainActor.run { model.documents.filter { $0.isDuplicate }.isEmpty })
 }
 
 @Test func appModelMovesOnlyFirstSelectedDuplicateIntoProcessing() async throws {
@@ -2236,7 +2245,7 @@ private final class RecordingPreviewPersistHandler {
     #expect(invoicesAfterExtraction.filter { $0.status == .blockedDuplicate }.isEmpty)
     #expect(invoicesAfterExtraction.filter { $0.status == .unprocessed }.count == 2)
     #expect(invoicesAfterExtraction.allSatisfy { $0.duplicateReason == nil })
-    #expect(await MainActor.run { model.duplicateGroups.count == 1 })
+    #expect(await MainActor.run { model.documents.filter { $0.isDuplicate }.count == 1 })
     #expect(await extractor.totalCallCount() == 2)
 }
 

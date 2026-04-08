@@ -8,7 +8,7 @@ struct MetadataCard: View {
         model.document(for: invoice.id)
     }
 
-    private var duplicateSimilarities: [InvoiceDuplicateSimilarity] {
+    private var duplicateSimilarities: [DuplicateSimilarity] {
         model.duplicateSimilarities(for: invoice.id)
     }
 
@@ -22,7 +22,7 @@ struct MetadataCard: View {
                 .font(.title3.bold())
 
             if let document {
-                LabeledContent("Document Members", value: "\(document.members.count)")
+                LabeledContent("Document Members", value: "\(document.artifacts.count)")
             }
             LabeledContent("Source Path", value: model.sourcePathDisplay(for: invoice))
             if let processedFolderPath {
@@ -66,9 +66,9 @@ struct MetadataCard: View {
                                         .foregroundStyle(similarity.meetsThreshold ? .primary : .secondary)
                                 }
 
-                                Text(similarity.memberCount == 1
+                                Text(similarity.artifactCount == 1
                                      ? "Best match in 1-file document"
-                                     : "Best match in \(similarity.memberCount)-file document")
+                                     : "Best match in \(similarity.artifactCount)-file document")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }

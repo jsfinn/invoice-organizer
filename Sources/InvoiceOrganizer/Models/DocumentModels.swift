@@ -66,48 +66,48 @@ struct DocumentArtifactReference: Identifiable, Equatable, Sendable {
 }
 
 struct Document: Identifiable, Equatable, Sendable {
-    let members: [DocumentArtifactReference]
+    let artifacts: [DocumentArtifactReference]
     var metadata: DocumentMetadata
 
     var id: String {
-        members.map(\.identityKey).sorted().joined(separator: "|")
+        artifacts.map(\.identityKey).sorted().joined(separator: "|")
     }
 
-    var memberIDs: Set<PhysicalArtifact.ID> {
-        Set(members.map(\.id))
+    var artifactIDs: Set<PhysicalArtifact.ID> {
+        Set(artifacts.map(\.id))
     }
 
     var isDuplicate: Bool {
-        members.count > 1
+        artifacts.count > 1
     }
 
     var hasProcessedMember: Bool {
-        members.contains { $0.location == .processed }
+        artifacts.contains { $0.location == .processed }
     }
 
     var hasInProgressMember: Bool {
-        members.contains { $0.location == .processing }
+        artifacts.contains { $0.location == .processing }
     }
 
-    func contains(memberID: PhysicalArtifact.ID) -> Bool {
-        members.contains { $0.id == memberID }
+    func contains(artifactID: PhysicalArtifact.ID) -> Bool {
+        artifacts.contains { $0.id == artifactID }
     }
 
-    func member(for memberID: PhysicalArtifact.ID) -> DocumentArtifactReference? {
-        members.first { $0.id == memberID }
+    func artifact(for artifactID: PhysicalArtifact.ID) -> DocumentArtifactReference? {
+        artifacts.first { $0.id == artifactID }
     }
 
     func bestSimilarity(
         to candidateTokens: Set<String>,
-        tokensByMemberID: [PhysicalArtifact.ID: Set<String>],
+        tokensByArtifactID: [PhysicalArtifact.ID: Set<String>],
         threshold: Double
-    ) -> InvoiceDuplicateSimilarity? {
-        let scoredMembers = members.compactMap { member -> (DocumentArtifactReference, Double)? in
-            guard let memberTokens = tokensByMemberID[member.id] else { return nil }
-            return (member, InvoiceDuplicateDetector.jaccardSimilarity(candidateTokens, memberTokens))
+    ) -> DuplicateSimilarity? {
+        let scoredArtifacts = artifacts.compactMap { artifact -> (DocumentArtifactReference, Double)? in
+            guard let artifactTokens = tokensByArtifactID[artifact.id] else { return nil }
+            return (artifact, DuplicateDetector.jaccardSimilarity(candidateTokens, artifactTokens))
         }
 
-        guard let bestMatch = scoredMembers.max(by: { lhs, rhs in
+        guard let bestMatch = scoredArtifacts.max(by: { lhs, rhs in
             if lhs.1 != rhs.1 {
                 return lhs.1 < rhs.1
             }
@@ -117,53 +117,53 @@ struct Document: Identifiable, Equatable, Sendable {
             return nil
         }
 
-        return InvoiceDuplicateSimilarity(
+        return DuplicateSimilarity(
             documentID: id,
             matchedArtifactID: bestMatch.0.id,
             matchedFileURL: bestMatch.0.fileURL,
             matchedLocation: bestMatch.0.location,
-            memberCount: members.count,
+            artifactCount: artifacts.count,
             score: bestMatch.1,
             meetsThreshold: bestMatch.1 >= threshold
         )
     }
 
-    func isSoftBlocked(memberID: PhysicalArtifact.ID) -> Bool {
+    func isSoftBlocked(artifactID: PhysicalArtifact.ID) -> Bool {
         guard isDuplicate,
-              let member = member(for: memberID) else { return false }
+              let artifact = self.artifact(for: artifactID) else { return false }
 
         if hasProcessedMember {
-            return member.location != .processed
+            return artifact.location != .processed
         }
 
         if hasInProgressMember {
-            return member.location == .inbox
+            return artifact.location == .inbox
         }
 
         return false
     }
 
-    func referenceMember(for memberID: PhysicalArtifact.ID) -> DocumentArtifactReference? {
-        members
-            .filter { $0.id != memberID }
+    func referenceArtifact(for artifactID: PhysicalArtifact.ID) -> DocumentArtifactReference? {
+        artifacts
+            .filter { $0.id != artifactID }
             .sorted(by: documentReferencePriority)
             .first
     }
 
-    func duplicateInfo(for memberID: PhysicalArtifact.ID) -> InvoiceDuplicateInfo? {
-        guard isSoftBlocked(memberID: memberID),
-              let referenceMember = referenceMember(for: memberID) else {
+    func duplicateInfo(forArtifactID artifactID: PhysicalArtifact.ID) -> DuplicateInfo? {
+        guard isSoftBlocked(artifactID: artifactID),
+              let referenceArtifact = referenceArtifact(for: artifactID) else {
             return nil
         }
 
-        return InvoiceDuplicateInfo(
-            duplicateOfPath: referenceMember.fileURL.path,
-            reason: duplicateReason(for: referenceMember)
+        return DuplicateInfo(
+            duplicateOfPath: referenceArtifact.fileURL.path,
+            reason: duplicateReason(for: referenceArtifact)
         )
     }
 
-    func badgeTitle(for memberID: PhysicalArtifact.ID) -> String? {
-        guard isSoftBlocked(memberID: memberID) else { return nil }
+    func badgeTitle(forArtifactID artifactID: PhysicalArtifact.ID) -> String? {
+        guard isSoftBlocked(artifactID: artifactID) else { return nil }
 
         if hasProcessedMember || hasInProgressMember {
             return "Duplicate Processed"
@@ -172,14 +172,14 @@ struct Document: Identifiable, Equatable, Sendable {
         return "Duplicate"
     }
 
-    private func duplicateReason(for referenceMember: DocumentArtifactReference) -> String {
-        switch referenceMember.location {
+    private func duplicateReason(for referenceArtifact: DocumentArtifactReference) -> String {
+        switch referenceArtifact.location {
         case .processed:
-            return "Similar extracted text matches processed file \(referenceMember.fileURL.lastPathComponent)"
+            return "Similar extracted text matches processed file \(referenceArtifact.fileURL.lastPathComponent)"
         case .processing:
-            return "Similar extracted text matches in-progress file \(referenceMember.fileURL.lastPathComponent)"
+            return "Similar extracted text matches in-progress file \(referenceArtifact.fileURL.lastPathComponent)"
         case .inbox:
-            return "Similar extracted text matches \(referenceMember.fileURL.lastPathComponent)"
+            return "Similar extracted text matches \(referenceArtifact.fileURL.lastPathComponent)"
         }
     }
 }

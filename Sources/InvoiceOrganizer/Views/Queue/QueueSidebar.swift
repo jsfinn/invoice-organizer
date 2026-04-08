@@ -86,7 +86,7 @@ struct QueueSidebar: View {
             )
 
             HStack {
-                Text("\(model.visibleInvoices.count) items")
+                Text("\(model.visibleArtifacts.count) items")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -109,18 +109,18 @@ struct QueueSidebar: View {
                     .controlSize(.small)
             }
 
-            if model.visibleInvoices.isEmpty {
+            if model.visibleArtifacts.isEmpty {
                 ContentUnavailableView("No Invoices Found", systemImage: "tray")
             } else {
                 InvoiceBrowserView(
-                    invoices: model.visibleInvoices,
+                    invoices: model.visibleArtifacts,
                     documents: model.documents,
                     queueTab: model.selectedQueueTab,
                     browserContext: browserContextBinding,
                     ocrStatesByArtifactID: model.ocrStatesByArtifactID,
                     readStatesByArtifactID: model.readStatesByArtifactID,
                     duplicateBadgeTitlesByArtifactID: model.duplicateBadgeTitlesByArtifactID,
-                    ignoredInvoiceIDs: model.ignoredInvoiceIDs,
+                    ignoredArtifactIDs: model.ignoredArtifactIDs,
                     selectedArtifactIDs: selectedArtifactIDsBinding,
                     onMoveToInProgress: { orderedIDs in
                         model.moveInvoicesToInProgress(ids: orderedIDs)

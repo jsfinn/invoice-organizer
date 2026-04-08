@@ -36,7 +36,7 @@ final class ArtifactComputationCache {
         let structuredRecords = await structuredDataStore.cachedRecords()
         textRecordsByHash = textRecords
         structuredRecordsByHash = structuredRecords
-        duplicateTokensByHash = InvoiceDuplicateDetector.normalizedTokenSets(from: textRecords)
+        duplicateTokensByHash = DuplicateDetector.normalizedTokenSets(from: textRecords)
     }
 
     @discardableResult
@@ -77,7 +77,7 @@ final class ArtifactComputationCache {
     func syncExtractedText(forContentHash contentHash: String) async {
         if let record = await textStore.cachedText(forContentHash: contentHash) {
             textRecordsByHash[contentHash] = record
-            duplicateTokensByHash[contentHash] = InvoiceDuplicateDetector.normalizedTokenSet(for: record.text)
+            duplicateTokensByHash[contentHash] = DuplicateDetector.normalizedTokenSet(for: record.text)
         } else {
             textRecordsByHash.removeValue(forKey: contentHash)
             duplicateTokensByHash.removeValue(forKey: contentHash)
@@ -105,7 +105,7 @@ final class ArtifactComputationCache {
             textRecordsByHash.removeValue(forKey: previousContentHash)
             textRecordsByHash[updatedContentHash] = cachedText
             duplicateTokensByHash.removeValue(forKey: previousContentHash)
-            duplicateTokensByHash[updatedContentHash] = InvoiceDuplicateDetector.normalizedTokenSet(for: cachedText.text)
+            duplicateTokensByHash[updatedContentHash] = DuplicateDetector.normalizedTokenSet(for: cachedText.text)
         }
 
         if let cachedStructuredData = await structuredDataStore.cachedData(forContentHash: previousContentHash) {

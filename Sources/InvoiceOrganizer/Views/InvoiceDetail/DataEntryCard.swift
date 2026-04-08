@@ -12,8 +12,8 @@ struct DataEntryCard: View {
         model.selectedArtifact ?? invoice
     }
 
-    private var documentMemberCount: Int {
-        model.document(for: activeInvoiceID)?.members.count ?? 1
+    private var documentArtifactCount: Int {
+        model.document(for: activeInvoiceID)?.artifacts.count ?? 1
     }
 
     private var documentTypeBinding: Binding<DocumentType?> {
@@ -33,7 +33,7 @@ struct DataEntryCard: View {
 
             if invoice.canEditWorkflowMetadata {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(documentMemberCount > 1 ? "These edits apply to the whole document." : "These edits apply to this document.")
+                    Text(documentArtifactCount > 1 ? "These edits apply to the whole document." : "These edits apply to this document.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 

@@ -10,7 +10,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
     let ocrStatesByArtifactID: [PhysicalArtifact.ID: InvoiceOCRState]
     let readStatesByArtifactID: [PhysicalArtifact.ID: InvoiceReadState]
     let duplicateBadgeTitlesByArtifactID: [PhysicalArtifact.ID: String]
-    let ignoredInvoiceIDs: Set<PhysicalArtifact.ID>
+    let ignoredArtifactIDs: Set<PhysicalArtifact.ID>
     @Binding var selectedArtifactIDs: Set<PhysicalArtifact.ID>
     let onMoveToInProgress: ([PhysicalArtifact.ID]) -> Void
     let onMoveToUnprocessed: () -> Void
@@ -356,7 +356,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
             let selectedArtifacts = parent.invoices.filter { parent.selectedArtifactIDs.contains($0.id) }
             let menu = NSMenu()
             let canRescan = parent.queueTab != .processed && selectedArtifacts.contains { $0.contentHash != nil }
-            let allIgnored = !selectedArtifacts.isEmpty && selectedArtifacts.allSatisfy { parent.ignoredInvoiceIDs.contains($0.id) }
+            let allIgnored = !selectedArtifacts.isEmpty && selectedArtifacts.allSatisfy { parent.ignoredArtifactIDs.contains($0.id) }
 
             switch parent.queueTab {
             case .unprocessed:
@@ -450,7 +450,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
                     return selectedIDs.contains(row.invoice.id) ? index : nil
                 case .groupHeader:
                     if row.disclosureState == .collapsed {
-                        return row.memberIDs.isDisjoint(with: selectedIDs) ? nil : index
+                        return row.artifactIDs.isDisjoint(with: selectedIDs) ? nil : index
                     }
                     return selectedIDs.contains(row.invoice.id) ? index : nil
                 }
@@ -527,7 +527,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 badges.append(.duplicate(duplicateBadge))
             }
 
-            if parent.ignoredInvoiceIDs.contains(row.invoice.id) {
+            if parent.ignoredArtifactIDs.contains(row.invoice.id) {
                 badges.append(.ignored)
             }
 
@@ -634,7 +634,7 @@ func duplicateGroupHeaderBadgeTitle(
 ) -> String {
     let defaultLabel = duplicateCount == 1 ? "1 duplicate" : "\(duplicateCount) duplicates"
     guard queueTab == .unprocessed,
-          documents.contains(where: { $0.contains(memberID: row.invoice.id) && $0.hasProcessedMember }) else {
+          documents.contains(where: { $0.contains(artifactID: row.invoice.id) && $0.hasProcessedMember }) else {
         return defaultLabel
     }
 
@@ -762,7 +762,7 @@ enum InvoiceBrowserRowKind: Equatable {
 struct InvoiceBrowserRow: Equatable {
     let invoice: PhysicalArtifact
     let kind: InvoiceBrowserRowKind
-    let memberIDs: Set<PhysicalArtifact.ID>
+    let artifactIDs: Set<PhysicalArtifact.ID>
     let indentationLevel: Int
     let disclosureState: InvoiceBrowserDisclosureState
 
@@ -832,11 +832,11 @@ func buildInvoiceBrowserRows(
     documents: [Document],
     expandedGroupIDs: Set<PhysicalArtifact.ID>
 ) -> [InvoiceBrowserRow] {
-    let visibleInvoicesByID = Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
+    let visibleArtifactsByID = Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
     var childrenByRepresentativeID: [PhysicalArtifact.ID: [PhysicalArtifact]] = [:]
 
     for document in documents where document.isDuplicate {
-        let visibleMembers = invoices.filter { document.memberIDs.contains($0.id) && visibleInvoicesByID[$0.id] != nil }
+        let visibleMembers = invoices.filter { document.artifactIDs.contains($0.id) && visibleArtifactsByID[$0.id] != nil }
         guard visibleMembers.count > 1,
               let representative = visibleMembers.first else {
             continue
@@ -858,7 +858,7 @@ func buildInvoiceBrowserRows(
                 InvoiceBrowserRow(
                     invoice: invoice,
                     kind: .invoice,
-                    memberIDs: Set([invoice.id]),
+                    artifactIDs: Set([invoice.id]),
                     indentationLevel: 0,
                     disclosureState: .hidden
                 )
@@ -871,7 +871,7 @@ func buildInvoiceBrowserRows(
             InvoiceBrowserRow(
                 invoice: invoice,
                 kind: .groupHeader(duplicateCount: children.count),
-                memberIDs: Set([invoice.id] + children.map(\.id)),
+                artifactIDs: Set([invoice.id] + children.map(\.id)),
                 indentationLevel: 0,
                 disclosureState: isExpanded ? .expanded : .collapsed
             )
@@ -883,7 +883,7 @@ func buildInvoiceBrowserRows(
                     InvoiceBrowserRow(
                         invoice: child,
                         kind: .groupChild(parentID: invoice.id),
-                        memberIDs: Set([child.id]),
+                        artifactIDs: Set([child.id]),
                         indentationLevel: 1,
                         disclosureState: .hidden
                     )

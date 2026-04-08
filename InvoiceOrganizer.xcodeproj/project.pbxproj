@@ -14,11 +14,11 @@
 		298C92E6CDD68EE5E83155F6 /* ArtifactComputationCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5CC17395B39B2618512341B /* ArtifactComputationCache.swift */; };
 		2C138F4999BE3D047B107710 /* InvoiceOrganizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCCE5C80EEF23F66C41BB114 /* InvoiceOrganizerTests.swift */; };
 		3072378B8BFF577841B1F119 /* QueueSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C323274BD1CBEA57661C2128 /* QueueSidebar.swift */; };
-		357A4F4C5E0C200F0B6F1704 /* InvoiceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3265234166BB4C5B99B54 /* InvoiceModels.swift */; };
+		357A4F4C5E0C200F0B6F1704 /* ArtifactModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3265234166BB4C5B99B54 /* ArtifactModels.swift */; };
 		376C57B76E8FB72913092367 /* PreviewAssetProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 661B9E1AD61E265CA0D271C5 /* PreviewAssetProvider.swift */; };
 		450096BBC785EA5444440B1C /* PreviewRotationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAB61CD3DEBDFC60E682731 /* PreviewRotationCoordinator.swift */; };
 		460CE0CC285F77FA5058C5E6 /* FolderPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A64FF8731AB81DF9C619C8 /* FolderPicker.swift */; };
-		4A2C363764A674B6292718CA /* InvoiceDuplicateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21893C363A70E4F5622AE9F2 /* InvoiceDuplicateModels.swift */; };
+		4A2C363764A674B6292718CA /* DuplicateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21893C363A70E4F5622AE9F2 /* DuplicateModels.swift */; };
 		5083F31BF23A63D2CD1E6BDE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10DF2A883449B3756EB0884 /* ContentView.swift */; };
 		512AD01EE37BD0FB4DD60083 /* InvoiceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF26BF029CF6CC63B244CE12 /* InvoiceDetailView.swift */; };
 		52212CE521644B03E71056B5 /* CommitOnBlurTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAC66A753028AC2F98A8C20 /* CommitOnBlurTextField.swift */; };
@@ -36,9 +36,9 @@
 		8FDA23D49EA2E77B9E33C3C3 /* InvoiceOrganizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78FD9A85C78EBE3E91D8A16B /* InvoiceOrganizer.swift */; };
 		96E5D60610360382340F0698 /* InvoiceStructuredDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BCC787FD3572986C7D2AB8D /* InvoiceStructuredDataStore.swift */; };
 		9ADDADD3DE0353E0E6166EB6 /* ArchivePathBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FCBB8D9952C794CE64B371F /* ArchivePathBuilder.swift */; };
-		9BEFFC78653705ED575617F9 /* InvoiceDocumentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1AA3D22E2359B3618464C86 /* InvoiceDocumentModels.swift */; };
+		9BEFFC78653705ED575617F9 /* DocumentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1AA3D22E2359B3618464C86 /* DocumentModels.swift */; };
 		A70DD0DF6D3E32EF75E3F26D /* DocumentTextExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E17C262086FEEE3CEA0D162 /* DocumentTextExtractor.swift */; };
-		A8376305802557DE3E614AC3 /* InvoiceDuplicateDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01BEC99E55F3F53DC1F6E9DA /* InvoiceDuplicateDetector.swift */; };
+		A8376305802557DE3E614AC3 /* DuplicateDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01BEC99E55F3F53DC1F6E9DA /* DuplicateDetector.swift */; };
 		A968A5F4295E7484CDE14E37 /* MetadataCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2966DA8927843A277944D0 /* MetadataCard.swift */; };
 		ADE24B3B39591DDF3C2B95CB /* InvoiceBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E8D83B92318C265A64BB5A /* InvoiceBrowserView.swift */; };
 		B1C3F74F4F9852C5295B3E74 /* InvoiceWorkflowStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3256C7DB06E0D20D3AE2BAB /* InvoiceWorkflowStore.swift */; };
@@ -69,11 +69,11 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		01BEC99E55F3F53DC1F6E9DA /* InvoiceDuplicateDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceDuplicateDetector.swift; sourceTree = "<group>"; };
+		01BEC99E55F3F53DC1F6E9DA /* DuplicateDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateDetector.swift; sourceTree = "<group>"; };
 		19C3303215CD07153C549E46 /* PreviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewCard.swift; sourceTree = "<group>"; };
 		1D393E630B373F584368E1C1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1EAB61CD3DEBDFC60E682731 /* PreviewRotationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewRotationCoordinator.swift; sourceTree = "<group>"; };
-		21893C363A70E4F5622AE9F2 /* InvoiceDuplicateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceDuplicateModels.swift; sourceTree = "<group>"; };
+		21893C363A70E4F5622AE9F2 /* DuplicateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateModels.swift; sourceTree = "<group>"; };
 		25AE75170AD6AFA7BA874908 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		29A60644600F225D58AAEF66 /* InvoiceArchiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceArchiver.swift; sourceTree = "<group>"; };
 		2BCC787FD3572986C7D2AB8D /* InvoiceStructuredDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceStructuredDataStore.swift; sourceTree = "<group>"; };
@@ -88,7 +88,7 @@
 		4E9725090A765A34A8158169 /* InboxFileScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxFileScanner.swift; sourceTree = "<group>"; };
 		4F8404615D2D983DF4121B27 /* DragExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragExportService.swift; sourceTree = "<group>"; };
 		54CB09A3CB7ADCEEC97939DA /* ActivePreviewContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivePreviewContext.swift; sourceTree = "<group>"; };
-		56C3265234166BB4C5B99B54 /* InvoiceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceModels.swift; sourceTree = "<group>"; };
+		56C3265234166BB4C5B99B54 /* ArtifactModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactModels.swift; sourceTree = "<group>"; };
 		5EAC66A753028AC2F98A8C20 /* CommitOnBlurTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitOnBlurTextField.swift; sourceTree = "<group>"; };
 		62FE6C465C6EE1B2345ED3BD /* InvoiceWorkspaceMover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceWorkspaceMover.swift; sourceTree = "<group>"; };
 		661B9E1AD61E265CA0D271C5 /* PreviewAssetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewAssetProvider.swift; sourceTree = "<group>"; };
@@ -114,7 +114,7 @@
 		C9E8C5B1DD8E7E21DD2C4AAF /* InvoiceOrganizer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InvoiceOrganizer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D98F27621C4FE35306D626C6 /* FileHasher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileHasher.swift; sourceTree = "<group>"; };
 		DD30D90B389444B84B720302 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
-		E1AA3D22E2359B3618464C86 /* InvoiceDocumentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceDocumentModels.swift; sourceTree = "<group>"; };
+		E1AA3D22E2359B3618464C86 /* DocumentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentModels.swift; sourceTree = "<group>"; };
 		E1E8D83B92318C265A64BB5A /* InvoiceBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceBrowserView.swift; sourceTree = "<group>"; };
 		E39099637111A5D33F01AB1F /* CommitOnBlurDatePickerField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitOnBlurDatePickerField.swift; sourceTree = "<group>"; };
 		E4AC2E09B9707E503F5120F3 /* InvoiceStructuredExtractionQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceStructuredExtractionQueue.swift; sourceTree = "<group>"; };
@@ -146,7 +146,7 @@
 				94A64FF8731AB81DF9C619C8 /* FolderPicker.swift */,
 				4E9725090A765A34A8158169 /* InboxFileScanner.swift */,
 				29A60644600F225D58AAEF66 /* InvoiceArchiver.swift */,
-				01BEC99E55F3F53DC1F6E9DA /* InvoiceDuplicateDetector.swift */,
+				01BEC99E55F3F53DC1F6E9DA /* DuplicateDetector.swift */,
 				F044A756E1EE6360D73B4908 /* InvoiceFileRotator.swift */,
 				2BCC787FD3572986C7D2AB8D /* InvoiceStructuredDataStore.swift */,
 				477BD8D6400A7417E261CE54 /* InvoiceStructuredExtractionClient.swift */,
@@ -182,9 +182,9 @@
 		5B2183118D184F7D90D00EF5 /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				E1AA3D22E2359B3618464C86 /* InvoiceDocumentModels.swift */,
-				21893C363A70E4F5622AE9F2 /* InvoiceDuplicateModels.swift */,
-				56C3265234166BB4C5B99B54 /* InvoiceModels.swift */,
+				E1AA3D22E2359B3618464C86 /* DocumentModels.swift */,
+				21893C363A70E4F5622AE9F2 /* DuplicateModels.swift */,
+				56C3265234166BB4C5B99B54 /* ArtifactModels.swift */,
 				F2029C3196E67EF6A47A3366 /* QueueViewContexts.swift */,
 			);
 			path = Models;
@@ -407,12 +407,12 @@
 				CA1F91D8B5C725F33519F8F8 /* InvoiceArchiver.swift in Sources */,
 				ADE24B3B39591DDF3C2B95CB /* InvoiceBrowserView.swift in Sources */,
 				512AD01EE37BD0FB4DD60083 /* InvoiceDetailView.swift in Sources */,
-				9BEFFC78653705ED575617F9 /* InvoiceDocumentModels.swift in Sources */,
-				A8376305802557DE3E614AC3 /* InvoiceDuplicateDetector.swift in Sources */,
-				4A2C363764A674B6292718CA /* InvoiceDuplicateModels.swift in Sources */,
+				9BEFFC78653705ED575617F9 /* DocumentModels.swift in Sources */,
+				A8376305802557DE3E614AC3 /* DuplicateDetector.swift in Sources */,
+				4A2C363764A674B6292718CA /* DuplicateModels.swift in Sources */,
 				C747A661778B0C124B3CB41D /* InvoiceFileRotator.swift in Sources */,
 				52FC2731E83E4A0C378F19C2 /* InvoiceInternalDrag.swift in Sources */,
-				357A4F4C5E0C200F0B6F1704 /* InvoiceModels.swift in Sources */,
+				357A4F4C5E0C200F0B6F1704 /* ArtifactModels.swift in Sources */,
 				8FDA23D49EA2E77B9E33C3C3 /* InvoiceOrganizer.swift in Sources */,
 				C5DE422C5F2C010162EA5087 /* InvoicePreviewView.swift in Sources */,
 				96E5D60610360382340F0698 /* InvoiceStructuredDataStore.swift in Sources */,

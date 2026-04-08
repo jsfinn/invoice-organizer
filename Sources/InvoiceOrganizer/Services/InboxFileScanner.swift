@@ -62,7 +62,7 @@ enum InboxFileScanner {
         return scannedFiles.sorted { $0.addedAt > $1.addedAt }
     }
 
-    static func makeActiveInvoice(from file: ScannedInvoiceFile, workflow: StoredInvoiceWorkflow?, duplicateInfo: InvoiceDuplicateInfo?) -> PhysicalArtifact {
+    static func makeActiveArtifact(from file: ScannedInvoiceFile, workflow: StoredInvoiceWorkflow?, duplicateInfo: DuplicateInfo?) -> PhysicalArtifact {
         let status: InvoiceStatus
         if duplicateInfo != nil {
             status = .blockedDuplicate
@@ -89,7 +89,7 @@ enum InboxFileScanner {
         )
     }
 
-    static func makeProcessedInvoice(from file: ScannedInvoiceFile, workflow: StoredInvoiceWorkflow?) -> PhysicalArtifact {
+    static func makeProcessedArtifact(from file: ScannedInvoiceFile, workflow: StoredInvoiceWorkflow?) -> PhysicalArtifact {
         PhysicalArtifact(
             name: file.name,
             fileURL: file.fileURL,

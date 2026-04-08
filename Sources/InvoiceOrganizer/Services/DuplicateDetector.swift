@@ -1,6 +1,6 @@
 import Foundation
 
-enum InvoiceDuplicateDetector {
+enum DuplicateDetector {
     private static let similarityThreshold = 0.9
 
     static var duplicateSimilarityThreshold: Double {
@@ -10,7 +10,7 @@ enum InvoiceDuplicateDetector {
     static func extractedTextDuplicateGroups(
         for files: [ScannedInvoiceFile],
         textRecordsByContentHash: [String: InvoiceTextRecord]
-    ) -> [InvoiceDuplicateGroup] {
+    ) -> [ArtifactDuplicateCluster] {
         extractedTextDuplicateGroups(
             for: files,
             tokenSetsByContentHash: normalizedTokenSets(from: textRecordsByContentHash)
@@ -20,8 +20,8 @@ enum InvoiceDuplicateDetector {
     static func extractedTextDuplicateGroups(
         for files: [ScannedInvoiceFile],
         tokenSetsByContentHash: [String: Set<String>]
-    ) -> [InvoiceDuplicateGroup] {
-        duplicateGroups(
+    ) -> [ArtifactDuplicateCluster] {
+        duplicateClusters(
             candidates: files.map {
                 DuplicateCandidate(
                     id: $0.id,
@@ -39,7 +39,7 @@ enum InvoiceDuplicateDetector {
     static func extractedTextDuplicateGroups(
         for invoices: [PhysicalArtifact],
         textRecordsByContentHash: [String: InvoiceTextRecord]
-    ) -> [InvoiceDuplicateGroup] {
+    ) -> [ArtifactDuplicateCluster] {
         extractedTextDuplicateGroups(
             for: invoices,
             tokenSetsByContentHash: normalizedTokenSets(from: textRecordsByContentHash)
@@ -49,8 +49,8 @@ enum InvoiceDuplicateDetector {
     static func extractedTextDuplicateGroups(
         for invoices: [PhysicalArtifact],
         tokenSetsByContentHash: [String: Set<String>]
-    ) -> [InvoiceDuplicateGroup] {
-        duplicateGroups(
+    ) -> [ArtifactDuplicateCluster] {
+        duplicateClusters(
             candidates: invoices.map {
                 DuplicateCandidate(
                     id: $0.id,
@@ -65,34 +65,10 @@ enum InvoiceDuplicateDetector {
         )
     }
 
-    static func extractedTextDuplicateMap(
-        for files: [ScannedInvoiceFile],
-        textRecordsByContentHash: [String: InvoiceTextRecord]
-    ) -> [String: InvoiceDuplicateInfo] {
-        duplicateMap(
-            groups: extractedTextDuplicateGroups(
-                for: files,
-                textRecordsByContentHash: textRecordsByContentHash
-            )
-        )
-    }
-
-    static func extractedTextDuplicateMap(
-        for invoices: [PhysicalArtifact],
-        textRecordsByContentHash: [String: InvoiceTextRecord]
-    ) -> [PhysicalArtifact.ID: InvoiceDuplicateInfo] {
-        duplicateMap(
-            groups: extractedTextDuplicateGroups(
-                for: invoices,
-                textRecordsByContentHash: textRecordsByContentHash
-            )
-        )
-    }
-
-    private static func duplicateGroups(
+    private static func duplicateClusters(
         candidates: [DuplicateCandidate],
         tokenSetsByContentHash: [String: Set<String>]
-    ) -> [InvoiceDuplicateGroup] {
+    ) -> [ArtifactDuplicateCluster] {
         let candidatesWithTokens = candidates.compactMap { candidate -> CandidateTextSignature? in
             guard let contentHash = candidate.contentHash,
                   let tokens = tokenSetsByContentHash[contentHash],
@@ -105,33 +81,10 @@ enum InvoiceDuplicateDetector {
         return buildSimilarityGroups(from: candidatesWithTokens)
             .filter { $0.count > 1 }
             .map { group in
-                InvoiceDuplicateGroup(
-                    members: group.map {
-                        InvoiceDuplicateMember(
-                            id: $0.candidate.id,
-                            fileURL: $0.candidate.fileURL,
-                            location: $0.candidate.location,
-                            addedAt: $0.candidate.addedAt,
-                            fileType: $0.candidate.fileType
-                        )
-                    }
+                ArtifactDuplicateCluster(
+                    artifactIDs: group.map(\.candidate.id)
                 )
             }
-    }
-
-    private static func duplicateMap(
-        groups: [InvoiceDuplicateGroup]
-    ) -> [String: InvoiceDuplicateInfo] {
-        var duplicates: [String: InvoiceDuplicateInfo] = [:]
-
-        for group in groups {
-            for member in group.members where group.isSoftBlocked(memberID: member.id) {
-                guard let duplicateInfo = group.duplicateInfo(for: member.id) else { continue }
-                duplicates[member.id] = duplicateInfo
-            }
-        }
-
-        return duplicates
     }
 
     private static func buildSimilarityGroups(from candidates: [CandidateTextSignature]) -> [[CandidateTextSignature]] {

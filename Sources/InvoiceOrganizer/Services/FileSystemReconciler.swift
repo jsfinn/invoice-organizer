@@ -148,7 +148,7 @@ final class FileSystemReconciler {
             } ?? []
 
             let activeArtifacts = (inboxFiles + processingFiles).map { file in
-                InboxFileScanner.makeActiveInvoice(
+                InboxFileScanner.makeActiveArtifact(
                     from: file,
                     workflow: workflowSnapshot[file.id],
                     duplicateInfo: nil
@@ -156,7 +156,7 @@ final class FileSystemReconciler {
             }
 
             let processedArtifacts = processedFiles.map { file in
-                InboxFileScanner.makeProcessedInvoice(from: file, workflow: workflowSnapshot[file.id])
+                InboxFileScanner.makeProcessedArtifact(from: file, workflow: workflowSnapshot[file.id])
             }
 
             return (activeArtifacts + processedArtifacts).sorted { $0.addedAt > $1.addedAt }

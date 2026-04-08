@@ -11,14 +11,13 @@ final class AppModel: ObservableObject {
     @Published var settingsErrorMessage: String?
     @Published private(set) var llmPreflightStatus: LLMPreflightStatus
     @Published private(set) var documents: [Document] = []
-    @Published private(set) var duplicateGroups: [InvoiceDuplicateGroup] = []
     @Published private(set) var extractedTextHashes: Set<String> = []
     @Published private(set) var structuredDataHashes: Set<String> = []
     @Published private(set) var textPendingHashes: Set<String> = []
     @Published private(set) var textFailedHashes: Set<String> = []
     @Published private(set) var structuredPendingHashes: Set<String> = []
     @Published private(set) var structuredFailedHashes: Set<String> = []
-    @Published private(set) var ignoredInvoiceIDs: Set<PhysicalArtifact.ID>
+    @Published private(set) var ignoredArtifactIDs: Set<PhysicalArtifact.ID>
 
     private let computationCache: ArtifactComputationCache
     private let textStore: any InvoiceTextStoring
@@ -58,7 +57,7 @@ final class AppModel: ObservableObject {
         self.folderSettings = resolvedFolderSettings
         self.llmSettings = resolvedLLMSettings
         self.workflowByID = workflowByID ?? InvoiceWorkflowStore.load()
-        self.ignoredInvoiceIDs = Self.loadIgnoredInvoiceIDs()
+        self.ignoredArtifactIDs = Self.loadIgnoredInvoiceIDs()
         self.textStore = textStore
         self.structuredDataStore = structuredDataStore
         self.computationCache = ArtifactComputationCache(
@@ -154,7 +153,7 @@ final class AppModel: ObservableObject {
         documentByArtifactID[artifactID]
     }
 
-    func duplicateSimilarities(for artifactID: PhysicalArtifact.ID, limit: Int = 5) -> [InvoiceDuplicateSimilarity] {
+    func duplicateSimilarities(for artifactID: PhysicalArtifact.ID, limit: Int = 5) -> [DuplicateSimilarity] {
         guard let artifact = invoices.first(where: { $0.id == artifactID }),
               let contentHash = artifact.contentHash,
               let artifactTokens = computationCache.duplicateTokens(forContentHash: contentHash) else {
@@ -162,11 +161,11 @@ final class AppModel: ObservableObject {
         }
 
         return documents
-            .filter { !$0.contains(memberID: artifactID) }
+            .filter { !$0.contains(artifactID: artifactID) }
             .compactMap { document in
                 document.bestSimilarity(
                     to: artifactTokens,
-                    tokensByMemberID: duplicateTokenSetsByArtifactID,
+                    tokensByArtifactID: duplicateTokenSetsByArtifactID,
                     threshold: duplicateSimilarityThreshold
                 )
             }
@@ -181,12 +180,12 @@ final class AppModel: ObservableObject {
             .map { $0 }
     }
 
-    var visibleInvoices: [PhysicalArtifact] {
+    var visibleArtifacts: [PhysicalArtifact] {
         let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return invoices
             .filter { invoice in
-                showIgnoredInvoices || !ignoredInvoiceIDs.contains(invoice.id)
+                showIgnoredInvoices || !ignoredArtifactIDs.contains(invoice.id)
             }
             .filter { invoice in
                 switch selectedQueueTab {
@@ -215,21 +214,21 @@ final class AppModel: ObservableObject {
     }
 
     var unprocessedCount: Int {
-        invoices.filter { $0.location == .inbox && (showIgnoredInvoices || !ignoredInvoiceIDs.contains($0.id)) }.count
+        invoices.filter { $0.location == .inbox && (showIgnoredInvoices || !ignoredArtifactIDs.contains($0.id)) }.count
     }
 
     var inProgressCount: Int {
-        invoices.filter { $0.location == .processing && (showIgnoredInvoices || !ignoredInvoiceIDs.contains($0.id)) }.count
+        invoices.filter { $0.location == .processing && (showIgnoredInvoices || !ignoredArtifactIDs.contains($0.id)) }.count
     }
 
     var processedCount: Int {
-        invoices.filter { $0.location == .processed && (showIgnoredInvoices || !ignoredInvoiceIDs.contains($0.id)) }.count
+        invoices.filter { $0.location == .processed && (showIgnoredInvoices || !ignoredArtifactIDs.contains($0.id)) }.count
     }
 
     var hiddenIgnoredCountInVisibleQueue: Int {
         guard !showIgnoredInvoices else { return 0 }
         return invoices.filter { invoice in
-            ignoredInvoiceIDs.contains(invoice.id) && queueTab(for: invoice.location) == selectedQueueTab
+            ignoredArtifactIDs.contains(invoice.id) && queueTab(for: invoice.location) == selectedQueueTab
         }.count
     }
 
@@ -240,7 +239,7 @@ final class AppModel: ObservableObject {
     var duplicateBadgeTitlesByArtifactID: [PhysicalArtifact.ID: String] {
         return Dictionary(
             uniqueKeysWithValues: invoices.compactMap { invoice in
-                guard let title = documentByArtifactID[invoice.id]?.badgeTitle(for: invoice.id) else {
+                guard let title = documentByArtifactID[invoice.id]?.badgeTitle(forArtifactID: invoice.id) else {
                     return nil
                 }
 
@@ -336,7 +335,7 @@ final class AppModel: ObservableObject {
     }
 
     var duplicateSimilarityThreshold: Double {
-        InvoiceDuplicateDetector.duplicateSimilarityThreshold
+        DuplicateDetector.duplicateSimilarityThreshold
     }
 
     private func syncComputationHashes() {
@@ -409,7 +408,7 @@ final class AppModel: ObservableObject {
         updateActiveQueueTabContext { $0.selectedArtifactIDs = ids }
 
         guard !isSynchronizingSelection else { return }
-        setSelectedArtifactID(visibleInvoices.first(where: { ids.contains($0.id) })?.id)
+        setSelectedArtifactID(visibleArtifacts.first(where: { ids.contains($0.id) })?.id)
     }
 
     func setSelectedArtifactID(_ id: PhysicalArtifact.ID?) {
@@ -538,7 +537,7 @@ final class AppModel: ObservableObject {
     }
 
     func moveSelectedToInProgress() {
-        let orderedSelectedIDs = visibleInvoices
+        let orderedSelectedIDs = visibleArtifacts
             .map(\.id)
             .filter { selectedArtifactIDs.contains($0) }
         moveInvoicesToInProgress(ids: orderedSelectedIDs)
@@ -555,22 +554,22 @@ final class AppModel: ObservableObject {
 
         for (documentID, documentInvoices) in selectedArtifactsByDocumentID {
             guard let document = documentByID[documentID] else { continue }
-            let selectedMemberIDs = Set(documentInvoices.map(\.id))
-            let documentMemberIDs = document.memberIDs
-            let shouldClearDocumentMetadata = selectedMemberIDs == documentMemberIDs
+            let selectedArtifactIDs = Set(documentInvoices.map(\.id))
+            let documentArtifactIDs = document.artifactIDs
+            let shouldClearDocumentMetadata = selectedArtifactIDs == documentArtifactIDs
 
             if shouldClearDocumentMetadata {
                 clearDocumentMetadata(for: document.id)
-                let rescannedMembers = invoices.filter { documentMemberIDs.contains($0.id) }
-                let rescannedHashes = Set(rescannedMembers.compactMap(\.contentHash))
+                let rescannedArtifacts = invoices.filter { documentArtifactIDs.contains($0.id) }
+                let rescannedHashes = Set(rescannedArtifacts.compactMap(\.contentHash))
 
-                invoicesToRescan.append(contentsOf: rescannedMembers)
+                invoicesToRescan.append(contentsOf: rescannedArtifacts)
                 contentHashes.formUnion(rescannedHashes)
 
                 if !rescannedHashes.isEmpty {
                     rescannedDocumentContextsByID[document.id] = DocumentRescanContext(
                         documentID: document.id,
-                        memberIDs: documentMemberIDs,
+                        artifactIDs: documentArtifactIDs,
                         pendingContentHashes: rescannedHashes
                     )
                     for contentHash in rescannedHashes {
@@ -604,9 +603,9 @@ final class AppModel: ObservableObject {
         guard !ids.isEmpty else { return }
 
         if ignored {
-            ignoredInvoiceIDs.formUnion(ids)
+            ignoredArtifactIDs.formUnion(ids)
         } else {
-            ignoredInvoiceIDs.subtract(ids)
+            ignoredArtifactIDs.subtract(ids)
         }
 
         persistIgnoredInvoiceIDs()
@@ -614,7 +613,7 @@ final class AppModel: ObservableObject {
     }
 
     func isIgnored(_ artifactID: PhysicalArtifact.ID) -> Bool {
-        ignoredInvoiceIDs.contains(artifactID)
+        ignoredArtifactIDs.contains(artifactID)
     }
 
     func moveInvoicesToInProgress(ids: Set<PhysicalArtifact.ID>) {
@@ -934,7 +933,6 @@ final class AppModel: ObservableObject {
         case .failure(let error):
             invoices = []
             documents = []
-            duplicateGroups = []
             computationCache.reset()
             syncComputationHashes()
             textPendingHashes = []
@@ -976,10 +974,10 @@ final class AppModel: ObservableObject {
 
     private func pruneIgnoredState(using loadedInvoices: [PhysicalArtifact]) {
         let activeIDs = Set(loadedInvoices.map(\.id))
-        let staleIDs = ignoredInvoiceIDs.subtracting(activeIDs)
+        let staleIDs = ignoredArtifactIDs.subtracting(activeIDs)
         guard !staleIDs.isEmpty else { return }
 
-        ignoredInvoiceIDs.subtract(staleIDs)
+        ignoredArtifactIDs.subtract(staleIDs)
         persistIgnoredInvoiceIDs()
     }
 
@@ -988,7 +986,7 @@ final class AppModel: ObservableObject {
     }
 
     private func orderedInvoiceIDsForProcessingMove(from ids: Set<PhysicalArtifact.ID>) -> [PhysicalArtifact.ID] {
-        let visibleOrderedIDs = visibleInvoices
+        let visibleOrderedIDs = visibleArtifacts
             .map(\.id)
             .filter { ids.contains($0) }
         let visibleOrderedSet = Set(visibleOrderedIDs)
@@ -1001,7 +999,7 @@ final class AppModel: ObservableObject {
     private func processingMovePlan(for orderedIDs: [PhysicalArtifact.ID]) -> (processingIDs: [PhysicalArtifact.ID], duplicateIDs: Set<PhysicalArtifact.ID>) {
         let documentByMemberID = Dictionary(
             uniqueKeysWithValues: documents.flatMap { document in
-                document.memberIDs.map { ($0, document) }
+                document.artifactIDs.map { ($0, document) }
             }
         )
 
@@ -1018,7 +1016,7 @@ final class AppModel: ObservableObject {
             if handledDocumentIDs.insert(document.id).inserted {
                 processingIDs.append(invoiceID)
                 duplicateIDs.formUnion(
-                    document.members.compactMap { member in
+                    document.artifacts.compactMap { member in
                         guard member.location != .processed,
                               member.id != invoiceID else {
                             return nil
@@ -1065,7 +1063,7 @@ final class AppModel: ObservableObject {
     private var documentByArtifactID: [PhysicalArtifact.ID: Document] {
         Dictionary(
             uniqueKeysWithValues: documents.flatMap { document in
-                document.memberIDs.map { ($0, document) }
+                document.artifactIDs.map { ($0, document) }
             }
         )
     }
@@ -1083,30 +1081,8 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private var duplicateGroupByArtifactID: [PhysicalArtifact.ID: InvoiceDuplicateGroup] {
-        let entries: [(PhysicalArtifact.ID, InvoiceDuplicateGroup)] = documents.flatMap { document -> [(PhysicalArtifact.ID, InvoiceDuplicateGroup)] in
-            guard document.isDuplicate else { return [] }
-
-            let group = InvoiceDuplicateGroup(
-                members: document.members.map {
-                    InvoiceDuplicateMember(
-                        id: $0.id,
-                        fileURL: $0.fileURL,
-                        location: $0.location,
-                        addedAt: $0.addedAt,
-                        fileType: $0.fileType
-                    )
-                }
-            )
-
-            return group.members.map { ($0.id, group) }
-        }
-
-        return Dictionary(uniqueKeysWithValues: entries)
-    }
-
     private func syncSelectionForVisibleInvoices() {
-        let visible = visibleInvoices
+        let visible = visibleArtifacts
         guard !visible.isEmpty else {
             setSelection(ids: [], primary: nil)
             return
@@ -1165,11 +1141,11 @@ final class AppModel: ObservableObject {
     }
 
     private func remapIgnoredID(from previousID: PhysicalArtifact.ID, to updatedID: PhysicalArtifact.ID) {
-        guard previousID != updatedID, ignoredInvoiceIDs.remove(previousID) != nil else {
+        guard previousID != updatedID, ignoredArtifactIDs.remove(previousID) != nil else {
             return
         }
 
-        ignoredInvoiceIDs.insert(updatedID)
+        ignoredArtifactIDs.insert(updatedID)
         persistIgnoredInvoiceIDs()
     }
 
@@ -1298,7 +1274,7 @@ final class AppModel: ObservableObject {
 
     private func persistIgnoredInvoiceIDs() {
         let defaults = UserDefaults.standard
-        defaults.set(Array(ignoredInvoiceIDs).sorted(), forKey: UserDefaultsKey.ignoredInvoiceIDs)
+        defaults.set(Array(ignoredArtifactIDs).sorted(), forKey: UserDefaultsKey.ignoredArtifactIDs)
     }
 
     private func persistLLMSettings() {
@@ -1322,7 +1298,7 @@ final class AppModel: ObservableObject {
 
     private static func loadIgnoredInvoiceIDs() -> Set<PhysicalArtifact.ID> {
         let defaults = UserDefaults.standard
-        let storedIDs = defaults.stringArray(forKey: UserDefaultsKey.ignoredInvoiceIDs) ?? []
+        let storedIDs = defaults.stringArray(forKey: UserDefaultsKey.ignoredArtifactIDs) ?? []
         return Set(storedIDs)
     }
 
@@ -1404,37 +1380,21 @@ final class AppModel: ObservableObject {
     }
 
     private func applyDuplicateStateFromExtractedText() {
-        let detectedGroups = InvoiceDuplicateDetector.extractedTextDuplicateGroups(
+        let duplicateClusters = DuplicateDetector.extractedTextDuplicateGroups(
             for: invoices,
             tokenSetsByContentHash: computationCache.duplicateTokensByHash
         )
-        documents = buildDocuments(from: invoices, duplicateGroups: detectedGroups)
-        duplicateGroups = documents.compactMap { document in
-            guard document.isDuplicate else { return nil }
-            return InvoiceDuplicateGroup(
-                members: document.members.map {
-                    InvoiceDuplicateMember(
-                        id: $0.id,
-                        fileURL: $0.fileURL,
-                        location: $0.location,
-                        addedAt: $0.addedAt,
-                        fileType: $0.fileType
-                    )
-                }
-            )
-        }
+        documents = buildDocuments(from: invoices, duplicateClusters: duplicateClusters)
 
         synchronizeInvoicesFromDerivedDocuments()
     }
 
     private func synchronizeInvoicesFromDerivedDocuments() {
         let documentLookup = documentByArtifactID
-        let duplicateLookup = duplicateGroupByArtifactID
 
         for index in invoices.indices {
-            let invoiceID = invoices[index].id
-            let document = documentLookup[invoiceID]
-            let duplicateGroup = duplicateLookup[invoiceID]
+            let artifactID = invoices[index].id
+            let document = documentLookup[artifactID]
 
             invoices[index].documentID = document?.id ?? invoices[index].id
             invoices[index].vendor = document?.metadata.vendor
@@ -1442,7 +1402,7 @@ final class AppModel: ObservableObject {
             invoices[index].invoiceNumber = document?.metadata.invoiceNumber
             invoices[index].documentType = document?.metadata.documentType
 
-            if let duplicateInfo = duplicateGroup?.duplicateInfo(for: invoiceID) {
+            if let duplicateInfo = document?.duplicateInfo(forArtifactID: artifactID) {
                 invoices[index].status = .blockedDuplicate
                 invoices[index].duplicateOfPath = duplicateInfo.duplicateOfPath
                 invoices[index].duplicateReason = duplicateInfo.reason
@@ -1482,7 +1442,7 @@ final class AppModel: ObservableObject {
             guard let document = documentByArtifactID[invoice.id] else { continue }
             let candidateMetadata: DocumentMetadata
 
-            if document.members.count == 1 {
+            if document.artifacts.count == 1 {
                 let metadata = document.metadata
                 candidateMetadata = DocumentMetadata(
                     vendor: metadata.vendor ?? record.companyName,
@@ -1509,40 +1469,40 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func buildDocuments(from invoices: [PhysicalArtifact], duplicateGroups: [InvoiceDuplicateGroup]) -> [Document] {
-        let invoiceByID = Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
+    private func buildDocuments(from artifacts: [PhysicalArtifact], duplicateClusters: [ArtifactDuplicateCluster]) -> [Document] {
+        let artifactsByID = Dictionary(uniqueKeysWithValues: artifacts.map { ($0.id, $0) })
         var documents: [Document] = []
-        var groupedInvoiceIDs: Set<PhysicalArtifact.ID> = []
+        var groupedArtifactIDs: Set<PhysicalArtifact.ID> = []
 
-        for group in duplicateGroups {
-            let members = group.members.compactMap { member -> DocumentArtifactReference? in
-                guard let invoice = invoiceByID[member.id] else { return nil }
-                return makeDocumentMember(from: invoice)
+        for cluster in duplicateClusters {
+            let documentArtifacts = cluster.artifactIDs.compactMap { artifactID -> DocumentArtifactReference? in
+                guard let artifact = artifactsByID[artifactID] else { return nil }
+                return makeDocumentArtifactReference(from: artifact)
             }
-            guard members.count > 1 else { continue }
+            guard documentArtifacts.count > 1 else { continue }
 
-            groupedInvoiceIDs.formUnion(members.map(\.id))
+            groupedArtifactIDs.formUnion(documentArtifacts.map(\.id))
             documents.append(
                 Document(
-                    members: members,
-                    metadata: resolvedDocumentMetadata(for: members, invoiceByID: invoiceByID)
+                    artifacts: documentArtifacts,
+                    metadata: resolvedDocumentMetadata(for: documentArtifacts, artifactsByID: artifactsByID)
                 )
             )
         }
 
-        for invoice in invoices where !groupedInvoiceIDs.contains(invoice.id) {
-            let member = makeDocumentMember(from: invoice)
+        for artifact in artifacts where !groupedArtifactIDs.contains(artifact.id) {
+            let documentArtifact = makeDocumentArtifactReference(from: artifact)
             documents.append(
                 Document(
-                    members: [member],
-                    metadata: resolvedDocumentMetadata(for: [member], invoiceByID: invoiceByID)
+                    artifacts: [documentArtifact],
+                    metadata: resolvedDocumentMetadata(for: [documentArtifact], artifactsByID: artifactsByID)
                 )
             )
         }
 
         return documents.sorted { lhs, rhs in
-            let lhsDate = lhs.members.map(\.addedAt).max() ?? .distantPast
-            let rhsDate = rhs.members.map(\.addedAt).max() ?? .distantPast
+            let lhsDate = lhs.artifacts.map(\.addedAt).max() ?? .distantPast
+            let rhsDate = rhs.artifacts.map(\.addedAt).max() ?? .distantPast
             if lhsDate != rhsDate {
                 return lhsDate > rhsDate
             }
@@ -1551,51 +1511,51 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func makeDocumentMember(from invoice: PhysicalArtifact) -> DocumentArtifactReference {
+    private func makeDocumentArtifactReference(from artifact: PhysicalArtifact) -> DocumentArtifactReference {
         DocumentArtifactReference(
-            id: invoice.id,
-            fileURL: invoice.fileURL,
-            location: invoice.location,
-            addedAt: invoice.addedAt,
-            fileType: invoice.fileType,
-            contentHash: invoice.contentHash
+            id: artifact.id,
+            fileURL: artifact.fileURL,
+            location: artifact.location,
+            addedAt: artifact.addedAt,
+            fileType: artifact.fileType,
+            contentHash: artifact.contentHash
         )
     }
 
     private func resolvedDocumentMetadata(
-        for members: [DocumentArtifactReference],
-        invoiceByID: [PhysicalArtifact.ID: PhysicalArtifact]
+        for artifacts: [DocumentArtifactReference],
+        artifactsByID: [PhysicalArtifact.ID: PhysicalArtifact]
     ) -> DocumentMetadata {
-        if members.count == 1, let member = members.first {
-            return singletonDocumentMetadata(for: member, invoiceByID: invoiceByID)
+        if artifacts.count == 1, let artifact = artifacts.first {
+            return singletonDocumentMetadata(for: artifact, artifactsByID: artifactsByID)
         }
 
-        let workflowMetadata = sharedDuplicateDocumentMetadata(for: members)
+        let workflowMetadata = sharedDuplicateDocumentMetadata(for: artifacts)
         guard workflowMetadata.isEmpty else {
             return workflowMetadata
         }
 
-        return inferredStructuredDocumentMetadata(for: members) ?? .empty
+        return inferredStructuredDocumentMetadata(for: artifacts) ?? .empty
     }
 
     private func singletonDocumentMetadata(
-        for member: DocumentArtifactReference,
-        invoiceByID: [PhysicalArtifact.ID: PhysicalArtifact]
+        for artifact: DocumentArtifactReference,
+        artifactsByID: [PhysicalArtifact.ID: PhysicalArtifact]
     ) -> DocumentMetadata {
-        if let workflow = workflowByID[member.id] {
+        if let workflow = workflowByID[artifact.id] {
             return DocumentMetadata(workflow: workflow)
         }
 
-        guard let invoice = invoiceByID[member.id] else {
+        guard let resolvedArtifact = artifactsByID[artifact.id] else {
             return .empty
         }
 
-        return DocumentMetadata(invoice: invoice)
+        return DocumentMetadata(invoice: resolvedArtifact)
     }
 
-    private func sharedDuplicateDocumentMetadata(for members: [DocumentArtifactReference]) -> DocumentMetadata {
-        let workflows = members.compactMap { workflowByID[$0.id] }
-        guard workflows.count == members.count,
+    private func sharedDuplicateDocumentMetadata(for artifacts: [DocumentArtifactReference]) -> DocumentMetadata {
+        let workflows = artifacts.compactMap { workflowByID[$0.id] }
+        guard workflows.count == artifacts.count,
               workflows.allSatisfy({ $0.metadataScope == .document }) else {
             return .empty
         }
@@ -1615,20 +1575,20 @@ final class AppModel: ObservableObject {
         renameProcessingFiles: Bool
     ) {
         guard let document = documentByID[documentID] else { return }
-        applyDocumentMetadata(metadata, toMemberIDs: document.memberIDs, renameProcessingFiles: renameProcessingFiles)
+        applyDocumentMetadata(metadata, toArtifactIDs: document.artifactIDs, renameProcessingFiles: renameProcessingFiles)
     }
 
     private func applyDocumentMetadata(
         _ metadata: DocumentMetadata,
-        toMemberIDs memberIDs: Set<PhysicalArtifact.ID>,
+        toArtifactIDs artifactIDs: Set<PhysicalArtifact.ID>,
         renameProcessingFiles: Bool
     ) {
-        let members = invoices.filter { memberIDs.contains($0.id) }
+        let artifacts = invoices.filter { artifactIDs.contains($0.id) }
 
         var requiresPersist = false
 
-        for member in members {
-            let existingWorkflow = workflowByID[member.id]
+        for artifact in artifacts {
+            let existingWorkflow = workflowByID[artifact.id]
             let nextWorkflow = StoredInvoiceWorkflow(
                 vendor: metadata.vendor,
                 invoiceDate: metadata.invoiceDate,
@@ -1638,10 +1598,10 @@ final class AppModel: ObservableObject {
                 metadataScope: metadata.isEmpty ? nil : .document
             )
 
-            if renameProcessingFiles && member.location == .processing {
-                _ = applyWorkflow(nextWorkflow, to: member.id)
+            if renameProcessingFiles && artifact.location == .processing {
+                _ = applyWorkflow(nextWorkflow, to: artifact.id)
             } else {
-                workflowByID[member.id] = nextWorkflow
+                workflowByID[artifact.id] = nextWorkflow
                 requiresPersist = true
             }
         }
@@ -1653,7 +1613,7 @@ final class AppModel: ObservableObject {
         if renameProcessingFiles {
             applyDuplicateStateFromExtractedText()
         } else {
-            updateDocumentMetadata(metadata, forMemberIDs: memberIDs)
+            updateDocumentMetadata(metadata, forArtifactIDs: artifactIDs)
             synchronizeInvoicesFromDerivedDocuments()
         }
     }
@@ -1661,9 +1621,9 @@ final class AppModel: ObservableObject {
     private func clearDocumentMetadata(for documentID: Document.ID) {
         guard let document = documentByID[documentID] else { return }
 
-        for member in document.members {
-            let existingWorkflow = workflowByID[member.id]
-            workflowByID[member.id] = StoredInvoiceWorkflow(
+        for artifact in document.artifacts {
+            let existingWorkflow = workflowByID[artifact.id]
+            workflowByID[artifact.id] = StoredInvoiceWorkflow(
                 vendor: nil,
                 invoiceDate: nil,
                 invoiceNumber: nil,
@@ -1674,7 +1634,7 @@ final class AppModel: ObservableObject {
         }
 
         persistWorkflow()
-        updateDocumentMetadata(.empty, forMemberIDs: document.memberIDs)
+        updateDocumentMetadata(.empty, forArtifactIDs: document.artifactIDs)
         synchronizeInvoicesFromDerivedDocuments()
     }
 
@@ -1697,13 +1657,13 @@ final class AppModel: ObservableObject {
     }
 
     private func finalizeRescannedDocument(_ context: DocumentRescanContext) {
-        let metadata = mergedDocumentMetadata(for: context.memberIDs)
-        applyDocumentMetadata(metadata, toMemberIDs: context.memberIDs, renameProcessingFiles: false)
+        let metadata = mergedDocumentMetadata(for: context.artifactIDs)
+        applyDocumentMetadata(metadata, toArtifactIDs: context.artifactIDs, renameProcessingFiles: false)
     }
 
-    private func mergedDocumentMetadata(for memberIDs: Set<PhysicalArtifact.ID>) -> DocumentMetadata {
+    private func mergedDocumentMetadata(for artifactIDs: Set<PhysicalArtifact.ID>) -> DocumentMetadata {
         let records = invoices
-            .filter { memberIDs.contains($0.id) }
+            .filter { artifactIDs.contains($0.id) }
             .compactMap { invoice -> InvoiceStructuredDataRecord? in
                 guard let contentHash = invoice.contentHash else { return nil }
                 return computationCache.structuredRecord(forContentHash: contentHash)
@@ -1718,21 +1678,21 @@ final class AppModel: ObservableObject {
     }
 
     private func inferredStructuredDocumentMetadata(for document: Document) -> DocumentMetadata? {
-        inferredStructuredDocumentMetadata(for: document.members)
+        inferredStructuredDocumentMetadata(for: document.artifacts)
     }
 
-    private func inferredStructuredDocumentMetadata(for members: [DocumentArtifactReference]) -> DocumentMetadata? {
-        let contentHashes = members.compactMap(\.contentHash)
-        guard contentHashes.count == members.count,
+    private func inferredStructuredDocumentMetadata(for artifacts: [DocumentArtifactReference]) -> DocumentMetadata? {
+        let contentHashes = artifacts.compactMap(\.contentHash)
+        guard contentHashes.count == artifacts.count,
               contentHashes.allSatisfy({ computationCache.structuredRecord(forContentHash: $0) != nil }) else {
             return nil
         }
 
-        return mergedDocumentMetadata(for: Set(members.map(\.id)))
+        return mergedDocumentMetadata(for: Set(artifacts.map(\.id)))
     }
 
-    private func updateDocumentMetadata(_ metadata: DocumentMetadata, forMemberIDs memberIDs: Set<PhysicalArtifact.ID>) {
-        guard let index = documents.firstIndex(where: { $0.memberIDs == memberIDs }) else {
+    private func updateDocumentMetadata(_ metadata: DocumentMetadata, forArtifactIDs artifactIDs: Set<PhysicalArtifact.ID>) {
+        guard let index = documents.firstIndex(where: { $0.artifactIDs == artifactIDs }) else {
             return
         }
 
@@ -1771,7 +1731,7 @@ final class AppModel: ObservableObject {
 
 private struct DocumentRescanContext {
     let documentID: Document.ID
-    let memberIDs: Set<PhysicalArtifact.ID>
+    let artifactIDs: Set<PhysicalArtifact.ID>
     var pendingContentHashes: Set<String>
 }
 
@@ -1780,7 +1740,7 @@ private enum UserDefaultsKey {
     static let processedPath = "settings.processedPath"
     static let processingPath = "settings.processingPath"
     static let duplicatesPath = "settings.duplicatesPath"
-    static let ignoredInvoiceIDs = "settings.ignoredInvoiceIDs"
+    static let ignoredArtifactIDs = "settings.ignoredArtifactIDs"
     static let llmProvider = "settings.llmProvider"
     static let llmBaseURL = "settings.llmBaseURL"
     static let llmModelName = "settings.llmModelName"
