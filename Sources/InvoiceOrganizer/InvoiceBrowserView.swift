@@ -487,7 +487,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
             if case let .groupHeader(duplicateCount) = row.kind, duplicateCount > 0 {
                 let label = duplicateCount == 1 ? "1 duplicate" : "\(duplicateCount) duplicates"
-                badges.append(.count(label))
+                badges.append(.duplicate(label))
             } else if let duplicateBadge = parent.duplicateBadgeTitlesByInvoiceID[row.invoice.id] {
                 badges.append(.duplicate(duplicateBadge))
             }
@@ -712,11 +712,10 @@ func disclosureNavigationAction(for row: InvoiceBrowserRow, keyCode: UInt16) -> 
 enum InvoiceBrowserBadge: Equatable {
     case duplicate(String)
     case ignored
-    case count(String)
 
     var title: String {
         switch self {
-        case .duplicate(let title), .count(let title):
+        case .duplicate(let title):
             return title
         case .ignored:
             return "Ignored"
@@ -729,8 +728,6 @@ enum InvoiceBrowserBadge: Equatable {
             return .systemRed
         case .ignored:
             return .systemOrange
-        case .count:
-            return .secondaryLabelColor
         }
     }
 
@@ -740,8 +737,6 @@ enum InvoiceBrowserBadge: Equatable {
             return NSColor.systemRed.withAlphaComponent(0.12)
         case .ignored:
             return NSColor.systemOrange.withAlphaComponent(0.14)
-        case .count:
-            return NSColor.tertiaryLabelColor.withAlphaComponent(0.12)
         }
     }
 }
