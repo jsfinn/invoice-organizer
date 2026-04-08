@@ -5,13 +5,11 @@ import PDFKit
 @MainActor
 protocol PreviewAssetProviding: AnyObject {
     func asset(
-        for fileURL: URL,
-        contentHash: String?,
-        fileType: InvoiceFileType,
+        for handle: ArtifactHandle,
         forceReload: Bool
     ) async throws -> PreviewAsset
 
-    func invalidateAsset(for fileURL: URL)
+    func invalidateAsset(for handle: ArtifactHandle)
 }
 
 enum PreviewAsset {
@@ -48,29 +46,48 @@ final class PreviewAssetProvider: PreviewAssetProviding {
     private var assetsByURL: [URL: CacheEntry] = [:]
 
     func asset(
-        for fileURL: URL,
-        contentHash: String?,
-        fileType: InvoiceFileType,
+        for handle: ArtifactHandle,
         forceReload: Bool = false
     ) async throws -> PreviewAsset {
         if !forceReload,
-           let cached = assetsByURL[fileURL],
-           cached.contentHash == contentHash {
+           let cached = assetsByURL[handle.fileURL],
+           cached.contentHash == handle.contentHash {
             return try cached.value.makeAsset()
         }
 
-        let value = try await PreviewAssetLoader.loadValue(for: fileURL, fileType: fileType)
-        assetsByURL[fileURL] = CacheEntry(contentHash: contentHash, value: value)
+        let value = try await PreviewAssetLoader.loadValue(for: handle.fileURL, fileType: handle.fileType)
+        assetsByURL[handle.fileURL] = CacheEntry(contentHash: handle.contentHash, value: value)
         return try value.makeAsset()
     }
 
     func asset(for invoice: PhysicalArtifact, forceReload: Bool = false) async throws -> PreviewAsset {
         try await asset(
-            for: invoice.fileURL,
-            contentHash: invoice.contentHash,
-            fileType: invoice.fileType,
+            for: invoice.handle,
             forceReload: forceReload
         )
+    }
+
+    func asset(
+        for fileURL: URL,
+        contentHash: String?,
+        fileType: InvoiceFileType,
+        forceReload: Bool = false
+    ) async throws -> PreviewAsset {
+        try await asset(
+            for: ArtifactHandle(
+                artifactID: fileURL.standardizedFileURL.path,
+                fileURL: fileURL,
+                fileType: fileType,
+                contentHash: contentHash,
+                addedAt: .distantPast,
+                displayName: fileURL.lastPathComponent
+            ),
+            forceReload: forceReload
+        )
+    }
+
+    func invalidateAsset(for handle: ArtifactHandle) {
+        assetsByURL.removeValue(forKey: handle.fileURL)
     }
 
     func invalidateAsset(for fileURL: URL) {

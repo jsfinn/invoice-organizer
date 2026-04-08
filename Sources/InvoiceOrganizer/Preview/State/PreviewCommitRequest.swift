@@ -1,19 +1,31 @@
 import Foundation
 
 struct PreviewCommitRequest: Sendable, Equatable {
-    let invoiceID: PhysicalArtifact.ID
-    let fileURL: URL
-    let fileType: InvoiceFileType
-    let contentHash: String?
-    let addedAt: Date
+    let handle: ArtifactHandle
     let quarterTurns: Int
 
+    var invoiceID: PhysicalArtifact.ID {
+        handle.artifactID
+    }
+
+    var fileURL: URL {
+        handle.fileURL
+    }
+
+    var fileType: InvoiceFileType {
+        handle.fileType
+    }
+
+    var contentHash: String? {
+        handle.contentHash
+    }
+
+    var addedAt: Date {
+        handle.addedAt
+    }
+
     init(invoice: PhysicalArtifact, quarterTurns: Int) {
-        self.invoiceID = invoice.id
-        self.fileURL = invoice.fileURL
-        self.fileType = invoice.fileType
-        self.contentHash = invoice.contentHash
-        self.addedAt = invoice.addedAt
+        self.handle = invoice.handle
         self.quarterTurns = normalizedPreviewRotationQuarterTurns(quarterTurns)
     }
 }

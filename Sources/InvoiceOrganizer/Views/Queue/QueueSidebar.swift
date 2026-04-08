@@ -119,6 +119,7 @@ struct QueueSidebar: View {
                     browserContext: browserContextBinding,
                     ocrStatesByArtifactID: model.ocrStatesByArtifactID,
                     readStatesByArtifactID: model.readStatesByArtifactID,
+                    documentMetadataByArtifactID: model.documentMetadataByArtifactID,
                     duplicateBadgeTitlesByArtifactID: model.duplicateBadgeTitlesByArtifactID,
                     ignoredArtifactIDs: model.ignoredArtifactIDs,
                     selectedArtifactIDs: selectedArtifactIDsBinding,

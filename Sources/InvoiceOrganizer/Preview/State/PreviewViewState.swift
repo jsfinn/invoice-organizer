@@ -54,9 +54,7 @@ final class PreviewViewState: ObservableObject {
 
         do {
             let asset = try await assetProvider.asset(
-                for: invoice.fileURL,
-                contentHash: invoice.contentHash,
-                fileType: invoice.fileType,
+                for: invoice.handle,
                 forceReload: false
             )
             guard !Task.isCancelled,

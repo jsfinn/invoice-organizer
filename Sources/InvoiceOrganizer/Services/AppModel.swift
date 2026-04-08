@@ -19,12 +19,15 @@ final class AppModel: ObservableObject {
     @Published private(set) var structuredFailedHashes: Set<String> = []
     @Published private(set) var ignoredArtifactIDs: Set<PhysicalArtifact.ID>
 
+    private let accessCoordinator = ArtifactAccessCoordinator()
     private let computationCache: ArtifactComputationCache
+    private let snapshotBuilder: LibrarySnapshotBuilder
     private let textStore: any InvoiceTextStoring
     private let textExtractionQueue: InvoiceTextExtractionQueue
     private let structuredDataStore: any InvoiceStructuredDataStoring
     private let structuredExtractionClient: any InvoiceStructuredExtractionClient
     private let structuredExtractionQueue: InvoiceStructuredExtractionQueue
+    private let workflowActionCoordinator = WorkflowActionCoordinator()
     private lazy var fileSystemReconciler = FileSystemReconciler(
         folderSettings: folderSettings,
         workflowProvider: { [weak self] in
@@ -35,7 +38,9 @@ final class AppModel: ObservableObject {
         }
     )
     private var queueHandlerSetupTask: Task<Void, Never>?
+    private var librarySnapshot: LibrarySnapshot = .empty
     private var workflowByID: [String: StoredInvoiceWorkflow]
+    private var documentMetadataHintsByArtifactID: [PhysicalArtifact.ID: DocumentMetadata] = [:]
     private var rescannedDocumentContextsByID: [Document.ID: DocumentRescanContext] = [:]
     private var rescannedDocumentIDsByHash: [String: Set<Document.ID>] = [:]
     private var isSynchronizingSelection = false
@@ -64,6 +69,11 @@ final class AppModel: ObservableObject {
             textStore: textStore,
             structuredDataStore: structuredDataStore
         )
+        self.snapshotBuilder = LibrarySnapshotBuilder(
+            structuredRecordForContentHash: { [computationCache = self.computationCache] contentHash in
+                computationCache.structuredRecord(forContentHash: contentHash)
+            }
+        )
         self.structuredExtractionClient = structuredExtractionClient
         self.llmPreflightStatus = Self.initialLLMPreflightStatus(for: resolvedLLMSettings)
         self.textExtractionQueue = InvoiceTextExtractionQueue(store: textStore, extractor: textExtractor)
@@ -85,7 +95,7 @@ final class AppModel: ObservableObject {
                 self.textPendingHashes.remove(contentHash)
                 self.textFailedHashes.insert(contentHash)
                 self.handleRescannedDocumentContentHashCompleted(contentHash)
-                self.applyDuplicateStateFromExtractedText()
+                self.rebuildLibrarySnapshot()
             }
             await structuredExtractionQueue.setOnRequestStarted { contentHash in
                 self.structuredPendingHashes.insert(contentHash)
@@ -150,7 +160,15 @@ final class AppModel: ObservableObject {
     }
 
     func document(for artifactID: PhysicalArtifact.ID) -> Document? {
-        documentByArtifactID[artifactID]
+        librarySnapshot.document(for: artifactID)
+    }
+
+    func documentMetadata(for artifactID: PhysicalArtifact.ID) -> DocumentMetadata {
+        librarySnapshot.metadata(for: artifactID)
+    }
+
+    var documentMetadataByArtifactID: [PhysicalArtifact.ID: DocumentMetadata] {
+        librarySnapshot.documentMetadataByArtifactID
     }
 
     func duplicateSimilarities(for artifactID: PhysicalArtifact.ID, limit: Int = 5) -> [DuplicateSimilarity] {
@@ -160,12 +178,12 @@ final class AppModel: ObservableObject {
             return []
         }
 
-        return documents
+        return librarySnapshot.documents
             .filter { !$0.contains(artifactID: artifactID) }
             .compactMap { document in
                 document.bestSimilarity(
                     to: artifactTokens,
-                    tokensByArtifactID: duplicateTokenSetsByArtifactID,
+                    tokensByArtifactID: librarySnapshot.duplicateTokenSetsByArtifactID,
                     threshold: duplicateSimilarityThreshold
                 )
             }
@@ -204,7 +222,8 @@ final class AppModel: ObservableObject {
                     return true
                 }
 
-                if let vendor = invoice.vendor, vendor.localizedCaseInsensitiveContains(trimmedSearchText) {
+                if let vendor = documentMetadata(for: invoice.id).vendor,
+                   vendor.localizedCaseInsensitiveContains(trimmedSearchText) {
                     return true
                 }
 
@@ -239,7 +258,7 @@ final class AppModel: ObservableObject {
     var duplicateBadgeTitlesByArtifactID: [PhysicalArtifact.ID: String] {
         return Dictionary(
             uniqueKeysWithValues: invoices.compactMap { invoice in
-                guard let title = documentByArtifactID[invoice.id]?.badgeTitle(forArtifactID: invoice.id) else {
+                guard let title = librarySnapshot.document(for: invoice.id)?.badgeTitle(forArtifactID: invoice.id) else {
                     return nil
                 }
 
@@ -286,31 +305,23 @@ final class AppModel: ObservableObject {
     }
 
     func sourcePathDisplay(for invoice: PhysicalArtifact) -> String {
-        invoice.fileURL.path
+        accessCoordinator.sourcePathDisplay(for: invoice.handle)
     }
 
     func processedFolderPreviewPath(for invoice: PhysicalArtifact) -> String? {
-        switch invoice.location {
-        case .inbox:
-            return nil
-        case .processing, .processed:
-            let trimmedVendor = invoice.vendor?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !trimmedVendor.isEmpty else { return "" }
-            return ArchivePathBuilder.destinationFolder(
-                root: folderSettings.processedURL ?? URL(fileURLWithPath: "/Processed"),
-                vendor: invoice.vendor
-            ).path
-        }
+        accessCoordinator.processedFolderPreviewPath(
+            for: invoice,
+            metadata: documentMetadata(for: invoice.id),
+            processedRoot: folderSettings.processedURL
+        )
     }
 
     func dragExportURL(for invoice: PhysicalArtifact) throws -> URL {
-        try DragExportService.dragURL(for: invoice)
+        try accessCoordinator.dragExportURL(for: invoice.handle)
     }
 
     func fileIcon(for invoice: PhysicalArtifact) -> NSImage {
-        let icon = NSWorkspace.shared.icon(forFile: invoice.fileURL.path)
-        icon.size = NSSize(width: 16, height: 16)
-        return icon
+        accessCoordinator.fileIcon(for: invoice.handle)
     }
 
     var isWatchingFolders: Bool {
@@ -553,7 +564,7 @@ final class AppModel: ObservableObject {
         var contentHashes: Set<String> = []
 
         for (documentID, documentInvoices) in selectedArtifactsByDocumentID {
-            guard let document = documentByID[documentID] else { continue }
+            guard let document = librarySnapshot.documentsByID[documentID] else { continue }
             let selectedArtifactIDs = Set(documentInvoices.map(\.id))
             let documentArtifactIDs = document.artifactIDs
             let shouldClearDocumentMetadata = selectedArtifactIDs == documentArtifactIDs
@@ -590,7 +601,7 @@ final class AppModel: ObservableObject {
         textFailedHashes.subtract(contentHashes)
         structuredPendingHashes.subtract(contentHashes)
         structuredFailedHashes.subtract(contentHashes)
-        applyDuplicateStateFromExtractedText()
+        rebuildLibrarySnapshot()
 
         await textExtractionQueue.enqueue(
             invoices: Array(Dictionary(uniqueKeysWithValues: invoicesToRescan.map { ($0.id, $0) }).values),
@@ -618,14 +629,15 @@ final class AppModel: ObservableObject {
 
     func moveInvoicesToInProgress(ids: Set<PhysicalArtifact.ID>) {
         moveInvoicesToInProgress(
-            ids: orderedInvoiceIDsForProcessingMove(from: ids)
+            ids: workflowActionCoordinator.orderedProcessingIDs(
+                requestedIDs: ids,
+                visibleArtifacts: visibleArtifacts,
+                allArtifacts: invoices
+            )
         )
     }
 
     func moveInvoicesToInProgress(ids: [PhysicalArtifact.ID]) {
-        let invoiceByID = Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
-        let eligibleInvoices = ids.compactMap { invoiceByID[$0] }.filter(\.canMoveToInProgress)
-        guard !eligibleInvoices.isEmpty else { return }
         guard let processingRoot = folderSettings.processingURL else {
             settingsErrorMessage = "Choose a Processing folder before moving invoices into In Progress."
             return
@@ -636,61 +648,25 @@ final class AppModel: ObservableObject {
         }
 
         do {
-            var movedIDs: Set<PhysicalArtifact.ID> = []
-            let movePlan = processingMovePlan(for: eligibleInvoices.map(\.id))
-
-            for invoice in invoices where movePlan.duplicateIDs.contains(invoice.id) {
-                _ = try InvoiceWorkspaceMover.moveToDuplicates(invoice, duplicatesRoot: duplicatesRoot)
-            }
-
-            for invoiceID in movePlan.processingIDs {
-                guard let invoice = invoiceByID[invoiceID] else { continue }
-                let destinationURL = try InvoiceWorkspaceMover.moveToProcessing(invoice, processingRoot: processingRoot)
-                let oldID = invoice.id
-                var finalURL = destinationURL
-
-                var workflow = workflowByID.removeValue(forKey: oldID) ?? StoredInvoiceWorkflow(
-                    vendor: invoice.vendor,
-                    invoiceDate: invoice.invoiceDate,
-                    invoiceNumber: invoice.invoiceNumber,
-                    documentType: invoice.documentType,
-                    isInProgress: false
-                )
-                workflow.isInProgress = false
-                if shouldRenameOnMoveToInProgress(invoice: invoice, workflow: workflow) {
-                    let processingInvoice = PhysicalArtifact(
-                        name: finalURL.lastPathComponent,
-                        fileURL: finalURL,
-                        location: .processing,
-                        vendor: workflow.vendor,
-                        invoiceDate: workflow.invoiceDate,
-                        invoiceNumber: workflow.invoiceNumber,
-                        documentType: workflow.documentType,
-                        addedAt: invoice.addedAt,
-                        fileType: invoice.fileType,
-                        status: .inProgress,
-                        contentHash: invoice.contentHash,
-                        duplicateOfPath: invoice.duplicateOfPath,
-                        duplicateReason: invoice.duplicateReason
-                    )
-                    finalURL = try InvoiceWorkspaceMover.renameInProcessing(
-                        processingInvoice,
-                        vendor: workflow.vendor,
-                        invoiceDate: workflow.invoiceDate,
-                        invoiceNumber: workflow.invoiceNumber
-                    )
+            let result = try workflowActionCoordinator.moveToInProgress(
+                orderedIDs: ids,
+                artifacts: invoices,
+                snapshot: librarySnapshot,
+                workflowsByID: workflowByID,
+                ignoredArtifactIDs: ignoredArtifactIDs,
+                processingRoot: processingRoot,
+                duplicatesRoot: duplicatesRoot,
+                structuredRecordForContentHash: { [computationCache] contentHash in
+                    computationCache.structuredRecord(forContentHash: contentHash)
                 }
-
-                let newID = PhysicalArtifact.stableID(for: finalURL)
-                workflowByID[newID] = workflow
-                remapIgnoredID(from: oldID, to: newID)
-                movedIDs.insert(newID)
-            }
-
+            )
+            workflowByID = result.workflowsByID
+            ignoredArtifactIDs = result.ignoredArtifactIDs
             persistWorkflow()
+            persistIgnoredInvoiceIDs()
             settingsErrorMessage = nil
             refreshLibrary()
-            selectedArtifactIDs = movedIDs
+            selectedArtifactIDs = result.selectedArtifactIDs
         } catch {
             settingsErrorMessage = error.localizedDescription
         }
@@ -707,29 +683,21 @@ final class AppModel: ObservableObject {
         guard !eligibleIDs.isEmpty else { return }
 
         do {
-            var movedIDs: Set<PhysicalArtifact.ID> = []
-
-            for invoice in invoices where eligibleIDs.contains(invoice.id) {
-                let destinationURL = try InvoiceWorkspaceMover.moveToInbox(invoice, inboxRoot: inboxRoot)
-                let oldID = invoice.id
-                let newID = PhysicalArtifact.stableID(for: destinationURL)
-
-                let workflow = workflowByID.removeValue(forKey: oldID) ?? StoredInvoiceWorkflow(
-                    vendor: invoice.vendor,
-                    invoiceDate: invoice.invoiceDate,
-                    invoiceNumber: invoice.invoiceNumber,
-                    documentType: invoice.documentType,
-                    isInProgress: false
-                )
-                workflowByID[newID] = workflow
-                remapIgnoredID(from: oldID, to: newID)
-                movedIDs.insert(newID)
-            }
-
+            let result = try workflowActionCoordinator.moveToUnprocessed(
+                ids: eligibleIDs,
+                artifacts: invoices,
+                snapshot: librarySnapshot,
+                workflowsByID: workflowByID,
+                ignoredArtifactIDs: ignoredArtifactIDs,
+                inboxRoot: inboxRoot
+            )
+            workflowByID = result.workflowsByID
+            ignoredArtifactIDs = result.ignoredArtifactIDs
             persistWorkflow()
+            persistIgnoredInvoiceIDs()
             settingsErrorMessage = nil
             refreshLibrary()
-            selectedArtifactIDs = movedIDs
+            selectedArtifactIDs = result.selectedArtifactIDs
         } catch {
             settingsErrorMessage = error.localizedDescription
         }
@@ -745,48 +713,29 @@ final class AppModel: ObservableObject {
         let eligibleInvoices = invoices.filter { ids.contains($0.id) && $0.canMarkDone }
         guard !eligibleInvoices.isEmpty else { return }
 
-        guard eligibleInvoices.allSatisfy({ !($0.vendor?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }) else {
+        guard eligibleInvoices.allSatisfy({
+            !(documentMetadata(for: $0.id).vendor?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        }) else {
             settingsErrorMessage = "Set a vendor before moving invoices to Processed."
             return
         }
 
         do {
-            let processedAt = Date()
-            var archivedIDs: Set<PhysicalArtifact.ID> = []
-
-            for invoice in eligibleInvoices {
-                let vendor = invoice.vendor?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let invoiceDate = invoice.invoiceDate ?? invoice.addedAt
-                let destinationURL = try InvoiceArchiver.archive(
-                    invoice,
-                    processedRoot: processedRoot,
-                    vendor: vendor,
-                    invoiceDate: invoiceDate,
-                    processedAt: processedAt
-                )
-
-                let archivedID = PhysicalArtifact.stableID(for: destinationURL)
-                var workflow = workflowByID.removeValue(forKey: invoice.id) ?? StoredInvoiceWorkflow(
-                    vendor: invoice.vendor,
-                    invoiceDate: invoice.invoiceDate,
-                    invoiceNumber: invoice.invoiceNumber,
-                    documentType: invoice.documentType,
-                    isInProgress: false
-                )
-                workflow.vendor = vendor
-                workflow.invoiceDate = invoiceDate
-                workflow.invoiceNumber = normalizedInvoiceNumber(from: invoice.invoiceNumber ?? "")
-                workflow.documentType = invoice.documentType
-                workflow.isInProgress = false
-                workflowByID[archivedID] = workflow
-                remapIgnoredID(from: invoice.id, to: archivedID)
-                archivedIDs.insert(archivedID)
-            }
-
+            let result = try workflowActionCoordinator.moveToProcessed(
+                ids: ids,
+                artifacts: invoices,
+                snapshot: librarySnapshot,
+                workflowsByID: workflowByID,
+                ignoredArtifactIDs: ignoredArtifactIDs,
+                processedRoot: processedRoot
+            )
+            workflowByID = result.workflowsByID
+            ignoredArtifactIDs = result.ignoredArtifactIDs
             persistWorkflow()
+            persistIgnoredInvoiceIDs()
             settingsErrorMessage = nil
             refreshLibrary()
-            selectedArtifactIDs = archivedIDs
+            selectedArtifactIDs = result.selectedArtifactIDs
         } catch {
             settingsErrorMessage = error.localizedDescription
         }
@@ -800,7 +749,7 @@ final class AppModel: ObservableObject {
 
         let trimmedVendor = vendor.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedVendor = trimmedVendor.isEmpty ? nil : trimmedVendor
-        guard let document = documentByArtifactID[artifactID],
+        guard let document = librarySnapshot.document(for: artifactID),
               document.metadata.vendor != normalizedVendor else {
             return
         }
@@ -816,7 +765,7 @@ final class AppModel: ObservableObject {
             return
         }
 
-        guard let document = documentByArtifactID[artifactID] else {
+        guard let document = librarySnapshot.document(for: artifactID) else {
             return
         }
 
@@ -837,7 +786,7 @@ final class AppModel: ObservableObject {
         }
 
         let normalizedInvoiceNumber = normalizedInvoiceNumber(from: invoiceNumber)
-        guard let document = documentByArtifactID[artifactID],
+        guard let document = librarySnapshot.document(for: artifactID),
               document.metadata.invoiceNumber != normalizedInvoiceNumber else {
             return
         }
@@ -853,7 +802,7 @@ final class AppModel: ObservableObject {
             return
         }
 
-        guard let document = documentByArtifactID[artifactID],
+        guard let document = librarySnapshot.document(for: artifactID),
               document.metadata.documentType != documentType else {
             return
         }
@@ -880,16 +829,16 @@ final class AppModel: ObservableObject {
             return nil
         }
 
-        guard FileManager.default.fileExists(atPath: invoice.fileURL.path) else {
+        let handle = invoice.handle
+
+        guard accessCoordinator.fileExists(for: handle) else {
             return nil
         }
 
         do {
-            try await Task.detached(priority: .userInitiated) {
-                try InvoiceFileRotator.rotateFile(at: invoice.fileURL, fileType: invoice.fileType, quarterTurns: rotation)
-            }.value
+            try await accessCoordinator.rotate(handle: handle, quarterTurns: rotation)
 
-            let updatedContentHash = try? FileHasher.sha256(for: invoice.fileURL)
+            let updatedContentHash = accessCoordinator.updatedContentHash(for: handle)
             await migrateCachedArtifacts(from: invoice.contentHash, to: updatedContentHash)
             fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
 
@@ -897,7 +846,7 @@ final class AppModel: ObservableObject {
                 invoices[refreshedIndex].contentHash = updatedContentHash ?? invoices[refreshedIndex].contentHash
             }
 
-            applyDuplicateStateFromExtractedText()
+            rebuildLibrarySnapshot()
             settingsErrorMessage = nil
             return PreviewRotationSaveResult(contentHash: updatedContentHash)
         } catch {
@@ -929,10 +878,12 @@ final class AppModel: ObservableObject {
 
         switch result {
         case .success(let snapshot):
-            await applyReconciledArtifacts(snapshot.artifacts)
+            await applyReconciledArtifacts(snapshot)
         case .failure(let error):
+            librarySnapshot = .empty
             invoices = []
             documents = []
+            documentMetadataHintsByArtifactID = [:]
             computationCache.reset()
             syncComputationHashes()
             textPendingHashes = []
@@ -944,21 +895,22 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func applyReconciledArtifacts(_ loadedInvoices: [PhysicalArtifact]) async {
-        invoices = loadedInvoices
-        pruneWorkflowState(using: loadedInvoices)
-        pruneIgnoredState(using: loadedInvoices)
-        syncSelectionForVisibleInvoices()
+    private func applyReconciledArtifacts(_ snapshot: FileSystemReconciliationSnapshot) async {
+        invoices = snapshot.artifacts
+        documentMetadataHintsByArtifactID = snapshot.documentMetadataHintsByArtifactID
+        pruneWorkflowState(using: snapshot.artifacts)
+        pruneIgnoredState(using: snapshot.artifacts)
         settingsErrorMessage = nil
         await computationCache.loadAll()
         syncComputationHashes()
-        applyDuplicateStateFromExtractedText()
+        rebuildLibrarySnapshot()
+        syncSelectionForVisibleInvoices()
         await textExtractionQueue.enqueue(
-            invoices: loadedInvoices,
+            invoices: invoices,
             knownCachedHashes: extractedTextHashes.union(textFailedHashes)
         )
         if canAttemptStructuredExtraction(with: llmSettings) {
-            await enqueueStructuredExtraction(for: loadedInvoices)
+            await enqueueStructuredExtraction(for: invoices)
         }
     }
 
@@ -985,54 +937,6 @@ final class AppModel: ObservableObject {
         InvoiceWorkflowStore.save(workflowByID)
     }
 
-    private func orderedInvoiceIDsForProcessingMove(from ids: Set<PhysicalArtifact.ID>) -> [PhysicalArtifact.ID] {
-        let visibleOrderedIDs = visibleArtifacts
-            .map(\.id)
-            .filter { ids.contains($0) }
-        let visibleOrderedSet = Set(visibleOrderedIDs)
-        let remainingIDs = invoices
-            .map(\.id)
-            .filter { ids.contains($0) && !visibleOrderedSet.contains($0) }
-        return visibleOrderedIDs + remainingIDs
-    }
-
-    private func processingMovePlan(for orderedIDs: [PhysicalArtifact.ID]) -> (processingIDs: [PhysicalArtifact.ID], duplicateIDs: Set<PhysicalArtifact.ID>) {
-        let documentByMemberID = Dictionary(
-            uniqueKeysWithValues: documents.flatMap { document in
-                document.artifactIDs.map { ($0, document) }
-            }
-        )
-
-        var processingIDs: [PhysicalArtifact.ID] = []
-        var duplicateIDs: Set<PhysicalArtifact.ID> = []
-        var handledDocumentIDs: Set<String> = []
-
-        for invoiceID in orderedIDs {
-            guard let document = documentByMemberID[invoiceID], document.isDuplicate else {
-                processingIDs.append(invoiceID)
-                continue
-            }
-
-            if handledDocumentIDs.insert(document.id).inserted {
-                processingIDs.append(invoiceID)
-                duplicateIDs.formUnion(
-                    document.artifacts.compactMap { member in
-                        guard member.location != .processed,
-                              member.id != invoiceID else {
-                            return nil
-                        }
-
-                        return member.id
-                    }
-                )
-            } else {
-                duplicateIDs.insert(invoiceID)
-            }
-        }
-
-        return (processingIDs, duplicateIDs)
-    }
-
     private var activeQueueTabContext: QueueTabContext {
         queueScreenContext.activeTabContext
     }
@@ -1056,29 +960,15 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private var documentByID: [Document.ID: Document] {
-        Dictionary(uniqueKeysWithValues: documents.map { ($0.id, $0) })
-    }
-
-    private var documentByArtifactID: [PhysicalArtifact.ID: Document] {
-        Dictionary(
-            uniqueKeysWithValues: documents.flatMap { document in
-                document.artifactIDs.map { ($0, document) }
-            }
+    private func rebuildLibrarySnapshot() {
+        librarySnapshot = snapshotBuilder.build(
+            from: invoices,
+            workflowsByArtifactID: workflowByID,
+            documentMetadataHintsByArtifactID: documentMetadataHintsByArtifactID,
+            duplicateTokensByHash: computationCache.duplicateTokensByHash
         )
-    }
-
-    private var duplicateTokenSetsByArtifactID: [PhysicalArtifact.ID: Set<String>] {
-        Dictionary(
-            uniqueKeysWithValues: invoices.compactMap { invoice in
-                guard let contentHash = invoice.contentHash,
-                      let tokens = computationCache.duplicateTokens(forContentHash: contentHash) else {
-                    return nil
-                }
-
-                return (invoice.id, tokens)
-            }
-        )
+        invoices = librarySnapshot.artifacts
+        documents = librarySnapshot.documents
     }
 
     private func syncSelectionForVisibleInvoices() {
@@ -1140,29 +1030,20 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func remapIgnoredID(from previousID: PhysicalArtifact.ID, to updatedID: PhysicalArtifact.ID) {
-        guard previousID != updatedID, ignoredArtifactIDs.remove(previousID) != nil else {
-            return
-        }
-
-        ignoredArtifactIDs.insert(updatedID)
-        persistIgnoredInvoiceIDs()
-    }
-
     private func resolvedInvoice(for request: PreviewCommitRequest) -> PhysicalArtifact? {
         if let byID = invoices.first(where: { $0.id == request.invoiceID }) {
             return byID
         }
 
-        if let byURL = invoices.first(where: { $0.fileURL == request.fileURL }) {
+        if let byURL = invoices.first(where: { $0.fileURL == request.handle.fileURL }) {
             return byURL
         }
 
-        if let contentHash = request.contentHash,
+        if let contentHash = request.handle.contentHash,
            let relocated = invoices.first(where: {
                $0.contentHash == contentHash &&
-               $0.addedAt == request.addedAt &&
-               $0.fileType == request.fileType
+               $0.addedAt == request.handle.addedAt &&
+               $0.fileType == request.handle.fileType
            }) {
             return relocated
         }
@@ -1172,75 +1053,31 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     private func applyWorkflow(_ workflow: StoredInvoiceWorkflow, to invoiceID: PhysicalArtifact.ID) -> PhysicalArtifact.ID? {
-        guard let index = invoices.firstIndex(where: { $0.id == invoiceID }) else { return nil }
-
-        let invoice = invoices[index]
-        var targetInvoice = invoice
-        var nextID = invoiceID
-
-        if invoice.location == .processing {
-            do {
-                let renamedURL = try InvoiceWorkspaceMover.renameInProcessing(
-                    invoice,
-                    vendor: workflow.vendor,
-                    invoiceDate: workflow.invoiceDate,
-                    invoiceNumber: workflow.invoiceNumber
-                )
-
-                targetInvoice = PhysicalArtifact(
-                    name: renamedURL.lastPathComponent,
-                    fileURL: renamedURL,
-                    location: invoice.location,
-                    vendor: workflow.vendor,
-                    invoiceDate: workflow.invoiceDate,
-                    invoiceNumber: workflow.invoiceNumber,
-                    documentType: workflow.documentType,
-                    processedAt: invoice.processedAt,
-                    addedAt: invoice.addedAt,
-                    fileType: invoice.fileType,
-                    status: invoice.status,
-                    contentHash: invoice.contentHash,
-                    duplicateOfPath: invoice.duplicateOfPath,
-                    duplicateReason: invoice.duplicateReason
-                )
-                nextID = targetInvoice.id
-            } catch {
-                settingsErrorMessage = error.localizedDescription
+        do {
+            guard let result = try workflowActionCoordinator.applyWorkflow(
+                workflow,
+                to: invoiceID,
+                artifacts: invoices,
+                workflowsByID: workflowByID,
+                ignoredArtifactIDs: ignoredArtifactIDs,
+                selectedArtifactIDs: selectedArtifactIDs,
+                selectedArtifactID: selectedArtifactID
+            ) else {
                 return nil
             }
-        } else {
-            targetInvoice = PhysicalArtifact(
-                name: invoice.name,
-                fileURL: invoice.fileURL,
-                location: invoice.location,
-                vendor: workflow.vendor,
-                invoiceDate: workflow.invoiceDate,
-                invoiceNumber: workflow.invoiceNumber,
-                documentType: workflow.documentType,
-                processedAt: invoice.processedAt,
-                addedAt: invoice.addedAt,
-                fileType: invoice.fileType,
-                status: invoice.status,
-                contentHash: invoice.contentHash,
-                duplicateOfPath: invoice.duplicateOfPath,
-                duplicateReason: invoice.duplicateReason
-            )
+
+            invoices = result.artifacts
+            workflowByID = result.workflowsByID
+            ignoredArtifactIDs = result.ignoredArtifactIDs
+            persistWorkflow()
+            persistIgnoredInvoiceIDs()
+            setSelection(ids: result.selectedArtifactIDs, primary: result.selectedArtifactID)
+            rebuildLibrarySnapshot()
+            return result.updatedArtifactID
+        } catch {
+            settingsErrorMessage = error.localizedDescription
+            return nil
         }
-
-        workflowByID.removeValue(forKey: invoiceID)
-        workflowByID[nextID] = workflow
-        persistWorkflow()
-
-        remapIgnoredID(from: invoiceID, to: nextID)
-
-        invoices[index] = targetInvoice
-
-        if selectedArtifactIDs.contains(invoiceID) || selectedArtifactID == invoiceID {
-            let remappedSelection = Set(selectedArtifactIDs.map { $0 == invoiceID ? nextID : $0 })
-            setSelection(ids: remappedSelection, primary: selectedArtifactID == invoiceID ? nextID : selectedArtifactID)
-        }
-
-        return nextID
     }
 
     private func normalizedInvoiceNumber(from invoiceNumber: String) -> String? {
@@ -1368,7 +1205,7 @@ final class AppModel: ObservableObject {
         textFailedHashes.remove(contentHash)
         await computationCache.syncExtractedText(forContentHash: contentHash)
         syncComputationHashes()
-        applyDuplicateStateFromExtractedText()
+        rebuildLibrarySnapshot()
         guard llmPreflightStatus.isReady || canAttemptStructuredExtraction(with: llmSettings) else {
             return
         }
@@ -1377,53 +1214,6 @@ final class AppModel: ObservableObject {
         guard !matchingInvoices.isEmpty else { return }
 
         await enqueueStructuredExtraction(for: matchingInvoices, force: true)
-    }
-
-    private func applyDuplicateStateFromExtractedText() {
-        let duplicateClusters = DuplicateDetector.extractedTextDuplicateGroups(
-            for: invoices,
-            tokenSetsByContentHash: computationCache.duplicateTokensByHash
-        )
-        documents = buildDocuments(from: invoices, duplicateClusters: duplicateClusters)
-
-        synchronizeInvoicesFromDerivedDocuments()
-    }
-
-    private func synchronizeInvoicesFromDerivedDocuments() {
-        let documentLookup = documentByArtifactID
-
-        for index in invoices.indices {
-            let artifactID = invoices[index].id
-            let document = documentLookup[artifactID]
-
-            invoices[index].documentID = document?.id ?? invoices[index].id
-            invoices[index].vendor = document?.metadata.vendor
-            invoices[index].invoiceDate = document?.metadata.invoiceDate
-            invoices[index].invoiceNumber = document?.metadata.invoiceNumber
-            invoices[index].documentType = document?.metadata.documentType
-
-            if let duplicateInfo = document?.duplicateInfo(forArtifactID: artifactID) {
-                invoices[index].status = .blockedDuplicate
-                invoices[index].duplicateOfPath = duplicateInfo.duplicateOfPath
-                invoices[index].duplicateReason = duplicateInfo.reason
-                continue
-            }
-
-            invoices[index].duplicateOfPath = nil
-            invoices[index].duplicateReason = nil
-            invoices[index].status = baseStatus(for: invoices[index].location)
-        }
-    }
-
-    private func baseStatus(for location: InvoiceLocation) -> InvoiceStatus {
-        switch location {
-        case .inbox:
-            return .unprocessed
-        case .processing:
-            return .inProgress
-        case .processed:
-            return .processed
-        }
     }
 
     private func handleStructuredDataSaved(contentHash: String, record: InvoiceStructuredDataRecord) {
@@ -1439,7 +1229,7 @@ final class AppModel: ObservableObject {
         let matchingInvoices = invoices.filter { $0.contentHash == contentHash }
 
         for invoice in matchingInvoices {
-            guard let document = documentByArtifactID[invoice.id] else { continue }
+            guard let document = librarySnapshot.document(for: invoice.id) else { continue }
             let candidateMetadata: DocumentMetadata
 
             if document.artifacts.count == 1 {
@@ -1451,7 +1241,7 @@ final class AppModel: ObservableObject {
                     documentType: metadata.documentType ?? record.documentType
                 )
             } else {
-                guard let mergedMetadata = inferredStructuredDocumentMetadata(for: document) else {
+                guard let mergedMetadata = snapshotBuilder.inferredStructuredDocumentMetadata(for: document) else {
                     continue
                 }
 
@@ -1469,112 +1259,12 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func buildDocuments(from artifacts: [PhysicalArtifact], duplicateClusters: [ArtifactDuplicateCluster]) -> [Document] {
-        let artifactsByID = Dictionary(uniqueKeysWithValues: artifacts.map { ($0.id, $0) })
-        var documents: [Document] = []
-        var groupedArtifactIDs: Set<PhysicalArtifact.ID> = []
-
-        for cluster in duplicateClusters {
-            let documentArtifacts = cluster.artifactIDs.compactMap { artifactID -> DocumentArtifactReference? in
-                guard let artifact = artifactsByID[artifactID] else { return nil }
-                return makeDocumentArtifactReference(from: artifact)
-            }
-            guard documentArtifacts.count > 1 else { continue }
-
-            groupedArtifactIDs.formUnion(documentArtifacts.map(\.id))
-            documents.append(
-                Document(
-                    artifacts: documentArtifacts,
-                    metadata: resolvedDocumentMetadata(for: documentArtifacts, artifactsByID: artifactsByID)
-                )
-            )
-        }
-
-        for artifact in artifacts where !groupedArtifactIDs.contains(artifact.id) {
-            let documentArtifact = makeDocumentArtifactReference(from: artifact)
-            documents.append(
-                Document(
-                    artifacts: [documentArtifact],
-                    metadata: resolvedDocumentMetadata(for: [documentArtifact], artifactsByID: artifactsByID)
-                )
-            )
-        }
-
-        return documents.sorted { lhs, rhs in
-            let lhsDate = lhs.artifacts.map(\.addedAt).max() ?? .distantPast
-            let rhsDate = rhs.artifacts.map(\.addedAt).max() ?? .distantPast
-            if lhsDate != rhsDate {
-                return lhsDate > rhsDate
-            }
-
-            return lhs.id < rhs.id
-        }
-    }
-
-    private func makeDocumentArtifactReference(from artifact: PhysicalArtifact) -> DocumentArtifactReference {
-        DocumentArtifactReference(
-            id: artifact.id,
-            fileURL: artifact.fileURL,
-            location: artifact.location,
-            addedAt: artifact.addedAt,
-            fileType: artifact.fileType,
-            contentHash: artifact.contentHash
-        )
-    }
-
-    private func resolvedDocumentMetadata(
-        for artifacts: [DocumentArtifactReference],
-        artifactsByID: [PhysicalArtifact.ID: PhysicalArtifact]
-    ) -> DocumentMetadata {
-        if artifacts.count == 1, let artifact = artifacts.first {
-            return singletonDocumentMetadata(for: artifact, artifactsByID: artifactsByID)
-        }
-
-        let workflowMetadata = sharedDuplicateDocumentMetadata(for: artifacts)
-        guard workflowMetadata.isEmpty else {
-            return workflowMetadata
-        }
-
-        return inferredStructuredDocumentMetadata(for: artifacts) ?? .empty
-    }
-
-    private func singletonDocumentMetadata(
-        for artifact: DocumentArtifactReference,
-        artifactsByID: [PhysicalArtifact.ID: PhysicalArtifact]
-    ) -> DocumentMetadata {
-        if let workflow = workflowByID[artifact.id] {
-            return DocumentMetadata(workflow: workflow)
-        }
-
-        guard let resolvedArtifact = artifactsByID[artifact.id] else {
-            return .empty
-        }
-
-        return DocumentMetadata(invoice: resolvedArtifact)
-    }
-
-    private func sharedDuplicateDocumentMetadata(for artifacts: [DocumentArtifactReference]) -> DocumentMetadata {
-        let workflows = artifacts.compactMap { workflowByID[$0.id] }
-        guard workflows.count == artifacts.count,
-              workflows.allSatisfy({ $0.metadataScope == .document }) else {
-            return .empty
-        }
-
-        let metadata = workflows.map(DocumentMetadata.init(workflow:))
-        guard let first = metadata.first,
-              metadata.dropFirst().allSatisfy({ $0 == first }) else {
-            return .empty
-        }
-
-        return first
-    }
-
     private func setDocumentMetadata(
         _ metadata: DocumentMetadata,
         for documentID: Document.ID,
         renameProcessingFiles: Bool
     ) {
-        guard let document = documentByID[documentID] else { return }
+        guard let document = librarySnapshot.documentsByID[documentID] else { return }
         applyDocumentMetadata(metadata, toArtifactIDs: document.artifactIDs, renameProcessingFiles: renameProcessingFiles)
     }
 
@@ -1610,16 +1300,11 @@ final class AppModel: ObservableObject {
             persistWorkflow()
         }
 
-        if renameProcessingFiles {
-            applyDuplicateStateFromExtractedText()
-        } else {
-            updateDocumentMetadata(metadata, forArtifactIDs: artifactIDs)
-            synchronizeInvoicesFromDerivedDocuments()
-        }
+        rebuildLibrarySnapshot()
     }
 
     private func clearDocumentMetadata(for documentID: Document.ID) {
-        guard let document = documentByID[documentID] else { return }
+        guard let document = librarySnapshot.documentsByID[documentID] else { return }
 
         for artifact in document.artifacts {
             let existingWorkflow = workflowByID[artifact.id]
@@ -1634,8 +1319,7 @@ final class AppModel: ObservableObject {
         }
 
         persistWorkflow()
-        updateDocumentMetadata(.empty, forArtifactIDs: document.artifactIDs)
-        synchronizeInvoicesFromDerivedDocuments()
+        rebuildLibrarySnapshot()
     }
 
     private func handleRescannedDocumentContentHashCompleted(_ contentHash: String) {
@@ -1662,60 +1346,7 @@ final class AppModel: ObservableObject {
     }
 
     private func mergedDocumentMetadata(for artifactIDs: Set<PhysicalArtifact.ID>) -> DocumentMetadata {
-        let records = invoices
-            .filter { artifactIDs.contains($0.id) }
-            .compactMap { invoice -> InvoiceStructuredDataRecord? in
-                guard let contentHash = invoice.contentHash else { return nil }
-                return computationCache.structuredRecord(forContentHash: contentHash)
-            }
-
-        return DocumentMetadata(
-            vendor: mergedStructuredValue(records.map(\.companyName)),
-            invoiceDate: mergedStructuredValue(records.map(\.invoiceDate)),
-            invoiceNumber: normalizedInvoiceNumber(from: mergedStructuredValue(records.map(\.invoiceNumber)) ?? ""),
-            documentType: mergedStructuredValue(records.map(\.documentType))
-        )
-    }
-
-    private func inferredStructuredDocumentMetadata(for document: Document) -> DocumentMetadata? {
-        inferredStructuredDocumentMetadata(for: document.artifacts)
-    }
-
-    private func inferredStructuredDocumentMetadata(for artifacts: [DocumentArtifactReference]) -> DocumentMetadata? {
-        let contentHashes = artifacts.compactMap(\.contentHash)
-        guard contentHashes.count == artifacts.count,
-              contentHashes.allSatisfy({ computationCache.structuredRecord(forContentHash: $0) != nil }) else {
-            return nil
-        }
-
-        return mergedDocumentMetadata(for: Set(artifacts.map(\.id)))
-    }
-
-    private func updateDocumentMetadata(_ metadata: DocumentMetadata, forArtifactIDs artifactIDs: Set<PhysicalArtifact.ID>) {
-        guard let index = documents.firstIndex(where: { $0.artifactIDs == artifactIDs }) else {
-            return
-        }
-
-        documents[index].metadata = metadata
-    }
-
-    private func mergedStructuredValue<T: Hashable>(_ values: [T?]) -> T? {
-        let uniqueValues = Set(values.compactMap { $0 })
-        guard uniqueValues.count == 1 else { return nil }
-        return uniqueValues.first
-    }
-
-    private func shouldRenameOnMoveToInProgress(invoice: PhysicalArtifact, workflow: StoredInvoiceWorkflow) -> Bool {
-        guard let contentHash = invoice.contentHash,
-              let structuredRecord = computationCache.structuredRecord(forContentHash: contentHash),
-              structuredRecord.isHighConfidence else {
-            return false
-        }
-
-        let vendor = (workflow.vendor ?? invoice.vendor)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let invoiceDate = workflow.invoiceDate ?? invoice.invoiceDate
-
-        return !(vendor?.isEmpty ?? true) && invoiceDate != nil
+        snapshotBuilder.mergedDocumentMetadata(for: artifactIDs, artifacts: invoices)
     }
 
     func reloadLibraryForTesting() async {

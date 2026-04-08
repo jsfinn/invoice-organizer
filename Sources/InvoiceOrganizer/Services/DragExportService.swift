@@ -3,20 +3,20 @@ import ImageIO
 import UniformTypeIdentifiers
 
 enum DragExportService {
-    static func dragURL(for invoice: PhysicalArtifact) throws -> URL {
-        if invoice.fileType == .heic {
-            return try exportTemporaryJPEG(from: invoice.fileURL, originalFilename: invoice.name)
+    static func dragURL(for handle: ArtifactHandle) throws -> URL {
+        if handle.fileType == .heic {
+            return try exportTemporaryJPEG(from: handle.fileURL, originalFilename: handle.displayName)
         }
 
-        return invoice.fileURL
+        return handle.fileURL
     }
 
-    static func itemProvider(for invoice: PhysicalArtifact, internalInvoiceIDs: [String]? = nil) -> NSItemProvider {
+    static func itemProvider(for handle: ArtifactHandle, internalInvoiceIDs: [String]? = nil) -> NSItemProvider {
         let provider: NSItemProvider
-        if invoice.fileType == .heic {
-            provider = heicItemProvider(for: invoice)
+        if handle.fileType == .heic {
+            provider = heicItemProvider(for: handle)
         } else {
-            provider = NSItemProvider(object: invoice.fileURL as NSURL)
+            provider = NSItemProvider(object: handle.fileURL as NSURL)
         }
 
         attachInternalInvoiceIDs(internalInvoiceIDs, to: provider)
@@ -33,16 +33,16 @@ enum DragExportService {
         "\(jpegExportBasename(for: originalFilename)).jpg"
     }
 
-    private static func heicItemProvider(for invoice: PhysicalArtifact) -> NSItemProvider {
+    private static func heicItemProvider(for handle: ArtifactHandle) -> NSItemProvider {
         let provider = NSItemProvider()
-        provider.suggestedName = jpegExportBasename(for: invoice.name)
+        provider.suggestedName = jpegExportBasename(for: handle.displayName)
         provider.registerFileRepresentation(
             forTypeIdentifier: UTType.jpeg.identifier,
             fileOptions: [],
             visibility: .all
         ) { completion in
             do {
-                let exportURL = try exportTemporaryJPEG(from: invoice.fileURL, originalFilename: invoice.name)
+                let exportURL = try exportTemporaryJPEG(from: handle.fileURL, originalFilename: handle.displayName)
                 completion(exportURL, true, nil)
             } catch {
                 completion(nil, false, error)

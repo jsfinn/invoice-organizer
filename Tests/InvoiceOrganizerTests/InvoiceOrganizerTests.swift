@@ -134,12 +134,10 @@ private final class TestPreviewAssetProvider: PreviewAssetProviding {
     }
 
     func asset(
-        for fileURL: URL,
-        contentHash: String?,
-        fileType: InvoiceFileType,
+        for handle: ArtifactHandle,
         forceReload: Bool
     ) async throws -> PreviewAsset {
-        guard let response = responses[fileURL] else {
+        guard let response = responses[handle.fileURL] else {
             throw CocoaError(.fileNoSuchFile)
         }
 
@@ -147,7 +145,7 @@ private final class TestPreviewAssetProvider: PreviewAssetProviding {
         return response.asset
     }
 
-    func invalidateAsset(for fileURL: URL) {}
+    func invalidateAsset(for handle: ArtifactHandle) {}
 }
 
 @MainActor
@@ -1425,13 +1423,14 @@ private final class RecordingPreviewPersistHandler {
 
     let duplicateDocuments = await MainActor.run { model.documents.filter(\.isDuplicate) }
     let visibleArtifacts = await MainActor.run { model.invoices.filter { $0.location == .inbox } }
+    let visibleMetadata = await MainActor.run { visibleArtifacts.map { model.documentMetadata(for: $0.id) } }
 
     #expect(duplicateDocuments.count == 1)
     #expect(duplicateDocuments.first?.metadata.vendor == "Acme Corp")
     #expect(duplicateDocuments.first?.metadata.invoiceNumber == "INV-42")
     #expect(duplicateDocuments.first?.metadata.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
-    #expect(visibleArtifacts.allSatisfy { $0.vendor == "Acme Corp" })
-    #expect(visibleArtifacts.allSatisfy { $0.invoiceNumber == "INV-42" })
+    #expect(visibleMetadata.allSatisfy { $0.vendor == "Acme Corp" })
+    #expect(visibleMetadata.allSatisfy { $0.invoiceNumber == "INV-42" })
 }
 
 @Test func appModelReportsDedupSimilarityScoresForInvoice() async throws {
@@ -1583,11 +1582,12 @@ private final class RecordingPreviewPersistHandler {
     }
 
     let processedInvoices = await MainActor.run { model.invoices.filter { $0.location == .processed } }
+    let processedMetadata = await MainActor.run { processedInvoices.map { model.documentMetadata(for: $0.id) } }
     let document = try #require(await MainActor.run {
         model.document(for: processedIDs[0])
     })
 
-    #expect(processedInvoices.allSatisfy { $0.invoiceNumber == "DOC-42" })
+    #expect(processedMetadata.allSatisfy { $0.invoiceNumber == "DOC-42" })
     #expect(document.metadata.invoiceNumber == "DOC-42")
 }
 
@@ -1643,11 +1643,12 @@ private final class RecordingPreviewPersistHandler {
     await model.waitForBackgroundTextExtractionForTesting()
 
     let processedInvoices = await MainActor.run { model.invoices.filter { $0.location == .processed } }
+    let processedMetadata = await MainActor.run { processedInvoices.map { model.documentMetadata(for: $0.id) } }
     let document = try #require(await MainActor.run {
         model.document(for: processedIDs[0])
     })
 
-    #expect(processedInvoices.allSatisfy { $0.invoiceNumber == "DOC-42" })
+    #expect(processedMetadata.allSatisfy { $0.invoiceNumber == "DOC-42" })
     #expect(document.metadata.invoiceNumber == "DOC-42")
 }
 
@@ -1715,18 +1716,20 @@ private final class RecordingPreviewPersistHandler {
 
     await model.rescanInvoices(ids: Set(processedIDs))
     let clearedInvoices = await MainActor.run { model.invoices.filter { processedIDs.contains($0.id) } }
-    #expect(clearedInvoices.allSatisfy { $0.invoiceNumber == nil && $0.vendor == nil && $0.invoiceDate == nil })
+    let clearedMetadata = await MainActor.run { clearedInvoices.map { model.documentMetadata(for: $0.id) } }
+    #expect(clearedMetadata.allSatisfy { $0.invoiceNumber == nil && $0.vendor == nil && $0.invoiceDate == nil })
 
     await model.waitForBackgroundTextExtractionForTesting()
 
     let rebuiltInvoices = await MainActor.run { model.invoices.filter { $0.location == .processed } }
+    let rebuiltMetadata = await MainActor.run { rebuiltInvoices.map { model.documentMetadata(for: $0.id) } }
     let document = try #require(await MainActor.run {
         rebuiltInvoices.first.flatMap { model.document(for: $0.id) }
     })
 
-    #expect(rebuiltInvoices.allSatisfy { $0.vendor == "Fresh Corp" })
-    #expect(rebuiltInvoices.allSatisfy { $0.invoiceNumber == "INV-99" })
-    #expect(rebuiltInvoices.allSatisfy { $0.invoiceDate == utcDate(year: 2024, month: 2, day: 7) })
+    #expect(rebuiltMetadata.allSatisfy { $0.vendor == "Fresh Corp" })
+    #expect(rebuiltMetadata.allSatisfy { $0.invoiceNumber == "INV-99" })
+    #expect(rebuiltMetadata.allSatisfy { $0.invoiceDate == utcDate(year: 2024, month: 2, day: 7) })
     #expect(document.metadata.vendor == "Fresh Corp")
     #expect(document.metadata.invoiceNumber == "INV-99")
 }
@@ -2577,10 +2580,11 @@ private final class RecordingPreviewPersistHandler {
     await model.waitForBackgroundTextExtractionForTesting()
 
     let invoice = await MainActor.run { model.invoices.first }
-    #expect(invoice?.vendor == "Acme Corp")
-    #expect(invoice?.invoiceNumber == "INV-42")
-    #expect(invoice?.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
-    #expect(invoice?.documentType == .invoice)
+    let invoiceMetadata = await MainActor.run { invoice.map { model.documentMetadata(for: $0.id) } }
+    #expect(invoiceMetadata?.vendor == "Acme Corp")
+    #expect(invoiceMetadata?.invoiceNumber == "INV-42")
+    #expect(invoiceMetadata?.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
+    #expect(invoiceMetadata?.documentType == .invoice)
     #expect(await structuredStore.hasCachedData(forContentHash: contentHash))
     #expect(await structuredClient.totalCallCount() == 1)
 }
@@ -2642,11 +2646,12 @@ private final class RecordingPreviewPersistHandler {
     let movedInvoice = try #require(await MainActor.run {
         model.invoices.first(where: { $0.location == .processing })
     })
+    let movedMetadata = await MainActor.run { model.documentMetadata(for: movedInvoice.id) }
     #expect(movedInvoice.name == "Acme Corp-2024-01-05-INV-42.pdf")
-    #expect(movedInvoice.vendor == "Acme Corp")
-    #expect(movedInvoice.invoiceNumber == "INV-42")
-    #expect(movedInvoice.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
-    #expect(movedInvoice.documentType == .invoice)
+    #expect(movedMetadata.vendor == "Acme Corp")
+    #expect(movedMetadata.invoiceNumber == "INV-42")
+    #expect(movedMetadata.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
+    #expect(movedMetadata.documentType == .invoice)
 }
 
 @Test func appModelRenamesReceiptWithoutInvoiceNumber() async throws {
@@ -2706,11 +2711,12 @@ private final class RecordingPreviewPersistHandler {
     let movedInvoice = try #require(await MainActor.run {
         model.invoices.first(where: { $0.location == .processing })
     })
+    let movedMetadata = await MainActor.run { model.documentMetadata(for: movedInvoice.id) }
     #expect(movedInvoice.name == "Coffee Shop-2024-01-05.pdf")
-    #expect(movedInvoice.vendor == "Coffee Shop")
-    #expect(movedInvoice.invoiceNumber == nil)
-    #expect(movedInvoice.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
-    #expect(movedInvoice.documentType == .receipt)
+    #expect(movedMetadata.vendor == "Coffee Shop")
+    #expect(movedMetadata.invoiceNumber == nil)
+    #expect(movedMetadata.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
+    #expect(movedMetadata.documentType == .receipt)
 }
 
 @Test func appModelStructuredExtractionDeduplicatesAcrossRefreshes() async throws {
@@ -2842,9 +2848,10 @@ private final class RecordingPreviewPersistHandler {
     #expect(await structuredStore.cachedData(forContentHash: contentHash)?.companyName == "Fresh Corp")
     #expect(await extractor.totalCallCount() == 1)
     #expect(await structuredClient.totalCallCount() == 1)
-    #expect(rescannedInvoice.vendor == "Fresh Corp")
-    #expect(rescannedInvoice.invoiceNumber == "INV-99")
-    #expect(rescannedInvoice.invoiceDate == utcDate(year: 2024, month: 2, day: 7))
+    let rescannedMetadata = await MainActor.run { model.documentMetadata(for: rescannedInvoice.id) }
+    #expect(rescannedMetadata.vendor == "Fresh Corp")
+    #expect(rescannedMetadata.invoiceNumber == "INV-99")
+    #expect(rescannedMetadata.invoiceDate == utcDate(year: 2024, month: 2, day: 7))
 }
 
 @Test func appModelRescanClearsFieldsMissingFromStructuredExtraction() async throws {
@@ -2921,10 +2928,11 @@ private final class RecordingPreviewPersistHandler {
     let rescannedInvoice = try #require(await MainActor.run {
         model.invoices.first(where: { $0.contentHash == contentHash })
     })
+    let rescannedMetadata = await MainActor.run { model.documentMetadata(for: rescannedInvoice.id) }
 
-    #expect(rescannedInvoice.vendor == nil)
-    #expect(rescannedInvoice.invoiceDate == nil)
-    #expect(rescannedInvoice.invoiceNumber == "INV-99")
+    #expect(rescannedMetadata.vendor == nil)
+    #expect(rescannedMetadata.invoiceDate == nil)
+    #expect(rescannedMetadata.invoiceNumber == "INV-99")
 }
 
 private final class CallLog: @unchecked Sendable {

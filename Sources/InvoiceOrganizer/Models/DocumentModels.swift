@@ -35,15 +35,6 @@ struct DocumentMetadata: Equatable, Sendable {
             documentType: workflow.documentType
         )
     }
-
-    init(invoice: PhysicalArtifact) {
-        self.init(
-            vendor: invoice.vendor,
-            invoiceDate: invoice.invoiceDate,
-            invoiceNumber: invoice.invoiceNumber,
-            documentType: invoice.documentType
-        )
-    }
 }
 
 struct DocumentArtifactReference: Identifiable, Equatable, Sendable {

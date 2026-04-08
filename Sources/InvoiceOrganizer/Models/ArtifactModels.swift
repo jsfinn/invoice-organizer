@@ -49,10 +49,6 @@ struct PhysicalArtifact: Identifiable, Hashable, Sendable {
     var name: String
     var fileURL: URL
     var location: InvoiceLocation
-    var vendor: String?
-    var invoiceDate: Date?
-    var invoiceNumber: String?
-    var documentType: DocumentType?
     var processedAt: Date?
     var addedAt: Date
     var fileType: InvoiceFileType
@@ -82,10 +78,6 @@ struct PhysicalArtifact: Identifiable, Hashable, Sendable {
         self.name = name
         self.fileURL = fileURL
         self.location = location
-        self.vendor = vendor
-        self.invoiceDate = invoiceDate
-        self.invoiceNumber = invoiceNumber
-        self.documentType = documentType
         self.processedAt = processedAt
         self.addedAt = addedAt
         self.fileType = fileType
@@ -121,14 +113,6 @@ struct PhysicalArtifact: Identifiable, Hashable, Sendable {
 
     var canDragToQuickBooks: Bool {
         location == .processing && status == .inProgress
-    }
-
-    var effectiveVendorName: String {
-        ArchivePathBuilder.normalizedVendorName(from: vendor)
-    }
-
-    var effectiveInvoiceDate: Date {
-        invoiceDate ?? addedAt
     }
 
     static func stableID(for fileURL: URL) -> ID {

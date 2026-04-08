@@ -12,15 +12,19 @@ struct DataEntryCard: View {
         model.selectedArtifact ?? invoice
     }
 
+    private var committedMetadata: DocumentMetadata {
+        model.documentMetadata(for: activeInvoiceID)
+    }
+
     private var documentArtifactCount: Int {
         model.document(for: activeInvoiceID)?.artifacts.count ?? 1
     }
 
     private var documentTypeBinding: Binding<DocumentType?> {
         Binding(
-            get: { committedInvoice.documentType },
+            get: { committedMetadata.documentType },
             set: { newValue in
-                guard committedInvoice.documentType != newValue else { return }
+                guard committedMetadata.documentType != newValue else { return }
                 model.updateDocumentType(newValue, for: activeInvoiceID)
             }
         )
@@ -42,7 +46,7 @@ struct DataEntryCard: View {
                         .foregroundStyle(.secondary)
 
                     VendorAutocompleteField(
-                        text: committedInvoice.vendor ?? "",
+                        text: committedMetadata.vendor ?? "",
                         suggestions: model.knownVendors,
                         placeholder: "Vendor or Misc",
                         onCommit: { model.updateVendor($0, for: activeInvoiceID) }
@@ -50,7 +54,7 @@ struct DataEntryCard: View {
                     .frame(height: 24)
 
                     CommitOnBlurDatePickerField(
-                        date: committedInvoice.invoiceDate ?? committedInvoice.addedAt,
+                        date: committedMetadata.invoiceDate ?? committedInvoice.addedAt,
                         onCommit: { model.updateInvoiceDate($0, for: activeInvoiceID) }
                     )
 
@@ -65,7 +69,7 @@ struct DataEntryCard: View {
                         .foregroundStyle(.secondary)
 
                     CommitOnBlurTextField(
-                        text: committedInvoice.invoiceNumber ?? "",
+                        text: committedMetadata.invoiceNumber ?? "",
                         placeholder: "Invoice Number",
                         onCommit: { model.updateInvoiceNumber($0, for: activeInvoiceID) }
                     )
@@ -73,18 +77,19 @@ struct DataEntryCard: View {
 
                 }
             } else {
-                LabeledContent("Vendor", value: invoice.vendor ?? "Unassigned")
+                let metadata = model.documentMetadata(for: invoice.id)
+                LabeledContent("Vendor", value: metadata.vendor ?? "Unassigned")
                 LabeledContent("Invoice Date") {
-                    Text(invoice.invoiceDate?.formatted(date: .abbreviated, time: .omitted) ?? "<missing>")
-                        .foregroundStyle(invoice.invoiceDate == nil ? .secondary : .primary)
+                    Text(metadata.invoiceDate?.formatted(date: .abbreviated, time: .omitted) ?? "<missing>")
+                        .foregroundStyle(metadata.invoiceDate == nil ? .secondary : .primary)
                 }
                 LabeledContent("Invoice Number") {
-                    Text(invoice.invoiceNumber ?? "<missing>")
-                        .foregroundStyle(invoice.invoiceNumber == nil ? .secondary : .primary)
+                    Text(metadata.invoiceNumber ?? "<missing>")
+                        .foregroundStyle(metadata.invoiceNumber == nil ? .secondary : .primary)
                 }
                 LabeledContent("Document Type") {
-                    Text(invoice.documentType?.rawValue ?? "<missing>")
-                        .foregroundStyle(invoice.documentType == nil ? .secondary : .primary)
+                    Text(metadata.documentType?.rawValue ?? "<missing>")
+                        .foregroundStyle(metadata.documentType == nil ? .secondary : .primary)
                 }
             }
         }

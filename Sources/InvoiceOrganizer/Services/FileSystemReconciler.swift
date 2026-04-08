@@ -2,6 +2,7 @@ import Foundation
 
 struct FileSystemReconciliationSnapshot: Sendable {
     let artifacts: [PhysicalArtifact]
+    let documentMetadataHintsByArtifactID: [PhysicalArtifact.ID: DocumentMetadata]
 }
 
 @MainActor
@@ -126,14 +127,14 @@ final class FileSystemReconciler {
         workflowSnapshot: [String: StoredInvoiceWorkflow]
     ) async throws -> FileSystemReconciliationSnapshot {
         guard let inboxURL = folderSettings.inboxURL else {
-            return FileSystemReconciliationSnapshot(artifacts: [])
+            return FileSystemReconciliationSnapshot(artifacts: [], documentMetadataHintsByArtifactID: [:])
         }
 
         let processedURL = folderSettings.processedURL
         let processingURL = folderSettings.processingURL
         let duplicatesURL = folderSettings.duplicatesURL
 
-        let artifacts = try await Task.detached(priority: .utility) {
+        let snapshot = try await Task.detached(priority: .utility) {
             let inboxFiles = try InboxFileScanner.scanFiles(
                 in: inboxURL,
                 location: .inbox,
@@ -159,9 +160,27 @@ final class FileSystemReconciler {
                 InboxFileScanner.makeProcessedArtifact(from: file, workflow: workflowSnapshot[file.id])
             }
 
-            return (activeArtifacts + processedArtifacts).sorted { $0.addedAt > $1.addedAt }
+            let metadataHints = Dictionary(
+                uniqueKeysWithValues: processedFiles.map { file in
+                    let workflow = workflowSnapshot[file.id]
+                    return (
+                        file.id,
+                        DocumentMetadata(
+                            vendor: workflow?.vendor ?? file.vendor ?? file.fileURL.deletingLastPathComponent().lastPathComponent,
+                            invoiceDate: workflow?.invoiceDate ?? file.invoiceDate,
+                            invoiceNumber: workflow?.invoiceNumber,
+                            documentType: workflow?.documentType
+                        )
+                    )
+                }
+            )
+
+            return FileSystemReconciliationSnapshot(
+                artifacts: (activeArtifacts + processedArtifacts).sorted { $0.addedAt > $1.addedAt },
+                documentMetadataHintsByArtifactID: metadataHints
+            )
         }.value
 
-        return FileSystemReconciliationSnapshot(artifacts: artifacts)
+        return snapshot
     }
 }

@@ -9,6 +9,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
     @Binding var browserContext: InvoiceBrowserContext
     let ocrStatesByArtifactID: [PhysicalArtifact.ID: InvoiceOCRState]
     let readStatesByArtifactID: [PhysicalArtifact.ID: InvoiceReadState]
+    let documentMetadataByArtifactID: [PhysicalArtifact.ID: DocumentMetadata]
     let duplicateBadgeTitlesByArtifactID: [PhysicalArtifact.ID: String]
     let ignoredArtifactIDs: Set<PhysicalArtifact.ID>
     @Binding var selectedArtifactIDs: Set<PhysicalArtifact.ID>
@@ -163,6 +164,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
             let rowModel = displayedRows[row]
             let invoice = rowModel.invoice
+            let metadata = parent.documentMetadataByArtifactID[invoice.id] ?? .empty
             guard let columnID = InvoiceBrowserColumnID(rawValue: tableColumn.identifier.rawValue) else { return nil }
 
             switch columnID {
@@ -199,14 +201,14 @@ struct InvoiceBrowserView: NSViewRepresentable {
                     let view = tableView.makeView(withIdentifier: EditableTextCellView.reuseIdentifier, owner: nil) as? EditableTextCellView ?? EditableTextCellView()
                     view.configure(
                         invoiceID: invoice.id,
-                        text: invoice.vendor ?? "",
+                        text: metadata.vendor ?? "",
                         placeholder: "Vendor",
                         onCommit: parent.onVendorChange
                     )
                     return view
                 } else {
                     let view = tableView.makeView(withIdentifier: TextCellView.reuseIdentifier, owner: nil) as? TextCellView ?? TextCellView()
-                    view.configure(text: invoice.vendor ?? "\u{2014}", secondary: invoice.vendor != nil, tertiary: invoice.vendor == nil)
+                    view.configure(text: metadata.vendor ?? "\u{2014}", secondary: metadata.vendor != nil, tertiary: metadata.vendor == nil)
                     return view
                 }
             case .invoiceDate:
@@ -214,16 +216,16 @@ struct InvoiceBrowserView: NSViewRepresentable {
                     let view = tableView.makeView(withIdentifier: EditableDateCellView.reuseIdentifier, owner: nil) as? EditableDateCellView ?? EditableDateCellView()
                     view.configure(
                         invoiceID: invoice.id,
-                        date: invoice.invoiceDate ?? invoice.addedAt,
+                        date: metadata.invoiceDate ?? invoice.addedAt,
                         onCommit: parent.onInvoiceDateChange
                     )
                     return view
                 } else {
                     let view = tableView.makeView(withIdentifier: TextCellView.reuseIdentifier, owner: nil) as? TextCellView ?? TextCellView()
                     view.configure(
-                        text: invoice.invoiceDate?.formatted(date: .abbreviated, time: .omitted) ?? "\u{2014}",
-                        secondary: invoice.invoiceDate != nil,
-                        tertiary: invoice.invoiceDate == nil
+                        text: metadata.invoiceDate?.formatted(date: .abbreviated, time: .omitted) ?? "\u{2014}",
+                        secondary: metadata.invoiceDate != nil,
+                        tertiary: metadata.invoiceDate == nil
                     )
                     return view
                 }
@@ -584,13 +586,17 @@ struct InvoiceBrowserView: NSViewRepresentable {
             case .fileType:
                 return lhs.fileType.rawValue.localizedCaseInsensitiveCompare(rhs.fileType.rawValue)
             case .vendor:
-                return (lhs.vendor ?? "").localizedCaseInsensitiveCompare(rhs.vendor ?? "")
+                return (metadata(for: lhs).vendor ?? "").localizedCaseInsensitiveCompare(metadata(for: rhs).vendor ?? "")
             case .invoiceDate:
-                let lhsDate = lhs.invoiceDate ?? lhs.addedAt
-                let rhsDate = rhs.invoiceDate ?? rhs.addedAt
+                let lhsDate = metadata(for: lhs).invoiceDate ?? lhs.addedAt
+                let rhsDate = metadata(for: rhs).invoiceDate ?? rhs.addedAt
                 if lhsDate == rhsDate { return .orderedSame }
                 return lhsDate < rhsDate ? .orderedAscending : .orderedDescending
             }
+        }
+
+        private func metadata(for invoice: PhysicalArtifact) -> DocumentMetadata {
+            parent.documentMetadataByArtifactID[invoice.id] ?? .empty
         }
 
         private func compareOCRState(lhs: InvoiceOCRState?, rhs: InvoiceOCRState?) -> ComparisonResult {
