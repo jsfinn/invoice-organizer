@@ -12,12 +12,20 @@ enum InvoiceTextSource: String, Codable, Sendable {
 struct InvoiceTextRecord: Codable, Equatable, Sendable {
     let text: String
     let source: InvoiceTextSource
+    let ocrConfidence: Double?
     let extractedAt: Date
     let schemaVersion: Int
 
-    init(text: String, source: InvoiceTextSource, extractedAt: Date = .now, schemaVersion: Int = 1) {
+    init(
+        text: String,
+        source: InvoiceTextSource,
+        ocrConfidence: Double? = nil,
+        extractedAt: Date = .now,
+        schemaVersion: Int = 2
+    ) {
         self.text = text
         self.source = source
+        self.ocrConfidence = ocrConfidence
         self.extractedAt = extractedAt
         self.schemaVersion = schemaVersion
     }
@@ -29,7 +37,7 @@ protocol DocumentTextExtracting: Sendable {
 
 struct DocumentTextExtractor: DocumentTextExtracting {
     typealias PDFTextLoader = @Sendable (URL) throws -> String?
-    typealias OCRLoader = @Sendable (URL) async throws -> String?
+    typealias OCRLoader = @Sendable (URL) async throws -> OCRTextResult?
 
     let extractEmbeddedPDFText: PDFTextLoader
     let recognizePDFText: OCRLoader
@@ -52,17 +60,19 @@ struct DocumentTextExtractor: DocumentTextExtracting {
                 return InvoiceTextRecord(text: text, source: .pdfText)
             }
 
-            if let text = Self.normalizeText(try await recognizePDFText(fileURL)) {
-                return InvoiceTextRecord(text: text, source: .ocr)
+            if let ocrResult = try await recognizePDFText(fileURL),
+               let text = Self.normalizeText(ocrResult.text) {
+                return InvoiceTextRecord(text: text, source: .ocr, ocrConfidence: ocrResult.confidence)
             }
 
             return nil
 
         case .image, .jpeg, .heic:
-            guard let text = Self.normalizeText(try await recognizeImageText(fileURL)) else {
+            guard let ocrResult = try await recognizeImageText(fileURL),
+                  let text = Self.normalizeText(ocrResult.text) else {
                 return nil
             }
-            return InvoiceTextRecord(text: text, source: .ocr)
+            return InvoiceTextRecord(text: text, source: .ocr, ocrConfidence: ocrResult.confidence)
         }
     }
 
@@ -117,7 +127,7 @@ private enum PDFEmbeddedTextLoader {
 }
 
 private enum VisionInvoiceOCR {
-    static func loadTextFromPDF(from fileURL: URL) async throws -> String? {
+    static func loadTextFromPDF(from fileURL: URL) async throws -> OCRTextResult? {
         let pageImages = try await Task.detached(priority: .utility) {
             try renderPDFPages(from: fileURL)
         }.value
@@ -125,7 +135,7 @@ private enum VisionInvoiceOCR {
         return try await recognizeText(in: pageImages)
     }
 
-    static func loadTextFromImage(from fileURL: URL) async throws -> String? {
+    static func loadTextFromImage(from fileURL: URL) async throws -> OCRTextResult? {
         let image = try await Task.detached(priority: .utility) {
             try loadImage(from: fileURL)
         }.value
@@ -133,11 +143,13 @@ private enum VisionInvoiceOCR {
         return try await recognizeText(in: [image])
     }
 
-    private static func recognizeText(in images: [CGImage]) async throws -> String? {
+    private static func recognizeText(in images: [CGImage]) async throws -> OCRTextResult? {
         guard !images.isEmpty else { return nil }
 
         return try await Task.detached(priority: .utility) {
             var chunks: [String] = []
+            var weightedConfidenceSum = 0.0
+            var weightedConfidenceCount = 0
 
             for image in images {
                 let request = VNRecognizeTextRequest()
@@ -147,8 +159,20 @@ private enum VisionInvoiceOCR {
                 let handler = VNImageRequestHandler(cgImage: image)
                 try handler.perform([request])
 
-                let recognizedText = (request.results ?? [])
-                    .compactMap { $0.topCandidates(1).first?.string }
+                let pageLines = (request.results ?? [])
+                    .compactMap { observation -> String? in
+                        guard let candidate = observation.topCandidates(1).first else {
+                            return nil
+                        }
+
+                        let line = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !line.isEmpty else { return nil }
+
+                        weightedConfidenceSum += Double(candidate.confidence) * Double(line.count)
+                        weightedConfidenceCount += line.count
+                        return line
+                    }
+                let recognizedText = pageLines
                     .joined(separator: "\n")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -158,7 +182,12 @@ private enum VisionInvoiceOCR {
             }
 
             let combined = chunks.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            return combined.isEmpty ? nil : combined
+            guard !combined.isEmpty else { return nil }
+
+            let confidence = weightedConfidenceCount > 0
+                ? weightedConfidenceSum / Double(weightedConfidenceCount)
+                : nil
+            return OCRTextResult(text: combined, confidence: confidence)
         }.value
     }
 
@@ -197,4 +226,9 @@ private enum VisionInvoiceOCR {
 
         return image
     }
+}
+
+struct OCRTextResult: Equatable, Sendable {
+    let text: String
+    let confidence: Double?
 }

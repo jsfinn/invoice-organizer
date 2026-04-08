@@ -1840,7 +1840,7 @@ private final class RecordingPreviewPersistHandler {
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
     let store = InvoiceTextStore(suiteName: suiteName)
-    let record = InvoiceTextRecord(text: "Acme Corp\nTotal 42.00", source: .pdfText)
+    let record = InvoiceTextRecord(text: "Acme Corp\nTotal 42.00", source: .ocr, ocrConfidence: 0.82)
 
     await store.save(record, forContentHash: "hash-123")
 
@@ -1858,11 +1858,11 @@ private final class RecordingPreviewPersistHandler {
         },
         recognizePDFText: { _ in
             callLog.append("pdfOCR")
-            return "Should not run"
+            return OCRTextResult(text: "Should not run", confidence: 0.25)
         },
         recognizeImageText: { _ in
             callLog.append("imageOCR")
-            return "Should not run"
+            return OCRTextResult(text: "Should not run", confidence: 0.25)
         }
     )
 
@@ -1870,6 +1870,7 @@ private final class RecordingPreviewPersistHandler {
 
     #expect(record?.source == .pdfText)
     #expect(record?.text == "Vendor Invoice\nInvoice 42")
+    #expect(record?.ocrConfidence == nil)
     #expect(callLog.snapshot() == ["pdfText"])
 }
 
@@ -1882,7 +1883,7 @@ private final class RecordingPreviewPersistHandler {
         },
         recognizePDFText: { _ in
             callLog.append("pdfOCR")
-            return "Scanned Invoice\nTotal 42.00"
+            return OCRTextResult(text: "Scanned Invoice\nTotal 42.00", confidence: 0.74)
         },
         recognizeImageText: { _ in
             callLog.append("imageOCR")
@@ -1894,6 +1895,7 @@ private final class RecordingPreviewPersistHandler {
 
     #expect(record?.source == .ocr)
     #expect(record?.text == "Scanned Invoice\nTotal 42.00")
+    #expect(record?.ocrConfidence == 0.74)
     #expect(callLog.snapshot() == ["pdfText", "pdfOCR"])
 }
 

@@ -16,6 +16,24 @@ struct MetadataCard: View {
         model.processedFolderPreviewPath(for: invoice)
     }
 
+    private var extractedTextRecord: InvoiceTextRecord? {
+        model.extractedTextRecord(for: invoice)
+    }
+
+    private var extractedTextSourceLabel: String? {
+        guard let extractedTextRecord else { return nil }
+
+        switch extractedTextRecord.source {
+        case .pdfText:
+            return "Embedded PDF Text"
+        case .ocr:
+            if let ocrConfidence = extractedTextRecord.ocrConfidence {
+                return "OCR (Confidence \(ocrConfidence.formatted(.percent.precision(.fractionLength(0)))))"
+            }
+            return "OCR"
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Metadata")
@@ -29,6 +47,9 @@ struct MetadataCard: View {
                 LabeledContent("Processed Folder", value: processedFolderPath)
             }
             LabeledContent("Date Added", value: invoice.addedAt.formatted(date: .abbreviated, time: .shortened))
+            if let extractedTextSourceLabel {
+                LabeledContent("Text Source", value: extractedTextSourceLabel)
+            }
 
             if let duplicateReason = invoice.duplicateReason {
                 Text(duplicateReason)

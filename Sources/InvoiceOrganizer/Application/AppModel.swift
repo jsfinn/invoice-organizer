@@ -460,6 +460,11 @@ final class AppModel: ObservableObject {
         return await computationCache.hasCachedText(forContentHash: contentHash)
     }
 
+    func extractedTextRecord(for invoice: PhysicalArtifact) -> InvoiceTextRecord? {
+        guard let contentHash = invoice.contentHash else { return nil }
+        return computationCache.textRecord(forContentHash: contentHash)
+    }
+
     func hasStructuredData(for invoice: PhysicalArtifact) async -> Bool {
         guard let contentHash = invoice.contentHash else { return false }
         return await computationCache.hasCachedStructuredData(forContentHash: contentHash)
