@@ -10,6 +10,15 @@ usage() {
   echo "Example: ./release 0.1.4" >&2
 }
 
+ensure_xcode_project() {
+  if ! command -v xcodegen >/dev/null 2>&1; then
+    echo "xcodegen is required to regenerate InvoiceOrganizer.xcodeproj from ${PROJECT_SPEC}" >&2
+    exit 1
+  fi
+
+  xcodegen generate --spec "${PROJECT_SPEC}" >/dev/null
+}
+
 read_current_version() {
   python3 - "$PROJECT_SPEC" <<'PY'
 from pathlib import Path
@@ -142,6 +151,7 @@ if git rev-parse "${TAG}" >/dev/null 2>&1; then
 fi
 
 persist_versions "${VERSION}" "${NEXT_BUILD}"
+ensure_xcode_project
 git add "${PROJECT_SPEC}" "${PROJECT_FILE}"
 git commit -m "Release ${TAG}"
 git tag -a "${TAG}" -m "Release ${TAG}"
