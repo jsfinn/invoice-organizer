@@ -1,77 +1,122 @@
 import Foundation
 
-struct PreviewRotationDraft: Sendable, Equatable {
-    let invoiceID: InvoiceItem.ID
-    let fileURL: URL
-    let fileType: InvoiceFileType
+struct PreviewRotationSaveResult: Sendable {
     let contentHash: String?
-    let addedAt: Date
-    let quarterTurns: Int
-
-    init(invoice: InvoiceItem, quarterTurns: Int) {
-        self.invoiceID = invoice.id
-        self.fileURL = invoice.fileURL
-        self.fileType = invoice.fileType
-        self.contentHash = invoice.contentHash
-        self.addedAt = invoice.addedAt
-        self.quarterTurns = normalizedPreviewRotationQuarterTurns(quarterTurns)
-    }
 }
 
 @MainActor
+/// Coordinates background persistence for immutable preview commit requests.
+///
+/// Use this object to:
+/// - enqueue rotation commits after an active preview context is handed off
+/// - query the pending rotation and save status for a file
+/// - persist one queued request or all pending requests, either in the background or by awaiting completion
 final class PreviewRotationCoordinator: ObservableObject {
-    typealias PersistHandler = @Sendable (PreviewRotationDraft) async -> PreviewRotationSaveResult?
+    typealias PersistHandler = @Sendable (PreviewCommitRequest) async -> PreviewRotationSaveResult?
+
+    /// Tracks whether a queued request is idle, actively saving, or failed to save.
+    enum SaveStatus: Equatable {
+        case idle
+        case saving
+        case failed
+    }
+
+    private struct CommitEntry: Equatable {
+        var request: PreviewCommitRequest
+        var saveStatus: SaveStatus
+    }
 
     var persistHandler: PersistHandler?
 
-    private var draftsByInvoiceID: [InvoiceItem.ID: PreviewRotationDraft] = [:]
+    private var entriesByInvoiceID: [InvoiceItem.ID: CommitEntry] = [:]
     private var commitTasksByInvoiceID: [InvoiceItem.ID: Task<Void, Never>] = [:]
 
+    /// Returns `true` when there are queued commit requests or save tasks still running.
     var hasPendingWork: Bool {
-        !draftsByInvoiceID.isEmpty || !commitTasksByInvoiceID.isEmpty
+        !entriesByInvoiceID.isEmpty || !commitTasksByInvoiceID.isEmpty
     }
 
-    func updateDraft(for invoice: InvoiceItem, quarterTurns: Int) {
-        let draft = PreviewRotationDraft(invoice: invoice, quarterTurns: quarterTurns)
-        if draft.quarterTurns == 0 {
-            draftsByInvoiceID.removeValue(forKey: invoice.id)
-        } else {
-            draftsByInvoiceID[invoice.id] = draft
+    /// Enqueues a background commit from an active context if that context has unsaved rotation changes.
+    func enqueueCommitIfNeeded(from context: ActivePreviewContext?) {
+        guard let request = context?.commitRequest else {
+            return
+        }
+
+        entriesByInvoiceID[request.invoiceID] = CommitEntry(request: request, saveStatus: .idle)
+        scheduleCommitIfNeeded(for: request.invoiceID)
+    }
+
+    /// Returns the currently queued or in-flight quarter-turn value for an invoice, if any.
+    func pendingQuarterTurns(for invoiceID: InvoiceItem.ID) -> Int? {
+        entriesByInvoiceID[invoiceID]?.request.quarterTurns
+    }
+
+    /// Returns the current save status for an invoice's queued rotation commit.
+    func saveStatus(for invoiceID: InvoiceItem.ID) -> SaveStatus {
+        if let entry = entriesByInvoiceID[invoiceID] {
+            return entry.saveStatus
+        }
+        return commitTasksByInvoiceID[invoiceID] == nil ? .idle : .saving
+    }
+
+    /// Starts saving a queued request in a background task if one exists and is not already saving.
+    ///
+    /// This method is not async and returns immediately.
+    func scheduleCommitIfNeeded(for invoiceID: InvoiceItem.ID?) {
+        guard let invoiceID,
+              commitTasksByInvoiceID[invoiceID] == nil,
+              entriesByInvoiceID[invoiceID] != nil else {
+            return
+        }
+
+        Task { [weak self] in
+            await self?.commitRequestIfNeeded(for: invoiceID)
         }
     }
 
-    func quarterTurns(for invoiceID: InvoiceItem.ID) -> Int {
-        draftsByInvoiceID[invoiceID]?.quarterTurns ?? 0
-    }
-
-    func commitDraftIfNeeded(for invoiceID: InvoiceItem.ID?) {
+    /// Saves a queued request immediately if needed and waits for the save to finish.
+    ///
+    /// If a save for the same invoice is already running, this awaits the existing task.
+    func commitRequestIfNeeded(for invoiceID: InvoiceItem.ID?) async {
         guard let invoiceID,
-              commitTasksByInvoiceID[invoiceID] == nil,
-              let draft = draftsByInvoiceID[invoiceID],
+              let entry = entriesByInvoiceID[invoiceID],
               let persistHandler else {
             return
         }
 
+        if let existingTask = commitTasksByInvoiceID[invoiceID] {
+            await existingTask.value
+            return
+        }
+
+        let request = entry.request
+        entriesByInvoiceID[invoiceID]?.saveStatus = .saving
+
         commitTasksByInvoiceID[invoiceID] = Task { [weak self] in
-            let result = await persistHandler(draft)
+            let result = await persistHandler(request)
             await MainActor.run {
                 guard let self else { return }
                 self.commitTasksByInvoiceID.removeValue(forKey: invoiceID)
-                if result != nil, self.draftsByInvoiceID[invoiceID] == draft {
-                    self.draftsByInvoiceID.removeValue(forKey: invoiceID)
+                guard let currentEntry = self.entriesByInvoiceID[invoiceID],
+                      currentEntry.request == request else {
+                    return
+                }
+
+                if result != nil {
+                    self.entriesByInvoiceID.removeValue(forKey: invoiceID)
+                } else {
+                    self.entriesByInvoiceID[invoiceID]?.saveStatus = .failed
                 }
             }
         }
+
+        await commitTasksByInvoiceID[invoiceID]?.value
     }
 
-    func commitAllPendingDrafts() async {
-        for invoiceID in draftsByInvoiceID.keys {
-            commitDraftIfNeeded(for: invoiceID)
-        }
-
-        let tasks = Array(commitTasksByInvoiceID.values)
-        for task in tasks {
-            await task.value
+    /// Saves every pending commit request and waits for all of them to complete.
+    func commitAllPendingRequests() async {
+        for invoiceID in Array(entriesByInvoiceID.keys) {
+            await commitRequestIfNeeded(for: invoiceID)
         }
     }
 }

@@ -707,14 +707,14 @@ final class AppModel: ObservableObject {
         }
 
         return await persistPreviewRotation(
-            for: PreviewRotationDraft(invoice: invoice, quarterTurns: quarterTurns)
+            for: PreviewCommitRequest(invoice: invoice, quarterTurns: quarterTurns)
         )
     }
 
-    func persistPreviewRotation(for draft: PreviewRotationDraft) async -> PreviewRotationSaveResult? {
-        let rotation = normalizePreviewRotation(draft.quarterTurns)
+    func persistPreviewRotation(for request: PreviewCommitRequest) async -> PreviewRotationSaveResult? {
+        let rotation = normalizePreviewRotation(request.quarterTurns)
         guard rotation != 0,
-              let invoice = resolvedInvoice(for: draft) else {
+              let invoice = resolvedInvoice(for: request) else {
             return nil
         }
 
@@ -988,20 +988,20 @@ final class AppModel: ObservableObject {
         persistIgnoredInvoiceIDs()
     }
 
-    private func resolvedInvoice(for draft: PreviewRotationDraft) -> InvoiceItem? {
-        if let byID = invoices.first(where: { $0.id == draft.invoiceID }) {
+    private func resolvedInvoice(for request: PreviewCommitRequest) -> InvoiceItem? {
+        if let byID = invoices.first(where: { $0.id == request.invoiceID }) {
             return byID
         }
 
-        if let byURL = invoices.first(where: { $0.fileURL == draft.fileURL }) {
+        if let byURL = invoices.first(where: { $0.fileURL == request.fileURL }) {
             return byURL
         }
 
-        if let contentHash = draft.contentHash,
+        if let contentHash = request.contentHash,
            let relocated = invoices.first(where: {
                $0.contentHash == contentHash &&
-               $0.addedAt == draft.addedAt &&
-               $0.fileType == draft.fileType
+               $0.addedAt == request.addedAt &&
+               $0.fileType == request.fileType
            }) {
             return relocated
         }

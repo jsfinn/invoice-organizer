@@ -19,13 +19,30 @@ enum PreviewAsset {
     case image(NSImage)
 }
 
+private enum PreviewCachedAssetValue {
+    case pdf(Data)
+    case image(NSImage)
+
+    func makeAsset() throws -> PreviewAsset {
+        switch self {
+        case .pdf(let data):
+            guard let document = PDFDocument(data: data) else {
+                throw PreviewAssetError.unreadablePDF
+            }
+            return .pdf(document)
+        case .image(let image):
+            return .image(image)
+        }
+    }
+}
+
 @MainActor
 final class PreviewAssetProvider: PreviewAssetProviding {
     static let shared = PreviewAssetProvider()
 
     private struct CacheEntry {
         let contentHash: String?
-        let asset: PreviewAsset
+        let value: PreviewCachedAssetValue
     }
 
     private var assetsByURL: [URL: CacheEntry] = [:]
@@ -39,12 +56,12 @@ final class PreviewAssetProvider: PreviewAssetProviding {
         if !forceReload,
            let cached = assetsByURL[fileURL],
            cached.contentHash == contentHash {
-            return cached.asset
+            return try cached.value.makeAsset()
         }
 
-        let asset = try await PreviewAssetLoader.loadAsset(for: fileURL, fileType: fileType)
-        assetsByURL[fileURL] = CacheEntry(contentHash: contentHash, asset: asset)
-        return asset
+        let value = try await PreviewAssetLoader.loadValue(for: fileURL, fileType: fileType)
+        assetsByURL[fileURL] = CacheEntry(contentHash: contentHash, value: value)
+        return try value.makeAsset()
     }
 
     func asset(for invoice: InvoiceItem, forceReload: Bool = false) async throws -> PreviewAsset {
@@ -62,7 +79,7 @@ final class PreviewAssetProvider: PreviewAssetProviding {
 }
 
 private enum PreviewAssetLoader {
-    static func loadAsset(for fileURL: URL, fileType: InvoiceFileType) async throws -> PreviewAsset {
+    static func loadValue(for fileURL: URL, fileType: InvoiceFileType) async throws -> PreviewCachedAssetValue {
         switch fileType {
         case .pdf:
             return try await loadPDF(from: fileURL)
@@ -71,17 +88,18 @@ private enum PreviewAssetLoader {
         }
     }
 
-    private static func loadPDF(from fileURL: URL) async throws -> PreviewAsset {
+    private static func loadPDF(from fileURL: URL) async throws -> PreviewCachedAssetValue {
         let box = try await Task.detached(priority: .userInitiated) {
-            guard let document = PDFDocument(url: fileURL) else {
+            let data = try Data(contentsOf: fileURL)
+            guard PDFDocument(data: data) != nil else {
                 throw PreviewAssetError.unreadablePDF
             }
-            return PreviewAssetBox(asset: .pdf(document))
+            return PreviewCacheValueBox(value: PreviewCachedAssetValue.pdf(data))
         }.value
-        return box.asset
+        return box.value
     }
 
-    private static func loadImage(from fileURL: URL) async throws -> PreviewAsset {
+    private static func loadImage(from fileURL: URL) async throws -> PreviewCachedAssetValue {
         let box = try await Task.detached(priority: .userInitiated) {
             guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil) else {
                 throw PreviewAssetError.unreadableImage
@@ -105,17 +123,17 @@ private enum PreviewAssetLoader {
 
             let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
             image.cacheMode = .always
-            return PreviewAssetBox(asset: .image(image))
+            return PreviewCacheValueBox(value: PreviewCachedAssetValue.image(image))
         }.value
-        return box.asset
+        return box.value
     }
 }
 
-private final class PreviewAssetBox: @unchecked Sendable {
-    let asset: PreviewAsset
+private final class PreviewCacheValueBox: @unchecked Sendable {
+    let value: PreviewCachedAssetValue
 
-    init(asset: PreviewAsset) {
-        self.asset = asset
+    init(value: PreviewCachedAssetValue) {
+        self.value = value
     }
 }
 

@@ -119,11 +119,17 @@ private final class TestPreviewAssetProvider: PreviewAssetProviding {
 
 @MainActor
 private final class RecordingPreviewPersistHandler {
-    private(set) var drafts: [PreviewRotationDraft] = []
+    private(set) var requests: [PreviewCommitRequest] = []
+    private let delay: Duration
 
-    func persist(_ draft: PreviewRotationDraft) async -> PreviewRotationSaveResult? {
-        drafts.append(draft)
-        return PreviewRotationSaveResult(contentHash: draft.contentHash)
+    init(delay: Duration = .zero) {
+        self.delay = delay
+    }
+
+    func persist(_ request: PreviewCommitRequest) async -> PreviewRotationSaveResult? {
+        requests.append(request)
+        try? await Task.sleep(for: delay)
+        return PreviewRotationSaveResult(contentHash: request.contentHash)
     }
 }
 
@@ -349,14 +355,14 @@ private final class RecordingPreviewPersistHandler {
 
     await model.reloadLibraryForTesting()
     let initialInvoice = try #require(await MainActor.run { model.invoices.first })
-    let draft = PreviewRotationDraft(invoice: initialInvoice, quarterTurns: 1)
+    let request = PreviewCommitRequest(invoice: initialInvoice, quarterTurns: 1)
 
     await MainActor.run {
         model.moveInvoicesToInProgress(ids: [initialInvoice.id])
     }
 
     await model.reloadLibraryForTesting()
-    let result = await model.persistPreviewRotation(for: draft)
+    let result = await model.persistPreviewRotation(for: request)
     let movedInvoice = try #require(await MainActor.run {
         model.invoices.first(where: { $0.location == .processing })
     })
@@ -466,6 +472,40 @@ private final class RecordingPreviewPersistHandler {
 }
 
 @MainActor
+@Test func previewAssetProviderReturnsFreshPDFDocumentForCachedPDF() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let pdfURL = tempRoot.appendingPathComponent("cached.pdf")
+    try writePDF(width: 200, height: 100, to: pdfURL)
+
+    let provider = PreviewAssetProvider()
+    let contentHash = try FileHasher.sha256(for: pdfURL)
+    let firstAsset = try await provider.asset(
+        for: pdfURL,
+        contentHash: contentHash,
+        fileType: .pdf,
+        forceReload: false
+    )
+    let secondAsset = try await provider.asset(
+        for: pdfURL,
+        contentHash: contentHash,
+        fileType: .pdf,
+        forceReload: false
+    )
+
+    guard case .pdf(let firstDocument) = firstAsset,
+          case .pdf(let secondDocument) = secondAsset else {
+        Issue.record("Expected PDF assets from provider")
+        return
+    }
+
+    #expect(firstDocument !== secondDocument)
+    #expect(firstDocument.pageCount == secondDocument.pageCount)
+}
+
+@MainActor
 @Test func previewViewStateIgnoresStaleLoadAfterSelectionChange() async throws {
     let firstURL = URL(fileURLWithPath: "/tmp/preview-first.png")
     let secondURL = URL(fileURLWithPath: "/tmp/preview-second.png")
@@ -515,6 +555,169 @@ private final class RecordingPreviewPersistHandler {
 }
 
 @MainActor
+@Test func previewViewStateCommitsDirtyRotationBeforeLoadingNextSelection() async throws {
+    let firstURL = URL(fileURLWithPath: "/tmp/rotation-first.png")
+    let secondURL = URL(fileURLWithPath: "/tmp/rotation-second.png")
+    let provider = TestPreviewAssetProvider(
+        responses: [
+            firstURL: .success(asset: .image(NSImage(size: NSSize(width: 10, height: 10))), delay: .zero),
+            secondURL: .success(asset: .image(NSImage(size: NSSize(width: 20, height: 10))), delay: .zero)
+        ]
+    )
+    let recorder = RecordingPreviewPersistHandler()
+    let coordinator = PreviewRotationCoordinator()
+    coordinator.persistHandler = recorder.persist
+    let state = PreviewViewState(assetProvider: provider, rotationCoordinator: coordinator)
+
+    let firstInvoice = InvoiceItem(
+        name: "first.png",
+        fileURL: firstURL,
+        location: .inbox,
+        addedAt: .now,
+        fileType: .image,
+        status: .unprocessed,
+        contentHash: "first"
+    )
+    let secondInvoice = InvoiceItem(
+        name: "second.png",
+        fileURL: secondURL,
+        location: .inbox,
+        addedAt: .now,
+        fileType: .image,
+        status: .unprocessed,
+        contentHash: "second"
+    )
+
+    await state.loadPreview(for: firstInvoice)
+    state.rotate(by: 1, for: firstInvoice)
+    state.rotate(by: 1, for: firstInvoice)
+
+    await state.loadPreview(for: secondInvoice)
+    await coordinator.commitAllPendingRequests()
+
+    #expect(recorder.requests.count == 1)
+    #expect(recorder.requests.first?.invoiceID == firstInvoice.id)
+    #expect(recorder.requests.first?.quarterTurns == 2)
+    #expect(state.rotationQuarterTurns == 0)
+}
+
+@MainActor
+@Test func previewViewStateLoadsNextSelectionWhilePreviousRotationSavesInBackground() async throws {
+    let firstURL = URL(fileURLWithPath: "/tmp/background-rotation-first.png")
+    let secondURL = URL(fileURLWithPath: "/tmp/background-rotation-second.png")
+    let firstImage = NSImage(size: NSSize(width: 10, height: 10))
+    let secondImage = NSImage(size: NSSize(width: 20, height: 10))
+    let provider = TestPreviewAssetProvider(
+        responses: [
+            firstURL: .success(asset: .image(firstImage), delay: .zero),
+            secondURL: .success(asset: .image(secondImage), delay: .milliseconds(10))
+        ]
+    )
+    let recorder = RecordingPreviewPersistHandler(delay: .milliseconds(150))
+    let coordinator = PreviewRotationCoordinator()
+    coordinator.persistHandler = recorder.persist
+    let state = PreviewViewState(assetProvider: provider, rotationCoordinator: coordinator)
+
+    let firstInvoice = InvoiceItem(
+        name: "first.png",
+        fileURL: firstURL,
+        location: .inbox,
+        addedAt: .now,
+        fileType: .image,
+        status: .unprocessed,
+        contentHash: "first"
+    )
+    let secondInvoice = InvoiceItem(
+        name: "second.png",
+        fileURL: secondURL,
+        location: .inbox,
+        addedAt: .now,
+        fileType: .image,
+        status: .unprocessed,
+        contentHash: "second"
+    )
+
+    await state.loadPreview(for: firstInvoice)
+    state.rotate(by: 1, for: firstInvoice)
+
+    let secondLoad = Task { @MainActor in
+        await state.loadPreview(for: secondInvoice)
+    }
+
+    try await Task.sleep(for: .milliseconds(40))
+
+    guard case .asset(.image(let image)) = state.content else {
+        Issue.record("Expected the next selection to render while the previous save is still running")
+        return
+    }
+
+    #expect(image === secondImage)
+    #expect(recorder.requests.count == 1)
+
+    await secondLoad.value
+}
+
+@MainActor
+@Test func previewViewStateKeepsDoubleRotationAcrossDuplicateNavigation() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstURL = inboxRoot.appendingPathComponent("canonical.pdf")
+    let duplicateURL = inboxRoot.appendingPathComponent("duplicate.pdf")
+    try writePDF(width: 200, height: 100, to: firstURL)
+    try FileManager.default.copyItem(at: firstURL, to: duplicateURL)
+
+    let model = AppModel(
+        folderSettings: FolderSettings(inboxURL: inboxRoot, processedURL: processedRoot, processingURL: processingRoot),
+        workflowByID: [:],
+        autoRefresh: false
+    )
+    await model.reloadLibraryForTesting()
+
+    let invoices = model.invoices.sorted { $0.name < $1.name }
+    let firstInvoice = try #require(invoices.first(where: { $0.name == "canonical.pdf" }))
+    let duplicateInvoice = try #require(invoices.first(where: { $0.name == "duplicate.pdf" }))
+
+    let coordinator = PreviewRotationCoordinator()
+    coordinator.persistHandler = model.persistPreviewRotation(for:)
+
+    let state = PreviewViewState(
+        assetProvider: PreviewAssetProvider(),
+        rotationCoordinator: coordinator
+    )
+
+    await state.loadPreview(for: firstInvoice)
+    state.rotate(by: 1, for: firstInvoice)
+    state.rotate(by: 1, for: firstInvoice)
+
+    await state.loadPreview(for: duplicateInvoice)
+    await coordinator.commitAllPendingRequests()
+
+    let updatedFirstInvoice = try #require(model.invoices.first(where: { $0.id == firstInvoice.id }))
+    let rotatedDocument = try #require(PDFDocument(url: updatedFirstInvoice.fileURL))
+    let rotatedPage = try #require(rotatedDocument.page(at: 0))
+
+    #expect(rotatedPage.rotation == 180)
+
+    await state.loadPreview(for: updatedFirstInvoice)
+
+    guard case .asset(.pdf(let document)) = state.content,
+          let firstPage = document.page(at: 0) else {
+        Issue.record("Expected the rotated PDF preview to reload")
+        return
+    }
+
+    #expect(state.rotationQuarterTurns == 0)
+    #expect(firstPage.rotation == 180)
+}
+
+@MainActor
 @Test func previewRotationCoordinatorFlushesPendingDraftsOnQuit() async throws {
     let recorder = RecordingPreviewPersistHandler()
     let coordinator = PreviewRotationCoordinator()
@@ -530,11 +733,18 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "draft-hash"
     )
 
-    coordinator.updateDraft(for: invoice, quarterTurns: 1)
-    await coordinator.commitAllPendingDrafts()
+    let context = ActivePreviewContext(
+        invoice: invoice,
+        persistedQuarterTurns: 0,
+        rotationSaveStatus: .idle
+    )
+    var dirtyContext = context
+    _ = dirtyContext.rotate(by: 1)
+    coordinator.enqueueCommitIfNeeded(from: dirtyContext)
+    await coordinator.commitAllPendingRequests()
 
-    #expect(recorder.drafts.count == 1)
-    #expect(recorder.drafts.first?.invoiceID == invoice.id)
+    #expect(recorder.requests.count == 1)
+    #expect(recorder.requests.first?.invoiceID == invoice.id)
     #expect(!coordinator.hasPendingWork)
 }
 

@@ -15,6 +15,11 @@
 		357A4F4C5E0C200F0B6F1704 /* InvoiceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3265234166BB4C5B99B54 /* InvoiceModels.swift */; };
 		376C57B76E8FB72913092367 /* PreviewAssetProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 661B9E1AD61E265CA0D271C5 /* PreviewAssetProvider.swift */; };
 		450096BBC785EA5444440B1C /* PreviewRotationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAB61CD3DEBDFC60E682731 /* PreviewRotationCoordinator.swift */; };
+		45B812CC8D57AC6ED4B39D7E /* ReplacementPreviewRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A81A0D90A05CC8C16D770E7 /* ReplacementPreviewRenderer.swift */; };
+		A1B2C3D4E5F6012345678901 /* ActivePreviewContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1B2C3D4E5F6012345678901 /* ActivePreviewContext.swift */; };
+		A1B2C3D4E5F6012345678902 /* PreviewCommitRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1B2C3D4E5F6012345678902 /* PreviewCommitRequest.swift */; };
+		A1B2C3D4E5F6012345678906 /* PreviewSessionID.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1B2C3D4E5F6012345678906 /* PreviewSessionID.swift */; };
+		A1B2C3D4E5F6012345678907 /* PreviewViewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1B2C3D4E5F6012345678907 /* PreviewViewState.swift */; };
 		460CE0CC285F77FA5058C5E6 /* FolderPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A64FF8731AB81DF9C619C8 /* FolderPicker.swift */; };
 		5083F31BF23A63D2CD1E6BDE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10DF2A883449B3756EB0884 /* ContentView.swift */; };
 		512AD01EE37BD0FB4DD60083 /* InvoiceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF26BF029CF6CC63B244CE12 /* InvoiceDetailView.swift */; };
@@ -65,6 +70,11 @@
 		19C3303215CD07153C549E46 /* PreviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewCard.swift; sourceTree = "<group>"; };
 		1D393E630B373F584368E1C1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1EAB61CD3DEBDFC60E682731 /* PreviewRotationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewRotationCoordinator.swift; sourceTree = "<group>"; };
+		5A81A0D90A05CC8C16D770E7 /* ReplacementPreviewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplacementPreviewRenderer.swift; sourceTree = "<group>"; };
+		B1B2C3D4E5F6012345678901 /* ActivePreviewContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivePreviewContext.swift; sourceTree = "<group>"; };
+		B1B2C3D4E5F6012345678902 /* PreviewCommitRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewCommitRequest.swift; sourceTree = "<group>"; };
+		B1B2C3D4E5F6012345678906 /* PreviewSessionID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSessionID.swift; sourceTree = "<group>"; };
+		B1B2C3D4E5F6012345678907 /* PreviewViewState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewViewState.swift; sourceTree = "<group>"; };
 		25AE75170AD6AFA7BA874908 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		29A60644600F225D58AAEF66 /* InvoiceArchiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceArchiver.swift; sourceTree = "<group>"; };
 		2BCC787FD3572986C7D2AB8D /* InvoiceStructuredDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceStructuredDataStore.swift; sourceTree = "<group>"; };
@@ -152,10 +162,47 @@
 			isa = PBXGroup;
 			children = (
 				661B9E1AD61E265CA0D271C5 /* PreviewAssetProvider.swift */,
-				00759B31EDD87A35701B2448 /* PreviewRenderer.swift */,
+				84D6A0E3A98C4C0DB1F3A112 /* Components */,
+				C1B2C3D4E5F6012345678901 /* State */,
 				1EAB61CD3DEBDFC60E682731 /* PreviewRotationCoordinator.swift */,
 			);
 			path = Preview;
+			sourceTree = "<group>";
+		};
+		C1B2C3D4E5F6012345678901 /* State */ = {
+			isa = PBXGroup;
+			children = (
+				B1B2C3D4E5F6012345678901 /* ActivePreviewContext.swift */,
+				B1B2C3D4E5F6012345678902 /* PreviewCommitRequest.swift */,
+				B1B2C3D4E5F6012345678906 /* PreviewSessionID.swift */,
+				B1B2C3D4E5F6012345678907 /* PreviewViewState.swift */,
+			);
+			path = State;
+			sourceTree = "<group>";
+		};
+		84D6A0E3A98C4C0DB1F3A112 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				84D6A0E4A98C4C0DB1F3A112 /* Legacy */,
+				84D6A0E5A98C4C0DB1F3A112 /* Replacement */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		84D6A0E4A98C4C0DB1F3A112 /* Legacy */ = {
+			isa = PBXGroup;
+			children = (
+				00759B31EDD87A35701B2448 /* PreviewRenderer.swift */,
+			);
+			path = Legacy;
+			sourceTree = "<group>";
+		};
+		84D6A0E5A98C4C0DB1F3A112 /* Replacement */ = {
+			isa = PBXGroup;
+			children = (
+				5A81A0D90A05CC8C16D770E7 /* ReplacementPreviewRenderer.swift */,
+			);
+			path = Replacement;
 			sourceTree = "<group>";
 		};
 		5B2183118D184F7D90D00EF5 /* Models */ = {
@@ -359,6 +406,10 @@
 				357A4F4C5E0C200F0B6F1704 /* InvoiceModels.swift in Sources */,
 				8FDA23D49EA2E77B9E33C3C3 /* InvoiceOrganizer.swift in Sources */,
 				C5DE422C5F2C010162EA5087 /* InvoicePreviewView.swift in Sources */,
+				A1B2C3D4E5F6012345678901 /* ActivePreviewContext.swift in Sources */,
+				A1B2C3D4E5F6012345678902 /* PreviewCommitRequest.swift in Sources */,
+				A1B2C3D4E5F6012345678906 /* PreviewSessionID.swift in Sources */,
+				A1B2C3D4E5F6012345678907 /* PreviewViewState.swift in Sources */,
 				96E5D60610360382340F0698 /* InvoiceStructuredDataStore.swift in Sources */,
 				ECD2C82A77FAFEEB5040A438 /* InvoiceStructuredExtractionClient.swift in Sources */,
 				FF986734345D570D4ED757C6 /* InvoiceStructuredExtractionQueue.swift in Sources */,
@@ -371,6 +422,7 @@
 				619BDB7310BD91F7B64A5AE2 /* PreviewCard.swift in Sources */,
 				BFF6BB03BF1A6908C97D04EA /* PreviewRenderer.swift in Sources */,
 				450096BBC785EA5444440B1C /* PreviewRotationCoordinator.swift in Sources */,
+				45B812CC8D57AC6ED4B39D7E /* ReplacementPreviewRenderer.swift in Sources */,
 				3072378B8BFF577841B1F119 /* QueueSidebar.swift in Sources */,
 				E65919A51DC8A1835F5CC1B4 /* QueueStatusCard.swift in Sources */,
 				69D8B620E43207AF67A772B6 /* SettingsView.swift in Sources */,

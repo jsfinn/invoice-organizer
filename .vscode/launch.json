@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:invoice-organizer}",
+            "name": "Debug InvoiceOrganizer",
+            "target": "InvoiceOrganizer",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug InvoiceOrganizer"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:invoice-organizer}",
+            "name": "Release InvoiceOrganizer",
+            "target": "InvoiceOrganizer",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release InvoiceOrganizer"
+        }
+    ]
+}

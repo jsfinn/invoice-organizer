@@ -2,12 +2,6 @@ import AppKit
 import PDFKit
 import SwiftUI
 
-enum PreviewContent {
-    case loading
-    case error(title: String, message: String)
-    case asset(PreviewAsset)
-}
-
 struct PreviewRendererView: NSViewRepresentable {
     let content: PreviewContent
     let zoomScale: Double
@@ -100,11 +94,6 @@ private enum PreviewZoomPreset: Double, CaseIterable, Identifiable {
     var label: String {
         "\(Int(rawValue * 100))%"
     }
-}
-
-func normalizedPreviewRotationQuarterTurns(_ value: Int) -> Int {
-    let normalized = value % 4
-    return normalized >= 0 ? normalized : normalized + 4
 }
 
 private func normalizedPreviewPageRotation(_ value: Int) -> Int {

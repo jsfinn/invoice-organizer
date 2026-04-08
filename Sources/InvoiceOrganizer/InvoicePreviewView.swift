@@ -1,8 +1,5 @@
 import AppKit
 import SwiftUI
-struct PreviewRotationSaveResult: Sendable {
-    let contentHash: String?
-}
 
 struct InvoicePreviewView: View {
     let invoice: InvoiceItem
@@ -32,11 +29,11 @@ struct InvoicePreviewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            PreviewRendererView(
+            ReplacementPreviewRendererView(
+                sessionID: previewState.sessionID ?? PreviewSessionID(invoice: invoice),
                 content: previewState.content,
-                zoomScale: zoomScale,
-                zoomToFit: zoomToFit,
-                rotationQuarterTurns: previewState.temporaryRotationQuarterTurns,
+                viewport: viewport,
+                rotationQuarterTurns: previewState.rotationQuarterTurns,
                 onChooseFit: applyFitZoom,
                 onChooseZoomPreset: applyZoomPreset,
                 onStepZoom: adjustZoom,
@@ -78,15 +75,19 @@ struct InvoicePreviewView: View {
                         }
                 )
         }
-        .task(id: PreviewLoadKey(invoice: invoice)) {
+        .task(id: PreviewSessionID(invoice: invoice)) {
             await previewState.loadPreview(for: invoice)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-            previewState.commitCurrentSessionIfNeeded()
+            previewState.scheduleCommitCurrentSessionIfNeeded()
         }
         .onDisappear {
-            previewState.commitCurrentSessionIfNeeded()
+            previewState.scheduleCommitCurrentSessionIfNeeded()
         }
+    }
+
+    private var viewport: PreviewViewport {
+        zoomToFit ? .fit : .scale(zoomScale)
     }
 
     private func applyFitZoom() {
@@ -117,113 +118,6 @@ struct InvoicePreviewView: View {
     private func clampZoom(_ value: Double) -> Double {
         min(max(value, 0.25), 4.0)
     }
-}
-
-private struct PreviewLoadKey: Hashable {
-    let invoiceID: InvoiceItem.ID
-    let fileURL: URL
-    let contentHash: String?
-
-    init(invoice: InvoiceItem) {
-        invoiceID = invoice.id
-        fileURL = invoice.fileURL
-        contentHash = invoice.contentHash
-    }
-}
-
-@MainActor
-final class PreviewViewState: ObservableObject {
-    @Published private(set) var content: PreviewContent = .loading
-    @Published private(set) var temporaryRotationQuarterTurns = 0
-
-    private let assetProvider: any PreviewAssetProviding
-    private let rotationCoordinator: PreviewRotationCoordinator
-    private var currentInvoiceID: InvoiceItem.ID?
-    private var currentFileURL: URL?
-    private var currentContentHash: String?
-
-    init(
-        assetProvider: any PreviewAssetProviding,
-        rotationCoordinator: PreviewRotationCoordinator
-    ) {
-        self.assetProvider = assetProvider
-        self.rotationCoordinator = rotationCoordinator
-    }
-
-    func loadPreview(for invoice: InvoiceItem) async {
-        let isNewSelection = currentInvoiceID != invoice.id
-        let isSameFile = currentFileURL == invoice.fileURL
-        let isSameRevision = isSameFile && currentContentHash == invoice.contentHash
-
-        if isNewSelection {
-            rotationCoordinator.commitDraftIfNeeded(for: currentInvoiceID)
-        }
-
-        currentInvoiceID = invoice.id
-        currentFileURL = invoice.fileURL
-        currentContentHash = invoice.contentHash
-        temporaryRotationQuarterTurns = rotationCoordinator.quarterTurns(for: invoice.id)
-
-        if isSameRevision, case .asset = content {
-            return
-        }
-
-        if !isSameFile || !hasLoadedAsset {
-            content = .loading
-        }
-
-        do {
-            let asset = try await assetProvider.asset(
-                for: invoice.fileURL,
-                contentHash: invoice.contentHash,
-                fileType: invoice.fileType,
-                forceReload: false
-            )
-            guard !Task.isCancelled,
-                  currentInvoiceID == invoice.id,
-                  currentFileURL == invoice.fileURL,
-                  currentContentHash == invoice.contentHash else {
-                return
-            }
-            content = .asset(asset)
-        } catch is CancellationError {
-            return
-        } catch {
-            guard currentInvoiceID == invoice.id,
-                  currentFileURL == invoice.fileURL else {
-                return
-            }
-            guard !isSameFile || !hasLoadedAsset else {
-                return
-            }
-            let title = invoice.fileType == .pdf ? "Unable To Open PDF" : "Unable To Open Image"
-            content = .error(title: title, message: error.localizedDescription)
-        }
-    }
-
-    func rotate(by quarterTurnsDelta: Int, for invoice: InvoiceItem) {
-        let updatedRotation = normalizedPreviewRotationQuarterTurns(
-            temporaryRotationQuarterTurns + quarterTurnsDelta
-        )
-        guard updatedRotation != temporaryRotationQuarterTurns else {
-            return
-        }
-
-        temporaryRotationQuarterTurns = updatedRotation
-        rotationCoordinator.updateDraft(for: invoice, quarterTurns: updatedRotation)
-    }
-
-    func commitCurrentSessionIfNeeded() {
-        rotationCoordinator.commitDraftIfNeeded(for: currentInvoiceID)
-    }
-
-    private var hasLoadedAsset: Bool {
-        if case .asset = content {
-            return true
-        }
-        return false
-    }
-
 }
 
 private struct ResizeHandle: View {

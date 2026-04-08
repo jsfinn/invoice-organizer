@@ -11,8 +11,8 @@ struct InvoiceOrganizerApp: App {
         WindowGroup("Invoice Organizer") {
             ContentView(model: model, rotationCoordinator: rotationCoordinator)
                 .task {
-                    rotationCoordinator.persistHandler = { draft in
-                        await model.persistPreviewRotation(for: draft)
+                    rotationCoordinator.persistHandler = { request in
+                        await model.persistPreviewRotation(for: request)
                     }
                     appDelegate.rotationCoordinator = rotationCoordinator
                 }
@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Task { @MainActor [weak rotationCoordinator] in
-            await rotationCoordinator?.commitAllPendingDrafts()
+            await rotationCoordinator?.commitAllPendingRequests()
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
