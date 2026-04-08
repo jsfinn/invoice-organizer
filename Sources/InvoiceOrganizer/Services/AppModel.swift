@@ -4,39 +4,7 @@ import SwiftUI
 @MainActor
 final class AppModel: ObservableObject {
     @Published var invoices: [InvoiceItem]
-    @Published var selectedInvoiceIDs: Set<InvoiceItem.ID> = [] {
-        didSet {
-            guard oldValue != selectedInvoiceIDs, !isSynchronizingSelection else { return }
-            selectedInvoiceID = visibleInvoices.first(where: { selectedInvoiceIDs.contains($0.id) })?.id
-        }
-    }
-    @Published var selectedInvoiceID: InvoiceItem.ID? {
-        didSet {
-            guard oldValue != selectedInvoiceID, !isSynchronizingSelection else { return }
-        }
-    }
-    @Published var selectedQueueTab: InvoiceQueueTab = .unprocessed {
-        didSet {
-            guard oldValue != selectedQueueTab else { return }
-            if searchText.isEmpty {
-                syncSelectionForVisibleInvoices()
-            } else {
-                searchText = ""
-            }
-        }
-    }
-    @Published var searchText: String = "" {
-        didSet {
-            guard oldValue != searchText else { return }
-            syncSelectionForVisibleInvoices()
-        }
-    }
-    @Published var showIgnoredInvoices = false {
-        didSet {
-            guard oldValue != showIgnoredInvoices else { return }
-            syncSelectionForVisibleInvoices()
-        }
-    }
+    @Published var queueScreenContext: QueueScreenContext
     @Published var folderSettings: FolderSettings
     @Published var llmSettings: LLMSettings
     @Published var settingsErrorMessage: String?
@@ -77,6 +45,7 @@ final class AppModel: ObservableObject {
         let resolvedFolderSettings = folderSettings ?? Self.loadFolderSettings()
         let resolvedLLMSettings = llmSettings ?? Self.loadLLMSettings()
 
+        self.queueScreenContext = QueueScreenContext()
         self.folderSettings = resolvedFolderSettings
         self.llmSettings = resolvedLLMSettings
         self.workflowByID = workflowByID ?? InvoiceWorkflowStore.load()
@@ -92,7 +61,6 @@ final class AppModel: ObservableObject {
             client: structuredExtractionClient
         )
         self.invoices = []
-        self.selectedInvoiceID = nil
         self.queueHandlerSetupTask = Task { [textExtractionQueue = self.textExtractionQueue, structuredExtractionQueue = self.structuredExtractionQueue] in
             await textExtractionQueue.setOnRequestStarted { contentHash in
                 self.textPendingHashes.insert(contentHash)
@@ -123,6 +91,46 @@ final class AppModel: ObservableObject {
         configureWatcher()
         if autoRefresh {
             refreshLibrary()
+        }
+    }
+
+    var selectedInvoiceIDs: Set<InvoiceItem.ID> {
+        get { activeQueueTabContext.selectedInvoiceIDs }
+        set {
+            guard newValue != selectedInvoiceIDs else { return }
+            setSelectedInvoiceIDs(newValue)
+        }
+    }
+
+    var selectedInvoiceID: InvoiceItem.ID? {
+        get { activeQueueTabContext.selectedInvoiceID }
+        set {
+            guard newValue != selectedInvoiceID else { return }
+            setSelectedInvoiceID(newValue)
+        }
+    }
+
+    var selectedQueueTab: InvoiceQueueTab {
+        get { queueScreenContext.selectedTab }
+        set {
+            guard newValue != selectedQueueTab else { return }
+            setSelectedQueueTab(newValue)
+        }
+    }
+
+    var searchText: String {
+        get { activeQueueTabContext.searchText }
+        set {
+            guard newValue != searchText else { return }
+            setSearchText(newValue)
+        }
+    }
+
+    var showIgnoredInvoices: Bool {
+        get { queueScreenContext.showIgnoredInvoices }
+        set {
+            guard newValue != showIgnoredInvoices else { return }
+            setShowIgnoredInvoices(newValue)
         }
     }
 
@@ -181,6 +189,10 @@ final class AppModel: ObservableObject {
         return invoices.filter { invoice in
             ignoredInvoiceIDs.contains(invoice.id) && queueTab(for: invoice.location) == selectedQueueTab
         }.count
+    }
+
+    var activeBrowserContext: InvoiceBrowserContext {
+        activeQueueTabContext.browserContext
     }
 
     var duplicateBadgeTitlesByInvoiceID: [InvoiceItem.ID: String] {
@@ -294,6 +306,65 @@ final class AppModel: ObservableObject {
                 return (invoice.id, .waiting)
             }
         )
+    }
+
+    func setSelectedQueueTab(_ tab: InvoiceQueueTab) {
+        guard tab != selectedQueueTab else { return }
+        updateQueueScreenContext { $0.selectedTab = tab }
+        syncSelectionForVisibleInvoices()
+    }
+
+    func setSearchText(_ text: String) {
+        guard text != searchText else { return }
+        updateActiveQueueTabContext { $0.searchText = text }
+        syncSelectionForVisibleInvoices()
+    }
+
+    func setShowIgnoredInvoices(_ showIgnored: Bool) {
+        guard showIgnored != showIgnoredInvoices else { return }
+        updateQueueScreenContext { $0.showIgnoredInvoices = showIgnored }
+        syncSelectionForVisibleInvoices()
+    }
+
+    func setSelectedInvoiceIDs(_ ids: Set<InvoiceItem.ID>) {
+        guard ids != selectedInvoiceIDs else { return }
+        updateActiveQueueTabContext { $0.selectedInvoiceIDs = ids }
+
+        guard !isSynchronizingSelection else { return }
+        setSelectedInvoiceID(visibleInvoices.first(where: { ids.contains($0.id) })?.id)
+    }
+
+    func setSelectedInvoiceID(_ id: InvoiceItem.ID?) {
+        guard id != selectedInvoiceID else { return }
+        updateActiveQueueTabContext { $0.selectedInvoiceID = id }
+    }
+
+    func setActiveBrowserSortDescriptors(_ descriptors: [InvoiceBrowserSortDescriptor]) {
+        let resolvedDescriptors = resolvedInvoiceBrowserSortDescriptors(descriptors, for: selectedQueueTab)
+        guard !invoiceBrowserSortDescriptorsMatch(activeBrowserContext.sortDescriptors, resolvedDescriptors) else {
+            return
+        }
+
+        updateActiveQueueTabContext { context in
+            context.browserContext.sortDescriptors = resolvedDescriptors
+        }
+    }
+
+    func setActiveBrowserExpandedGroupIDs(_ expandedGroupIDs: Set<InvoiceItem.ID>) {
+        guard expandedGroupIDs != activeBrowserContext.expandedGroupIDs else { return }
+        updateActiveQueueTabContext { context in
+            context.browserContext.expandedGroupIDs = expandedGroupIDs
+        }
+    }
+
+    func setActiveBrowserContext(_ browserContext: InvoiceBrowserContext) {
+        let resolvedContext = InvoiceBrowserContext(
+            queueTab: selectedQueueTab,
+            sortDescriptors: browserContext.sortDescriptors,
+            expandedGroupIDs: browserContext.expandedGroupIDs
+        )
+        guard resolvedContext != activeBrowserContext else { return }
+        updateActiveQueueTabContext { $0.browserContext = resolvedContext }
     }
 
     func hasExtractedText(for invoice: InvoiceItem) async -> Bool {
@@ -898,6 +969,29 @@ final class AppModel: ObservableObject {
 
     private func persistWorkflow() {
         InvoiceWorkflowStore.save(workflowByID)
+    }
+
+    private var activeQueueTabContext: QueueTabContext {
+        queueScreenContext.activeTabContext
+    }
+
+    private func updateQueueScreenContext(_ transform: (inout QueueScreenContext) -> Void) {
+        var nextContext = queueScreenContext
+        transform(&nextContext)
+        queueScreenContext = nextContext
+    }
+
+    private func updateActiveQueueTabContext(_ transform: (inout QueueTabContext) -> Void) {
+        updateQueueTabContext(for: selectedQueueTab, transform)
+    }
+
+    private func updateQueueTabContext(
+        for tab: InvoiceQueueTab,
+        _ transform: (inout QueueTabContext) -> Void
+    ) {
+        updateQueueScreenContext { context in
+            context.updateContext(for: tab, transform)
+        }
     }
 
     private func syncSelectionForVisibleInvoices() {

@@ -19,6 +19,7 @@ enum InvoiceDuplicateDetector {
                     fileURL: $0.fileURL,
                     location: $0.location,
                     addedAt: $0.addedAt,
+                    fileType: $0.fileType,
                     contentHash: $0.contentHash
                 )
             },
@@ -37,6 +38,7 @@ enum InvoiceDuplicateDetector {
                     fileURL: $0.fileURL,
                     location: $0.location,
                     addedAt: $0.addedAt,
+                    fileType: $0.fileType,
                     contentHash: $0.contentHash
                 )
             },
@@ -123,6 +125,13 @@ enum InvoiceDuplicateDetector {
             return lhsPriority < rhsPriority
         }
 
+        let lhsJPEGPriority = lhs.fileType == .jpeg ? 0 : 1
+        let rhsJPEGPriority = rhs.fileType == .jpeg ? 0 : 1
+
+        if lhsJPEGPriority != rhsJPEGPriority {
+            return lhsJPEGPriority < rhsJPEGPriority
+        }
+
         if lhs.addedAt != rhs.addedAt {
             return lhs.addedAt < rhs.addedAt
         }
@@ -136,6 +145,7 @@ private struct DuplicateCandidate: Sendable {
     let fileURL: URL
     let location: InvoiceLocation
     let addedAt: Date
+    let fileType: InvoiceFileType
     let contentHash: String?
 }
 

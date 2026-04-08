@@ -7,6 +7,45 @@ struct QueueSidebar: View {
     @State private var isInProgressDropTargeted = false
     @State private var isProcessedDropTargeted = false
 
+    private var activeTabContext: QueueTabContext {
+        model.queueScreenContext.activeTabContext
+    }
+
+    private var selectedQueueTabBinding: Binding<InvoiceQueueTab> {
+        Binding(
+            get: { model.selectedQueueTab },
+            set: { model.setSelectedQueueTab($0) }
+        )
+    }
+
+    private var searchTextBinding: Binding<String> {
+        Binding(
+            get: { model.searchText },
+            set: { model.setSearchText($0) }
+        )
+    }
+
+    private var showIgnoredInvoicesBinding: Binding<Bool> {
+        Binding(
+            get: { model.showIgnoredInvoices },
+            set: { model.setShowIgnoredInvoices($0) }
+        )
+    }
+
+    private var selectedInvoiceIDsBinding: Binding<Set<InvoiceItem.ID>> {
+        Binding(
+            get: { model.selectedInvoiceIDs },
+            set: { model.setSelectedInvoiceIDs($0) }
+        )
+    }
+
+    private var browserContextBinding: Binding<InvoiceBrowserContext> {
+        Binding(
+            get: { model.activeBrowserContext },
+            set: { model.setActiveBrowserContext($0) }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             QueueStatusCard(model: model)
@@ -21,12 +60,12 @@ struct QueueSidebar: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
 
             HStack(spacing: 8) {
-                TextField("Search name or vendor", text: $model.searchText)
+                TextField("Search name or vendor", text: searchTextBinding)
                     .textFieldStyle(.plain)
 
-                if !model.searchText.isEmpty {
+                if !activeTabContext.searchText.isEmpty {
                     Button {
-                        model.searchText = ""
+                        model.setSearchText("")
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
@@ -51,8 +90,8 @@ struct QueueSidebar: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if !model.selectedInvoiceIDs.isEmpty {
-                    Text("• \(model.selectedInvoiceIDs.count) selected")
+                if !activeTabContext.selectedInvoiceIDs.isEmpty {
+                    Text("• \(activeTabContext.selectedInvoiceIDs.count) selected")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -65,7 +104,7 @@ struct QueueSidebar: View {
 
                 Spacer()
 
-                Toggle("Show Ignored", isOn: $model.showIgnoredInvoices)
+                Toggle("Show Ignored", isOn: showIgnoredInvoicesBinding)
                     .toggleStyle(.switch)
                     .controlSize(.small)
             }
@@ -76,11 +115,12 @@ struct QueueSidebar: View {
                 InvoiceBrowserView(
                     invoices: model.visibleInvoices,
                     queueTab: model.selectedQueueTab,
+                    browserContext: browserContextBinding,
                     ocrStatesByInvoiceID: model.ocrStatesByInvoiceID,
                     readStatesByInvoiceID: model.readStatesByInvoiceID,
                     duplicateBadgeTitlesByInvoiceID: model.duplicateBadgeTitlesByInvoiceID,
                     ignoredInvoiceIDs: model.ignoredInvoiceIDs,
-                    selectedInvoiceIDs: $model.selectedInvoiceIDs,
+                    selectedInvoiceIDs: selectedInvoiceIDsBinding,
                     onMoveToInProgress: {
                         model.moveSelectedToInProgress()
                     },
@@ -152,7 +192,7 @@ struct QueueSidebar: View {
             )
             .contentShape(RoundedRectangle(cornerRadius: 8))
             .onTapGesture {
-                model.selectedQueueTab = tab
+                selectedQueueTabBinding.wrappedValue = tab
             }
     }
 

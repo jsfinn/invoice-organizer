@@ -950,6 +950,45 @@ private final class RecordingPreviewPersistHandler {
     #expect(duplicateMap[secondInbox.id]?.duplicateOfPath == firstInbox.fileURL.path)
 }
 
+@Test func extractedTextDuplicateDetectorPrefersJPEGCopyAsCanonical() async throws {
+    let heicInbox = ScannedInvoiceFile(
+        id: "/Inbox/invoice.heic",
+        name: "invoice.heic",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice.heic"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .heic,
+        contentHash: "hash-heic"
+    )
+
+    let jpegInbox = ScannedInvoiceFile(
+        id: "/Inbox/invoice.jpg",
+        name: "invoice.jpg",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice.jpg"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .jpeg,
+        contentHash: "hash-jpeg"
+    )
+
+    let duplicateMap = InvoiceDuplicateDetector.extractedTextDuplicateMap(
+        for: [heicInbox, jpegInbox],
+        textRecordsByContentHash: [
+            "hash-heic": InvoiceTextRecord(text: "Amazon invoice INV-42 date 2024-01-05 total 123.45", source: .ocr),
+            "hash-jpeg": InvoiceTextRecord(text: "amazon invoice inv 42 date 2024 01 05 total 123 45", source: .ocr)
+        ]
+    )
+
+    #expect(duplicateMap[jpegInbox.id] == nil)
+    #expect(duplicateMap[heicInbox.id]?.duplicateOfPath == jpegInbox.fileURL.path)
+}
+
 @Test func browserRowsCollapseAndExpandDuplicateGroups() async throws {
     let canonical = InvoiceItem(
         name: "invoice.pdf",
@@ -1054,7 +1093,7 @@ private final class RecordingPreviewPersistHandler {
     #expect(disclosureNavigationAction(for: childRow, keyCode: 124) == nil)
 }
 
-@Test func browserRowsLeaveOrphanDuplicateUngroupedWhenCanonicalHidden() async throws {
+@Test func browserRowsLeaveSingleOrphanDuplicateUngroupedWhenCanonicalHidden() async throws {
     let orphanDuplicate = InvoiceItem(
         name: "invoice-copy.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy.pdf"),
@@ -1070,6 +1109,140 @@ private final class RecordingPreviewPersistHandler {
     #expect(rows.count == 1)
     #expect(rows[0].kind == .invoice)
     #expect(rows[0].invoice.id == orphanDuplicate.id)
+}
+
+@Test func browserRowsGroupVisibleDuplicatesWhenCanonicalIsHidden() async throws {
+    let duplicateA = InvoiceItem(
+        name: "invoice-copy-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-a.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 9),
+        fileType: .pdf,
+        status: .blockedDuplicate,
+        duplicateOfPath: "/Processed/A/Amazon/invoice.pdf",
+        duplicateReason: "Duplicate extracted text matches invoice.pdf"
+    )
+    let duplicateB = InvoiceItem(
+        name: "invoice-copy-b.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-b.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 8),
+        fileType: .pdf,
+        status: .blockedDuplicate,
+        duplicateOfPath: "/Processed/A/Amazon/invoice.pdf",
+        duplicateReason: "Duplicate extracted text matches invoice.pdf"
+    )
+
+    let collapsedRows = buildInvoiceBrowserRows(from: [duplicateA, duplicateB], expandedGroupIDs: [])
+    #expect(collapsedRows.count == 1)
+    #expect(collapsedRows[0].invoice.id == duplicateA.id)
+    #expect(collapsedRows[0].kind == .groupHeader(duplicateCount: 1))
+    #expect(collapsedRows[0].memberIDs == Set([duplicateA.id, duplicateB.id]))
+
+    let expandedRows = buildInvoiceBrowserRows(from: [duplicateA, duplicateB], expandedGroupIDs: [duplicateA.id])
+    #expect(expandedRows.count == 2)
+    #expect(expandedRows[0].kind == .groupHeader(duplicateCount: 1))
+    #expect(expandedRows[1].kind == .groupChild(parentID: duplicateA.id))
+    #expect(expandedRows[1].invoice.id == duplicateB.id)
+}
+
+@Test func invoiceBrowserResolvedSortDescriptorsKeepsVisibleSortForQueue() async throws {
+    let descriptors = resolvedInvoiceBrowserSortDescriptors(
+        [InvoiceBrowserSortDescriptor(columnID: .vendor, ascending: true)],
+        for: .inProgress
+    )
+
+    #expect(invoiceBrowserSortDescriptorsMatch(
+        descriptors,
+        [InvoiceBrowserSortDescriptor(columnID: .vendor, ascending: true)]
+    ))
+}
+
+@Test func invoiceBrowserResolvedSortDescriptorsFallsBackWhenSortIsHiddenInQueue() async throws {
+    let descriptors = resolvedInvoiceBrowserSortDescriptors(
+        [InvoiceBrowserSortDescriptor(columnID: .vendor, ascending: true)],
+        for: .unprocessed
+    )
+
+    #expect(invoiceBrowserSortDescriptorsMatch(
+        descriptors,
+        [InvoiceBrowserSortDescriptor(columnID: .addedAt, ascending: false)]
+    ))
+}
+
+@MainActor
+@Test func appModelRetainsPerTabSearchAndSelectionContext() async throws {
+    let model = AppModel(autoRefresh: false)
+    let inboxInvoice = InvoiceItem(
+        name: "alpha.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/alpha.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        status: .unprocessed
+    )
+    let processingInvoice = InvoiceItem(
+        name: "beta.pdf",
+        fileURL: URL(fileURLWithPath: "/Processing/beta.pdf"),
+        location: .processing,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        status: .inProgress
+    )
+
+    model.invoices = [inboxInvoice, processingInvoice]
+    model.selectedQueueTab = .unprocessed
+    model.selectedInvoiceIDs = [inboxInvoice.id]
+    model.searchText = "alpha"
+
+    model.selectedQueueTab = .inProgress
+    model.selectedInvoiceIDs = [processingInvoice.id]
+    model.searchText = "beta"
+
+    model.selectedQueueTab = .unprocessed
+    #expect(model.searchText == "alpha")
+    #expect(model.selectedInvoiceIDs == [inboxInvoice.id])
+    #expect(model.selectedInvoiceID == inboxInvoice.id)
+
+    model.selectedQueueTab = .inProgress
+    #expect(model.searchText == "beta")
+    #expect(model.selectedInvoiceIDs == [processingInvoice.id])
+    #expect(model.selectedInvoiceID == processingInvoice.id)
+}
+
+@MainActor
+@Test func appModelRetainsPerTabBrowserContext() async throws {
+    let model = AppModel(autoRefresh: false)
+
+    model.selectedQueueTab = .unprocessed
+    model.setActiveBrowserContext(
+        InvoiceBrowserContext(
+            queueTab: .unprocessed,
+            sortDescriptors: [InvoiceBrowserSortDescriptor(columnID: .name, ascending: true)],
+            expandedGroupIDs: ["/Inbox/alpha.pdf"]
+        )
+    )
+
+    model.selectedQueueTab = .processed
+    model.setActiveBrowserContext(
+        InvoiceBrowserContext(
+            queueTab: .processed,
+            sortDescriptors: [InvoiceBrowserSortDescriptor(columnID: .vendor, ascending: true)],
+            expandedGroupIDs: ["/Processed/A/Amazon/invoice.pdf"]
+        )
+    )
+
+    model.selectedQueueTab = .unprocessed
+    #expect(model.activeBrowserContext.sortDescriptors == [
+        InvoiceBrowserSortDescriptor(columnID: .name, ascending: true)
+    ])
+    #expect(model.activeBrowserContext.expandedGroupIDs == ["/Inbox/alpha.pdf"])
+
+    model.selectedQueueTab = .processed
+    #expect(model.activeBrowserContext.sortDescriptors == [
+        InvoiceBrowserSortDescriptor(columnID: .vendor, ascending: true)
+    ])
+    #expect(model.activeBrowserContext.expandedGroupIDs == ["/Processed/A/Amazon/invoice.pdf"])
 }
 
 @Test func invoiceTextStoreCachesRecordsByContentHash() async throws {

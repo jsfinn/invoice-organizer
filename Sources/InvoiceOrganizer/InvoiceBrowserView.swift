@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct InvoiceBrowserView: NSViewRepresentable {
     let invoices: [InvoiceItem]
     let queueTab: InvoiceQueueTab
+    @Binding var browserContext: InvoiceBrowserContext
     let ocrStatesByInvoiceID: [InvoiceItem.ID: InvoiceOCRState]
     let readStatesByInvoiceID: [InvoiceItem.ID: InvoiceReadState]
     let duplicateBadgeTitlesByInvoiceID: [InvoiceItem.ID: String]
@@ -81,10 +82,10 @@ struct InvoiceBrowserView: NSViewRepresentable {
     }
 
     private static func makeColumns() -> [NSTableColumn] {
-        ColumnID.allCases.map(makeColumn)
+        InvoiceBrowserColumnID.allCases.map(makeColumn)
     }
 
-    private static func makeColumn(id: ColumnID) -> NSTableColumn {
+    private static func makeColumn(id: InvoiceBrowserColumnID) -> NSTableColumn {
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id.rawValue))
         column.title = id.title
         column.width = id.width
@@ -95,7 +96,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
     private static func configureColumns(for tableView: NSTableView, queueTab: InvoiceQueueTab) {
         let desiredColumnIDs = visibleColumnIDs(for: queueTab)
-        let existingColumnIDs = tableView.tableColumns.compactMap { ColumnID(rawValue: $0.identifier.rawValue) }
+        let existingColumnIDs = tableView.tableColumns.compactMap { InvoiceBrowserColumnID(rawValue: $0.identifier.rawValue) }
 
         guard existingColumnIDs != desiredColumnIDs else { return }
 
@@ -105,15 +106,8 @@ struct InvoiceBrowserView: NSViewRepresentable {
             .forEach(tableView.addTableColumn)
     }
 
-    private static func visibleColumnIDs(for queueTab: InvoiceQueueTab) -> [ColumnID] {
-        switch queueTab {
-        case .unprocessed:
-            return [.name, .ocr, .read, .addedAt, .fileType]
-        case .inProgress:
-            return [.name, .ocr, .read, .vendor, .invoiceDate, .addedAt, .fileType]
-        case .processed:
-            return [.name, .vendor, .invoiceDate, .addedAt, .fileType]
-        }
+    private static func visibleColumnIDs(for queueTab: InvoiceQueueTab) -> [InvoiceBrowserColumnID] {
+        invoiceBrowserVisibleColumnIDs(for: queueTab)
     }
 
     @MainActor
@@ -123,8 +117,6 @@ struct InvoiceBrowserView: NSViewRepresentable {
         private var displayedRows: [InvoiceBrowserRow] = []
         private var ocrStatesByInvoiceID: [InvoiceItem.ID: InvoiceOCRState] = [:]
         private var readStatesByInvoiceID: [InvoiceItem.ID: InvoiceReadState] = [:]
-        private var sortDescriptors: [NSSortDescriptor] = [NSSortDescriptor(key: ColumnID.addedAt.rawValue, ascending: false)]
-        private var expandedGroupIDs: Set<InvoiceItem.ID> = []
         private var isSyncingSelection = false
 
         init(parent: InvoiceBrowserView) {
@@ -140,8 +132,9 @@ struct InvoiceBrowserView: NSViewRepresentable {
             let didStateChange = self.ocrStatesByInvoiceID != ocrStatesByInvoiceID || self.readStatesByInvoiceID != readStatesByInvoiceID
             self.ocrStatesByInvoiceID = ocrStatesByInvoiceID
             self.readStatesByInvoiceID = readStatesByInvoiceID
+            syncTableSortDescriptorsFromContext()
             let sortedInvoices = sort(invoices: invoices)
-            let nextRows = buildInvoiceBrowserRows(from: sortedInvoices, expandedGroupIDs: expandedGroupIDs)
+            let nextRows = buildInvoiceBrowserRows(from: sortedInvoices, expandedGroupIDs: parent.browserContext.expandedGroupIDs)
             if displayedRows != nextRows {
                 displayedRows = nextRows
                 tableView?.reloadData()
@@ -160,7 +153,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
             let rowModel = displayedRows[row]
             let invoice = rowModel.invoice
-            guard let columnID = ColumnID(rawValue: tableColumn.identifier.rawValue) else { return nil }
+            guard let columnID = InvoiceBrowserColumnID(rawValue: tableColumn.identifier.rawValue) else { return nil }
 
             switch columnID {
             case .name:
@@ -246,10 +239,21 @@ struct InvoiceBrowserView: NSViewRepresentable {
         }
 
         func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
-            sortDescriptors = tableView.sortDescriptors.isEmpty
-                ? [NSSortDescriptor(key: ColumnID.addedAt.rawValue, ascending: false)]
-                : tableView.sortDescriptors
-            displayedRows = buildInvoiceBrowserRows(from: sort(invoices: parent.invoices), expandedGroupIDs: expandedGroupIDs)
+            let resolvedSortDescriptors = resolvedInvoiceBrowserSortDescriptors(
+                invoiceBrowserSortDescriptors(from: tableView.sortDescriptors),
+                for: parent.queueTab
+            )
+            parent.browserContext.sortDescriptors = resolvedSortDescriptors
+
+            let resolvedNSSortDescriptors = nsSortDescriptors(from: resolvedSortDescriptors)
+            if !nSSortDescriptorsMatch(tableView.sortDescriptors, resolvedNSSortDescriptors) {
+                tableView.sortDescriptors = resolvedNSSortDescriptors
+            }
+
+            displayedRows = buildInvoiceBrowserRows(
+                from: sort(invoices: parent.invoices),
+                expandedGroupIDs: parent.browserContext.expandedGroupIDs
+            )
             tableView.reloadData()
             syncSelection(to: parent.selectedInvoiceIDs)
         }
@@ -279,7 +283,9 @@ struct InvoiceBrowserView: NSViewRepresentable {
         }
 
         func tableView(_ tableView: NSTableView, canDragRowsWith rowIndexes: IndexSet, at mouseDownPoint: NSPoint) -> Bool {
-            guard let nameColumnIndex = tableView.tableColumns.firstIndex(where: { $0.identifier.rawValue == ColumnID.name.rawValue }) else {
+            guard let nameColumnIndex = tableView.tableColumns.firstIndex(where: {
+                $0.identifier.rawValue == InvoiceBrowserColumnID.name.rawValue
+            }) else {
                 return false
             }
 
@@ -444,13 +450,18 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 return
             }
 
+            var expandedGroupIDs = parent.browserContext.expandedGroupIDs
             if expandedGroupIDs.contains(row.invoice.id) {
                 expandedGroupIDs.remove(row.invoice.id)
             } else {
                 expandedGroupIDs.insert(row.invoice.id)
             }
 
-            displayedRows = buildInvoiceBrowserRows(from: sort(invoices: parent.invoices), expandedGroupIDs: expandedGroupIDs)
+            parent.browserContext.expandedGroupIDs = expandedGroupIDs
+            displayedRows = buildInvoiceBrowserRows(
+                from: sort(invoices: parent.invoices),
+                expandedGroupIDs: parent.browserContext.expandedGroupIDs
+            )
             tableView?.reloadData()
             syncSelection(to: parent.selectedInvoiceIDs)
         }
@@ -501,13 +512,8 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
         private func sort(invoices: [InvoiceItem]) -> [InvoiceItem] {
             invoices.sorted { lhs, rhs in
-                for descriptor in sortDescriptors {
-                    guard let key = descriptor.key,
-                          let columnID = ColumnID(rawValue: key) else {
-                        continue
-                    }
-
-                    let comparison = compare(lhs: lhs, rhs: rhs, columnID: columnID)
+                for descriptor in parent.browserContext.sortDescriptors {
+                    let comparison = compare(lhs: lhs, rhs: rhs, columnID: descriptor.columnID)
                     if comparison != .orderedSame {
                         return descriptor.ascending
                             ? comparison == .orderedAscending
@@ -519,7 +525,28 @@ struct InvoiceBrowserView: NSViewRepresentable {
             }
         }
 
-        private func compare(lhs: InvoiceItem, rhs: InvoiceItem, columnID: ColumnID) -> ComparisonResult {
+        private func syncTableSortDescriptorsFromContext() {
+            let resolvedSortDescriptors = resolvedInvoiceBrowserSortDescriptors(
+                parent.browserContext.sortDescriptors,
+                for: parent.queueTab
+            )
+
+            if parent.browserContext.sortDescriptors != resolvedSortDescriptors {
+                parent.browserContext.sortDescriptors = resolvedSortDescriptors
+            }
+
+            guard let tableView else { return }
+            let resolvedNSSortDescriptors = nsSortDescriptors(from: resolvedSortDescriptors)
+            if !nSSortDescriptorsMatch(tableView.sortDescriptors, resolvedNSSortDescriptors) {
+                tableView.sortDescriptors = resolvedNSSortDescriptors
+            }
+        }
+
+        private func compare(
+            lhs: InvoiceItem,
+            rhs: InvoiceItem,
+            columnID: InvoiceBrowserColumnID
+        ) -> ComparisonResult {
             switch columnID {
             case .name:
                 return lhs.name.localizedCaseInsensitiveCompare(rhs.name)
@@ -575,15 +602,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
     }
 }
 
-private enum ColumnID: String, CaseIterable {
-    case name
-    case ocr
-    case read
-    case addedAt
-    case fileType
-    case vendor
-    case invoiceDate
-
+private extension InvoiceBrowserColumnID {
     var title: String {
         switch self {
         case .name:
@@ -648,6 +667,32 @@ private enum ColumnID: String, CaseIterable {
         case .name, .ocr, .read, .fileType, .vendor:
             return true
         }
+    }
+}
+
+private func invoiceBrowserSortDescriptors(from descriptors: [NSSortDescriptor]) -> [InvoiceBrowserSortDescriptor] {
+    descriptors.compactMap { descriptor in
+        guard let key = descriptor.key,
+              let columnID = InvoiceBrowserColumnID(rawValue: key) else {
+            return nil
+        }
+
+        return InvoiceBrowserSortDescriptor(columnID: columnID, ascending: descriptor.ascending)
+    }
+}
+
+private func nsSortDescriptors(from descriptors: [InvoiceBrowserSortDescriptor]) -> [NSSortDescriptor] {
+    descriptors.map { descriptor in
+        NSSortDescriptor(key: descriptor.columnID.rawValue, ascending: descriptor.ascending)
+    }
+}
+
+private func nSSortDescriptorsMatch(_ lhs: [NSSortDescriptor], _ rhs: [NSSortDescriptor]) -> Bool {
+    guard lhs.count == rhs.count else { return false }
+
+    return zip(lhs, rhs).allSatisfy { lhsDescriptor, rhsDescriptor in
+        lhsDescriptor.key == rhsDescriptor.key &&
+        lhsDescriptor.ascending == rhsDescriptor.ascending
     }
 }
 
@@ -747,12 +792,21 @@ func buildInvoiceBrowserRows(
 ) -> [InvoiceBrowserRow] {
     let visibleInvoicesByID = Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
     var childrenByCanonicalID: [InvoiceItem.ID: [InvoiceItem]] = [:]
+    var orphanDuplicatesByCanonicalPath: [String: [InvoiceItem]] = [:]
 
     for invoice in invoices {
         guard let duplicateOfPath = invoice.duplicateOfPath else { continue }
         let canonicalID = InvoiceItem.stableID(for: URL(fileURLWithPath: duplicateOfPath))
-        guard visibleInvoicesByID[canonicalID] != nil else { continue }
-        childrenByCanonicalID[canonicalID, default: []].append(invoice)
+        if visibleInvoicesByID[canonicalID] != nil {
+            childrenByCanonicalID[canonicalID, default: []].append(invoice)
+        } else {
+            orphanDuplicatesByCanonicalPath[duplicateOfPath, default: []].append(invoice)
+        }
+    }
+
+    for orphanDuplicates in orphanDuplicatesByCanonicalPath.values where orphanDuplicates.count > 1 {
+        guard let representative = orphanDuplicates.first else { continue }
+        childrenByCanonicalID[representative.id] = Array(orphanDuplicates.dropFirst())
     }
 
     var rows: [InvoiceBrowserRow] = []
