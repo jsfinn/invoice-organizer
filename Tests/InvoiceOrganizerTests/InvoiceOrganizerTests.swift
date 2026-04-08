@@ -1104,6 +1104,176 @@ private final class RecordingPreviewPersistHandler {
     #expect(document.referenceArtifact(for: heicInbox.id)?.fileURL.path == jpegInbox.fileURL.path)
 }
 
+@Test func duplicateDetectorAutoGroupsInvoiceWhenStructuredDataMatchesAtEightyPercent() async throws {
+    let firstInbox = ScannedInvoiceFile(
+        id: "/Inbox/match-a.pdf",
+        name: "match-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/match-a.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        contentHash: "structured-a"
+    )
+
+    let secondInbox = ScannedInvoiceFile(
+        id: "/Inbox/match-b.jpg",
+        name: "match-b.jpg",
+        fileURL: URL(fileURLWithPath: "/Inbox/match-b.jpg"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .jpeg,
+        contentHash: "structured-b"
+    )
+
+    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+        for: [firstInbox, secondInbox],
+        tokenSetsByContentHash: [
+            "structured-a": Set((1...10).map { "token\($0)" }),
+            "structured-b": Set((1...9).map { "token\($0)" } + ["tokenX"])
+        ],
+        structuredRecordsByContentHash: [
+            "structured-a": InvoiceStructuredDataRecord(
+                companyName: "Acme Corp",
+                invoiceNumber: "INV-42",
+                invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                documentType: .invoice,
+                provider: .lmStudio,
+                modelName: "test-model"
+            ),
+            "structured-b": InvoiceStructuredDataRecord(
+                companyName: "Acme Corp",
+                invoiceNumber: "INV-42",
+                invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                documentType: .invoice,
+                provider: .lmStudio,
+                modelName: "test-model"
+            )
+        ]
+    )
+
+    #expect(groups.count == 1)
+    #expect(groups.first.map { Set($0.artifactIDs) } == Set([firstInbox.id, secondInbox.id]))
+}
+
+@Test func duplicateDetectorDoesNotAutoGroupInvoiceWithoutInvoiceNumber() async throws {
+    let firstInbox = ScannedInvoiceFile(
+        id: "/Inbox/no-number-a.pdf",
+        name: "no-number-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/no-number-a.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        contentHash: "no-number-a"
+    )
+
+    let secondInbox = ScannedInvoiceFile(
+        id: "/Inbox/no-number-b.jpg",
+        name: "no-number-b.jpg",
+        fileURL: URL(fileURLWithPath: "/Inbox/no-number-b.jpg"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .jpeg,
+        contentHash: "no-number-b"
+    )
+
+    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+        for: [firstInbox, secondInbox],
+        tokenSetsByContentHash: [
+            "no-number-a": Set((1...10).map { "token\($0)" }),
+            "no-number-b": Set((1...9).map { "token\($0)" } + ["tokenX"])
+        ],
+        structuredRecordsByContentHash: [
+            "no-number-a": InvoiceStructuredDataRecord(
+                companyName: "Acme Corp",
+                invoiceNumber: nil,
+                invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                documentType: .invoice,
+                provider: .lmStudio,
+                modelName: "test-model"
+            ),
+            "no-number-b": InvoiceStructuredDataRecord(
+                companyName: "Acme Corp",
+                invoiceNumber: nil,
+                invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                documentType: .invoice,
+                provider: .lmStudio,
+                modelName: "test-model"
+            )
+        ]
+    )
+
+    #expect(groups.isEmpty)
+}
+
+@Test func duplicateDetectorAutoGroupsReceiptWithoutInvoiceNumberAtEightyPercent() async throws {
+    let firstInbox = ScannedInvoiceFile(
+        id: "/Inbox/receipt-a.heic",
+        name: "receipt-a.heic",
+        fileURL: URL(fileURLWithPath: "/Inbox/receipt-a.heic"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .heic,
+        contentHash: "receipt-a"
+    )
+
+    let secondInbox = ScannedInvoiceFile(
+        id: "/Inbox/receipt-b.jpeg",
+        name: "receipt-b.jpeg",
+        fileURL: URL(fileURLWithPath: "/Inbox/receipt-b.jpeg"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .jpeg,
+        contentHash: "receipt-b"
+    )
+
+    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+        for: [firstInbox, secondInbox],
+        tokenSetsByContentHash: [
+            "receipt-a": Set((1...10).map { "token\($0)" }),
+            "receipt-b": Set((1...9).map { "token\($0)" } + ["tokenX"])
+        ],
+        structuredRecordsByContentHash: [
+            "receipt-a": InvoiceStructuredDataRecord(
+                companyName: "Staples",
+                invoiceNumber: nil,
+                invoiceDate: utcDate(year: 2024, month: 3, day: 21),
+                documentType: .receipt,
+                provider: .lmStudio,
+                modelName: "test-model"
+            ),
+            "receipt-b": InvoiceStructuredDataRecord(
+                companyName: "Staples",
+                invoiceNumber: nil,
+                invoiceDate: utcDate(year: 2024, month: 3, day: 21),
+                documentType: .receipt,
+                provider: .lmStudio,
+                modelName: "test-model"
+            )
+        ]
+    )
+
+    #expect(groups.count == 1)
+    #expect(groups.first.map { Set($0.artifactIDs) } == Set([firstInbox.id, secondInbox.id]))
+}
+
 @Test func browserRowsCollapseAndExpandDuplicateGroups() async throws {
     let first = PhysicalArtifact(
         name: "invoice.pdf",
@@ -1431,6 +1601,50 @@ private final class RecordingPreviewPersistHandler {
     #expect(duplicateDocuments.first?.metadata.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
     #expect(visibleMetadata.allSatisfy { $0.vendor == "Acme Corp" })
     #expect(visibleMetadata.allSatisfy { $0.invoiceNumber == "INV-42" })
+}
+
+@Test func librarySnapshotBuilderHandlesRepeatedContentHashesWithoutCrashing() async throws {
+    let first = PhysicalArtifact(
+        name: "invoice-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-a.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        status: .unprocessed,
+        contentHash: "shared-hash"
+    )
+    let second = PhysicalArtifact(
+        name: "invoice-b.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-b.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        status: .unprocessed,
+        contentHash: "shared-hash"
+    )
+
+    let snapshot = LibrarySnapshotBuilder(
+        structuredRecordForContentHash: { contentHash in
+            guard contentHash == "shared-hash" else { return nil }
+            return InvoiceStructuredDataRecord(
+                companyName: "Acme Corp",
+                invoiceNumber: "INV-42",
+                invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                documentType: .invoice,
+                provider: .lmStudio,
+                modelName: "test-model"
+            )
+        }
+    )
+    .build(
+        from: [first, second],
+        workflowsByArtifactID: [:],
+        documentMetadataHintsByArtifactID: [:],
+        duplicateTokensByHash: [:]
+    )
+
+    #expect(snapshot.artifacts.count == 2)
+    #expect(snapshot.documents.count == 2)
 }
 
 @Test func appModelReportsDedupSimilarityScoresForInvoice() async throws {

@@ -2,9 +2,14 @@ import Foundation
 
 enum DuplicateDetector {
     private static let similarityThreshold = 0.9
+    private static let structuredMatchSimilarityThreshold = 0.8
 
     static var duplicateSimilarityThreshold: Double {
         similarityThreshold
+    }
+
+    static var structuredBackedDuplicateSimilarityThreshold: Double {
+        structuredMatchSimilarityThreshold
     }
 
     static func extractedTextDuplicateGroups(
@@ -32,7 +37,29 @@ enum DuplicateDetector {
                     contentHash: $0.contentHash
                 )
             },
-            tokenSetsByContentHash: tokenSetsByContentHash
+            tokenSetsByContentHash: tokenSetsByContentHash,
+            structuredSignaturesByContentHash: [:]
+        )
+    }
+
+    static func extractedTextDuplicateGroups(
+        for files: [ScannedInvoiceFile],
+        tokenSetsByContentHash: [String: Set<String>],
+        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord]
+    ) -> [ArtifactDuplicateCluster] {
+        duplicateClusters(
+            candidates: files.map {
+                DuplicateCandidate(
+                    id: $0.id,
+                    fileURL: $0.fileURL,
+                    location: $0.location,
+                    addedAt: $0.addedAt,
+                    fileType: $0.fileType,
+                    contentHash: $0.contentHash
+                )
+            },
+            tokenSetsByContentHash: tokenSetsByContentHash,
+            structuredSignaturesByContentHash: structuredDuplicateSignatures(from: structuredRecordsByContentHash)
         )
     }
 
@@ -61,13 +88,36 @@ enum DuplicateDetector {
                     contentHash: $0.contentHash
                 )
             },
-            tokenSetsByContentHash: tokenSetsByContentHash
+            tokenSetsByContentHash: tokenSetsByContentHash,
+            structuredSignaturesByContentHash: [:]
+        )
+    }
+
+    static func extractedTextDuplicateGroups(
+        for invoices: [PhysicalArtifact],
+        tokenSetsByContentHash: [String: Set<String>],
+        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord]
+    ) -> [ArtifactDuplicateCluster] {
+        duplicateClusters(
+            candidates: invoices.map {
+                DuplicateCandidate(
+                    id: $0.id,
+                    fileURL: $0.fileURL,
+                    location: $0.location,
+                    addedAt: $0.addedAt,
+                    fileType: $0.fileType,
+                    contentHash: $0.contentHash
+                )
+            },
+            tokenSetsByContentHash: tokenSetsByContentHash,
+            structuredSignaturesByContentHash: structuredDuplicateSignatures(from: structuredRecordsByContentHash)
         )
     }
 
     private static func duplicateClusters(
         candidates: [DuplicateCandidate],
-        tokenSetsByContentHash: [String: Set<String>]
+        tokenSetsByContentHash: [String: Set<String>],
+        structuredSignaturesByContentHash: [String: StructuredDuplicateSignature]
     ) -> [ArtifactDuplicateCluster] {
         let candidatesWithTokens = candidates.compactMap { candidate -> CandidateTextSignature? in
             guard let contentHash = candidate.contentHash,
@@ -75,7 +125,11 @@ enum DuplicateDetector {
                   !tokens.isEmpty else {
                 return nil
             }
-            return CandidateTextSignature(candidate: candidate, tokens: tokens)
+            return CandidateTextSignature(
+                candidate: candidate,
+                tokens: tokens,
+                structuredSignature: structuredSignaturesByContentHash[contentHash]
+            )
         }
 
         return buildSimilarityGroups(from: candidatesWithTokens)
@@ -123,10 +177,19 @@ enum DuplicateDetector {
 
         for (index, group) in groups.enumerated() {
             let groupBestScore = group.reduce(0.0) { currentBest, member in
-                max(currentBest, jaccardSimilarity(candidate.tokens, member.tokens))
+                let score = jaccardSimilarity(candidate.tokens, member.tokens)
+                let hasStructuredMatch = candidate.structuredSignature != nil &&
+                    candidate.structuredSignature == member.structuredSignature
+
+                if score >= similarityThreshold ||
+                    (hasStructuredMatch && score >= structuredMatchSimilarityThreshold) {
+                    return max(currentBest, score)
+                }
+
+                return currentBest
             }
 
-            guard groupBestScore >= similarityThreshold else { continue }
+            guard groupBestScore > 0 else { continue }
 
             if groupBestScore > bestScore {
                 bestScore = groupBestScore
@@ -155,6 +218,20 @@ enum DuplicateDetector {
         guard !union.isEmpty else { return 1.0 }
         let intersection = lhs.intersection(rhs)
         return Double(intersection.count) / Double(union.count)
+    }
+
+    private static func structuredDuplicateSignatures(
+        from recordsByContentHash: [String: InvoiceStructuredDataRecord]
+    ) -> [String: StructuredDuplicateSignature] {
+        Dictionary(
+            uniqueKeysWithValues: recordsByContentHash.compactMap { contentHash, record in
+                guard let signature = StructuredDuplicateSignature(record: record) else {
+                    return nil
+                }
+
+                return (contentHash, signature)
+            }
+        )
     }
 
     private static func duplicatePriority(lhs: DuplicateCandidate, rhs: DuplicateCandidate) -> Bool {
@@ -192,4 +269,42 @@ private struct DuplicateCandidate: Sendable {
 private struct CandidateTextSignature: Sendable {
     let candidate: DuplicateCandidate
     let tokens: Set<String>
+    let structuredSignature: StructuredDuplicateSignature?
+}
+
+private struct StructuredDuplicateSignature: Equatable, Sendable {
+    let vendor: String
+    let invoiceDate: Date
+    let documentType: DocumentType
+    let invoiceNumber: String?
+
+    init?(record: InvoiceStructuredDataRecord) {
+        guard let vendor = Self.normalizedField(record.companyName),
+              let invoiceDate = record.invoiceDate,
+              let documentType = record.documentType else {
+            return nil
+        }
+
+        let invoiceNumber = Self.normalizedField(record.invoiceNumber)
+        switch documentType {
+        case .invoice:
+            guard invoiceNumber != nil else { return nil }
+        case .receipt:
+            break
+        }
+
+        self.vendor = vendor
+        self.invoiceDate = invoiceDate
+        self.documentType = documentType
+        self.invoiceNumber = invoiceNumber
+    }
+
+    private static func normalizedField(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+
+        return trimmed
+    }
 }

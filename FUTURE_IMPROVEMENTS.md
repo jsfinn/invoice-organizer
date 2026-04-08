@@ -59,6 +59,11 @@ What we observed:
 - The app still does not group them as duplicates because extracted-text similarity remains below the current duplicate threshold
 - In the current archive, these exact metadata matches were the active cases that looked like duplicate or same-invoice misses
 
+Current status:
+- Partially improved by the new `structured match + 80% text similarity` rule
+- Some metadata-backed duplicate families now auto-group, but the `Performance 020426.pdf` / `Performance Invoice 020426.pdf` case still remains open
+- The earlier `IMG_3005.jpeg` / `scan0155.pdf` example no longer reflects the strongest current miss and should be re-validated against the latest archive state before using it as a representative case
+
 Why this matters:
 - Users care about whether records represent the same invoice, not just whether the extracted text is near-identical
 - Text-similarity duplicate detection is useful for copy detection, but it misses cases where the same invoice exists in different representations
@@ -80,6 +85,11 @@ What we observed:
 - The app groups the HEIC files together and the JPEG files together
 - It does not merge the HEIC and JPEG pairs into one duplicate family because cross-format extracted-text similarity falls below the duplicate threshold
 - The files still share the same vendor, date, and receipt classification, and likely represent the same underlying receipt captured/exported in different formats
+
+Current status:
+- Improved by the new `structured match + 80% text similarity` rule
+- The `IMG_3022` HEIC/JPEG family now groups as one duplicate family in the current archive
+- Similar cross-format cases may still need review, but this specific example is no longer open in the same way
 
 Why this matters:
 - Users may see one logical receipt split into multiple duplicate groups simply because the file was converted or exported to another image format

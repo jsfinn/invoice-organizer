@@ -35,9 +35,19 @@ struct LibrarySnapshotBuilder {
         documentMetadataHintsByArtifactID: [PhysicalArtifact.ID: DocumentMetadata],
         duplicateTokensByHash: [String: Set<String>]
     ) -> LibrarySnapshot {
+        let structuredRecordsByHash: [String: InvoiceStructuredDataRecord] = artifacts.reduce(into: [:]) { recordsByHash, artifact in
+            guard let contentHash = artifact.contentHash,
+                  recordsByHash[contentHash] == nil,
+                  let record = structuredRecordForContentHash(contentHash) else {
+                return
+            }
+
+            recordsByHash[contentHash] = record
+        }
         let duplicateClusters = DuplicateDetector.extractedTextDuplicateGroups(
             for: artifacts,
-            tokenSetsByContentHash: duplicateTokensByHash
+            tokenSetsByContentHash: duplicateTokensByHash,
+            structuredRecordsByContentHash: structuredRecordsByHash
         )
         let documents = buildDocuments(
             from: artifacts,
