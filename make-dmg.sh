@@ -15,6 +15,15 @@ OUTPUT_BASENAME="InvoiceOrganizer"
 DIST_DIR="dist"
 STAGING_DIR="dmg-root"
 
+ensure_xcode_project() {
+  if ! command -v xcodegen >/dev/null 2>&1; then
+    echo "xcodegen is required to regenerate ${PROJECT} from ${PROJECT_SPEC}" >&2
+    exit 1
+  fi
+
+  xcodegen generate --spec "${PROJECT_SPEC}" >/dev/null
+}
+
 read_marketing_version() {
   python3 - "$PROJECT_SPEC" <<'PY'
 from pathlib import Path
@@ -77,6 +86,8 @@ VERSION="${VERSION:-$(bump_revision "$CURRENT_VERSION")}"
 PERSIST_VERSION="${PERSIST_VERSION:-1}"
 APP_PATH="${DERIVED_DATA_PATH}/Build/Products/${CONFIGURATION}/${APP_NAME}.app"
 DMG_PATH="${DIST_DIR}/${OUTPUT_BASENAME}-${VERSION}.dmg"
+
+ensure_xcode_project
 
 xcodebuild \
   -project "${PROJECT}" \
