@@ -298,7 +298,7 @@ final class AppModel: ObservableObject {
         folderSettings.processingURL?.path ?? "Not selected"
     }
 
-    var duplicatesFolderDisplayPath: String {
+    var archiveFolderDisplayPath: String {
         folderSettings.duplicatesURL?.path ?? "Not selected"
     }
 
@@ -663,7 +663,7 @@ final class AppModel: ObservableObject {
             return
         }
         guard let duplicatesRoot = folderSettings.duplicatesURL else {
-            settingsErrorMessage = "Choose a Duplicates folder before moving invoices into In Progress."
+            settingsErrorMessage = "Choose an Archive folder before moving invoices into In Progress."
             return
         }
 

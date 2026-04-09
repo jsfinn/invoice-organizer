@@ -123,9 +123,9 @@ private struct GeneralSettingsSection: View {
                 )
 
                 FolderRow(
-                    title: "Duplicates",
+                    title: "Archive",
                     subtitle: "Required. When one duplicate is moved into Processing, the other non-processed duplicates are relocated here and removed from the active queues.",
-                    path: model.duplicatesFolderDisplayPath,
+                    path: model.archiveFolderDisplayPath,
                     isRequired: true,
                     onChoose: { model.pickFolder(for: .duplicates) },
                     onClear: { model.clearFolder(for: .duplicates) }
@@ -136,7 +136,7 @@ private struct GeneralSettingsSection: View {
                 LabeledContent("Inbox Ready", value: model.folderSettings.inboxURL == nil ? "No" : "Yes")
                 LabeledContent("Processing Ready", value: model.folderSettings.processingURL == nil ? "No" : "Yes")
                 LabeledContent("Processed Ready", value: model.folderSettings.processedURL == nil ? "No" : "Yes")
-                LabeledContent("Duplicates Ready", value: model.folderSettings.duplicatesURL == nil ? "No" : "Yes")
+                LabeledContent("Archive Ready", value: model.folderSettings.duplicatesURL == nil ? "No" : "Yes")
                 LabeledContent("Watching Folders", value: model.isWatchingFolders ? "Yes" : "No")
                 LabeledContent("Invoices Loaded", value: "\(model.invoices.count)")
             }

@@ -262,7 +262,7 @@ enum FolderRole: String, CaseIterable, Identifiable, Sendable {
     case inbox = "Inbox"
     case processing = "Processing"
     case processed = "Processed"
-    case duplicates = "Duplicates"
+    case duplicates = "Archive"
 
     var id: String { rawValue }
 
