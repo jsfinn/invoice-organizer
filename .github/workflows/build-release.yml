@@ -75,12 +75,10 @@ jobs:
           chmod +x ./make-dmg.sh
           ./make-dmg.sh
 
-      - name: Resolve Sparkle tools
-        run: swift package resolve
-
       - name: Sign DMG and update appcast
         env:
           SPARKLE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          SIGN_UPDATE: build/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update
         run: |
           dmg_file="$(ls dist/*.dmg | head -1)"
           version="${{ steps.version.outputs.value }}"

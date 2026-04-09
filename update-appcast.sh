@@ -18,7 +18,9 @@ BUILD_NUMBER="${3:?Missing build number}"
 DOWNLOAD_URL="${4:?Missing download URL}"
 
 APPCAST_FILE="appcast.xml"
-SIGN_UPDATE="${SIGN_UPDATE:-$(find .build/artifacts -name sign_update -type f 2>/dev/null | head -1)}"
+if [[ -z "${SIGN_UPDATE:-}" ]]; then
+  SIGN_UPDATE="$(find .build/artifacts build/SourcePackages/artifacts -name sign_update -type f 2>/dev/null | head -1)"
+fi
 
 if [[ -z "${SIGN_UPDATE}" ]]; then
   echo "Could not find sign_update. Set SIGN_UPDATE or run 'swift package resolve' first." >&2
