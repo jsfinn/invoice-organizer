@@ -115,7 +115,7 @@ struct Document: Identifiable, Equatable, Sendable {
             matchedLocation: bestMatch.0.location,
             artifactCount: artifacts.count,
             score: bestMatch.1,
-            meetsThreshold: bestMatch.1 >= threshold
+            meetsThreshold: DuplicateDetector.meetsRoundedThreshold(bestMatch.1, threshold: threshold)
         )
     }
 

@@ -7,6 +7,7 @@ struct LibrarySnapshot {
     let documentsByArtifactID: [PhysicalArtifact.ID: Document]
     let documentMetadataByArtifactID: [PhysicalArtifact.ID: DocumentMetadata]
     let duplicateTokenSetsByArtifactID: [PhysicalArtifact.ID: Set<String>]
+    let possibleSameInvoiceMatchesByArtifactID: [PhysicalArtifact.ID: [PossibleSameInvoiceMatch]]
 
     static let empty = LibrarySnapshot(
         artifacts: [],
@@ -14,7 +15,8 @@ struct LibrarySnapshot {
         documentsByID: [:],
         documentsByArtifactID: [:],
         documentMetadataByArtifactID: [:],
-        duplicateTokenSetsByArtifactID: [:]
+        duplicateTokenSetsByArtifactID: [:],
+        possibleSameInvoiceMatchesByArtifactID: [:]
     )
 
     func document(for artifactID: PhysicalArtifact.ID) -> Document? {
@@ -33,7 +35,8 @@ struct LibrarySnapshotBuilder {
         from artifacts: [PhysicalArtifact],
         workflowsByArtifactID: [PhysicalArtifact.ID: StoredInvoiceWorkflow],
         documentMetadataHintsByArtifactID: [PhysicalArtifact.ID: DocumentMetadata],
-        duplicateTokensByHash: [String: Set<String>]
+        duplicateTokensByHash: [String: Set<String>],
+        duplicateFirstPageTokensByHash: [String: Set<String>]
     ) -> LibrarySnapshot {
         let structuredRecordsByHash: [String: InvoiceStructuredDataRecord] = artifacts.reduce(into: [:]) { recordsByHash, artifact in
             guard let contentHash = artifact.contentHash,
@@ -47,6 +50,7 @@ struct LibrarySnapshotBuilder {
         let duplicateClusters = DuplicateDetector.extractedTextDuplicateGroups(
             for: artifacts,
             tokenSetsByContentHash: duplicateTokensByHash,
+            firstPageTokenSetsByContentHash: duplicateFirstPageTokensByHash,
             structuredRecordsByContentHash: structuredRecordsByHash
         )
         let documents = buildDocuments(
@@ -61,6 +65,7 @@ struct LibrarySnapshotBuilder {
                 document.artifactIDs.map { ($0, document) }
             }
         )
+        let possibleSameInvoiceMatchesByArtifactID = buildPossibleSameInvoiceMatches(from: documents)
 
         var projectedArtifacts = artifacts
         var metadataByArtifactID: [PhysicalArtifact.ID: DocumentMetadata] = [:]
@@ -98,7 +103,8 @@ struct LibrarySnapshotBuilder {
             documentsByID: documentsByID,
             documentsByArtifactID: documentsByArtifactID,
             documentMetadataByArtifactID: metadataByArtifactID,
-            duplicateTokenSetsByArtifactID: duplicateTokenSetsByArtifactID
+            duplicateTokenSetsByArtifactID: duplicateTokenSetsByArtifactID,
+            possibleSameInvoiceMatchesByArtifactID: possibleSameInvoiceMatchesByArtifactID
         )
     }
 
@@ -277,6 +283,134 @@ struct LibrarySnapshotBuilder {
         let trimmed = invoiceNumber.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
+
+    private func buildPossibleSameInvoiceMatches(
+        from documents: [Document]
+    ) -> [PhysicalArtifact.ID: [PossibleSameInvoiceMatch]] {
+        let candidateDocuments = documents.compactMap { document -> (Document, DocumentMetadata, SameInvoiceSignature)? in
+            let effectiveMetadata = sameInvoiceMetadata(for: document)
+            guard let signature = SameInvoiceSignature(metadata: effectiveMetadata) else {
+                return nil
+            }
+
+            return (document, effectiveMetadata, signature)
+        }
+        let documentsBySignature = Dictionary(grouping: candidateDocuments, by: \.2)
+
+        var matchesByArtifactID: [PhysicalArtifact.ID: [PossibleSameInvoiceMatch]] = [:]
+        for group in documentsBySignature.values where group.count > 1 {
+            let documents = group.map { ($0.0, $0.1) }
+
+            for (document, _) in documents {
+                let otherMatches = documents
+                    .filter { $0.0.id != document.id }
+                    .compactMap { makePossibleSameInvoiceMatch(from: $0.0, metadata: $0.1) }
+
+                guard !otherMatches.isEmpty else { continue }
+                for artifactID in document.artifactIDs {
+                    matchesByArtifactID[artifactID] = otherMatches
+                }
+            }
+        }
+
+        return matchesByArtifactID
+    }
+
+    private func sameInvoiceMetadata(for document: Document) -> DocumentMetadata {
+        if !document.metadata.isEmpty {
+            return document.metadata
+        }
+
+        return inferredStructuredDocumentMetadata(for: document) ?? .empty
+    }
+
+    private func makePossibleSameInvoiceMatch(
+        from document: Document,
+        metadata: DocumentMetadata
+    ) -> PossibleSameInvoiceMatch? {
+        guard let referenceArtifact = document.artifacts.sorted(by: possibleSameInvoiceReferencePriority).first else {
+            return nil
+        }
+
+        return PossibleSameInvoiceMatch(
+            documentID: document.id,
+            matchedArtifactID: referenceArtifact.id,
+            matchedFileURL: referenceArtifact.fileURL,
+            matchedLocation: referenceArtifact.location,
+            artifactCount: document.artifacts.count,
+            metadata: metadata
+        )
+    }
+}
+
+private func possibleSameInvoiceReferencePriority(lhs: DocumentArtifactReference, rhs: DocumentArtifactReference) -> Bool {
+    let lhsLocationPriority = possibleSameInvoiceLocationPriority(lhs.location)
+    let rhsLocationPriority = possibleSameInvoiceLocationPriority(rhs.location)
+
+    if lhsLocationPriority != rhsLocationPriority {
+        return lhsLocationPriority < rhsLocationPriority
+    }
+
+    let lhsJPEGPriority = lhs.fileType == .jpeg ? 0 : 1
+    let rhsJPEGPriority = rhs.fileType == .jpeg ? 0 : 1
+
+    if lhsJPEGPriority != rhsJPEGPriority {
+        return lhsJPEGPriority < rhsJPEGPriority
+    }
+
+    if lhs.addedAt != rhs.addedAt {
+        return lhs.addedAt < rhs.addedAt
+    }
+
+    return lhs.id < rhs.id
+}
+
+private func possibleSameInvoiceLocationPriority(_ location: InvoiceLocation) -> Int {
+    switch location {
+    case .processed:
+        return 0
+    case .processing:
+        return 1
+    case .inbox:
+        return 2
+    }
+}
+
+private struct SameInvoiceSignature: Hashable {
+    let vendor: String
+    let invoiceDate: Date
+    let documentType: DocumentType
+    let invoiceNumber: String?
+
+    init?(metadata: DocumentMetadata) {
+        guard let vendor = normalizedField(metadata.vendor),
+              let invoiceDate = metadata.invoiceDate,
+              let documentType = metadata.documentType else {
+            return nil
+        }
+
+        let invoiceNumber = normalizedField(metadata.invoiceNumber)
+        switch documentType {
+        case .invoice:
+            guard invoiceNumber != nil else { return nil }
+        case .receipt:
+            break
+        }
+
+        self.vendor = vendor
+        self.invoiceDate = invoiceDate
+        self.documentType = documentType
+        self.invoiceNumber = invoiceNumber
+    }
+}
+
+private func normalizedField(_ value: String?) -> String? {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !trimmed.isEmpty else {
+        return nil
+    }
+
+    return trimmed
 }
 
 private extension PhysicalArtifact {

@@ -11,6 +11,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
     let readStatesByArtifactID: [PhysicalArtifact.ID: InvoiceReadState]
     let documentMetadataByArtifactID: [PhysicalArtifact.ID: DocumentMetadata]
     let duplicateBadgeTitlesByArtifactID: [PhysicalArtifact.ID: String]
+    let possibleSameInvoiceBadgeTitlesByArtifactID: [PhysicalArtifact.ID: String]
     let ignoredArtifactIDs: Set<PhysicalArtifact.ID>
     @Binding var selectedArtifactIDs: Set<PhysicalArtifact.ID>
     let onMoveToInProgress: ([PhysicalArtifact.ID]) -> Void
@@ -527,6 +528,8 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 badges.append(.duplicate(label))
             } else if let duplicateBadge = parent.duplicateBadgeTitlesByArtifactID[row.invoice.id] {
                 badges.append(.duplicate(duplicateBadge))
+            } else if let possibleSameInvoiceBadge = parent.possibleSameInvoiceBadgeTitlesByArtifactID[row.invoice.id] {
+                badges.append(.possibleSameInvoice(possibleSameInvoiceBadge))
             }
 
             if parent.ignoredArtifactIDs.contains(row.invoice.id) {
@@ -803,11 +806,14 @@ func disclosureNavigationAction(for row: InvoiceBrowserRow, keyCode: UInt16) -> 
 
 enum InvoiceBrowserBadge: Equatable {
     case duplicate(String)
+    case possibleSameInvoice(String)
     case ignored
 
     var title: String {
         switch self {
         case .duplicate(let title):
+            return title
+        case .possibleSameInvoice(let title):
             return title
         case .ignored:
             return "Ignored"
@@ -818,6 +824,8 @@ enum InvoiceBrowserBadge: Equatable {
         switch self {
         case .duplicate:
             return .systemRed
+        case .possibleSameInvoice:
+            return .systemBlue
         case .ignored:
             return .systemOrange
         }
@@ -827,6 +835,8 @@ enum InvoiceBrowserBadge: Equatable {
         switch self {
         case .duplicate:
             return NSColor.systemRed.withAlphaComponent(0.12)
+        case .possibleSameInvoice:
+            return NSColor.systemBlue.withAlphaComponent(0.12)
         case .ignored:
             return NSColor.systemOrange.withAlphaComponent(0.14)
         }

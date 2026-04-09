@@ -167,6 +167,10 @@ final class AppModel: ObservableObject {
         librarySnapshot.metadata(for: artifactID)
     }
 
+    func possibleSameInvoiceMatches(for artifactID: PhysicalArtifact.ID) -> [PossibleSameInvoiceMatch] {
+        librarySnapshot.possibleSameInvoiceMatchesByArtifactID[artifactID] ?? []
+    }
+
     var documentMetadataByArtifactID: [PhysicalArtifact.ID: DocumentMetadata] {
         librarySnapshot.documentMetadataByArtifactID
     }
@@ -263,6 +267,15 @@ final class AppModel: ObservableObject {
                 }
 
                 return (invoice.id, title)
+            }
+        )
+    }
+
+    var possibleSameInvoiceBadgeTitlesByArtifactID: [PhysicalArtifact.ID: String] {
+        Dictionary(
+            uniqueKeysWithValues: invoices.compactMap { invoice in
+                guard !possibleSameInvoiceMatches(for: invoice.id).isEmpty else { return nil }
+                return (invoice.id, "Possible Same Invoice")
             }
         )
     }
@@ -970,7 +983,8 @@ final class AppModel: ObservableObject {
             from: invoices,
             workflowsByArtifactID: workflowByID,
             documentMetadataHintsByArtifactID: documentMetadataHintsByArtifactID,
-            duplicateTokensByHash: computationCache.duplicateTokensByHash
+            duplicateTokensByHash: computationCache.duplicateTokensByHash,
+            duplicateFirstPageTokensByHash: computationCache.firstPageDuplicateTokensByHash
         )
         invoices = librarySnapshot.artifacts
         documents = librarySnapshot.documents

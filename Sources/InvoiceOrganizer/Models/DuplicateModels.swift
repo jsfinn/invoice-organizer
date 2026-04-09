@@ -17,6 +17,17 @@ struct DuplicateSimilarity: Identifiable, Equatable, Sendable {
     var id: String { documentID }
 }
 
+struct PossibleSameInvoiceMatch: Identifiable, Equatable, Sendable {
+    let documentID: String
+    let matchedArtifactID: String
+    let matchedFileURL: URL
+    let matchedLocation: InvoiceLocation
+    let artifactCount: Int
+    let metadata: DocumentMetadata
+
+    var id: String { documentID }
+}
+
 struct ArtifactDuplicateCluster: Equatable, Identifiable, Sendable {
     let artifactIDs: [PhysicalArtifact.ID]
 

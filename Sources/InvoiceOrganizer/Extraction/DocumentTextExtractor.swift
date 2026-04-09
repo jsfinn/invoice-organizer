@@ -11,6 +11,7 @@ enum InvoiceTextSource: String, Codable, Sendable {
 
 struct InvoiceTextRecord: Codable, Equatable, Sendable {
     let text: String
+    let firstPageText: String?
     let source: InvoiceTextSource
     let ocrConfidence: Double?
     let ocrOriginalText: String?
@@ -19,13 +20,15 @@ struct InvoiceTextRecord: Codable, Equatable, Sendable {
 
     init(
         text: String,
+        firstPageText: String? = nil,
         source: InvoiceTextSource,
         ocrConfidence: Double? = nil,
         ocrOriginalText: String? = nil,
         extractedAt: Date = .now,
-        schemaVersion: Int = 3
+        schemaVersion: Int = 4
     ) {
         self.text = text
+        self.firstPageText = firstPageText
         self.source = source
         self.ocrConfidence = ocrConfidence
         self.ocrOriginalText = ocrOriginalText
@@ -43,15 +46,18 @@ struct DocumentTextExtractor: DocumentTextExtracting {
     typealias OCRLoader = @Sendable (URL) async throws -> OCRTextResult?
 
     let extractEmbeddedPDFText: PDFTextLoader
+    let extractFirstEmbeddedPDFText: PDFTextLoader
     let recognizePDFText: OCRLoader
     let recognizeImageText: OCRLoader
 
     init(
         extractEmbeddedPDFText: @escaping PDFTextLoader = PDFEmbeddedTextLoader.loadText(from:),
+        extractFirstEmbeddedPDFText: @escaping PDFTextLoader = PDFEmbeddedTextLoader.loadFirstPageText(from:),
         recognizePDFText: @escaping OCRLoader = VisionInvoiceOCR.loadTextFromPDF(from:),
         recognizeImageText: @escaping OCRLoader = VisionInvoiceOCR.loadTextFromImage(from:)
     ) {
         self.extractEmbeddedPDFText = extractEmbeddedPDFText
+        self.extractFirstEmbeddedPDFText = extractFirstEmbeddedPDFText
         self.recognizePDFText = recognizePDFText
         self.recognizeImageText = recognizeImageText
     }
@@ -60,13 +66,18 @@ struct DocumentTextExtractor: DocumentTextExtracting {
         switch fileType {
         case .pdf:
             if let text = Self.normalizeText(try extractEmbeddedPDFText(fileURL)) {
-                return InvoiceTextRecord(text: text, source: .pdfText)
+                return InvoiceTextRecord(
+                    text: text,
+                    firstPageText: Self.normalizeText(try extractFirstEmbeddedPDFText(fileURL)) ?? text,
+                    source: .pdfText
+                )
             }
 
             if let ocrResult = try await recognizePDFText(fileURL),
                let text = Self.normalizeText(ocrResult.text) {
                 return InvoiceTextRecord(
                     text: text,
+                    firstPageText: Self.normalizeText(ocrResult.firstPageText) ?? text,
                     source: .ocr,
                     ocrConfidence: ocrResult.confidence,
                     ocrOriginalText: Self.normalizeText(ocrResult.originalText)
@@ -82,6 +93,7 @@ struct DocumentTextExtractor: DocumentTextExtracting {
             }
             return InvoiceTextRecord(
                 text: text,
+                firstPageText: Self.normalizeText(ocrResult.firstPageText) ?? text,
                 source: .ocr,
                 ocrConfidence: ocrResult.confidence,
                 ocrOriginalText: Self.normalizeText(ocrResult.originalText)
@@ -137,6 +149,14 @@ private enum PDFEmbeddedTextLoader {
 
         return document.string
     }
+
+    static func loadFirstPageText(from fileURL: URL) throws -> String? {
+        guard let document = PDFDocument(url: fileURL) else {
+            throw DocumentTextExtractionError.unreadablePDF
+        }
+
+        return document.page(at: 0)?.string
+    }
 }
 
 private enum VisionInvoiceOCR {
@@ -162,10 +182,11 @@ private enum VisionInvoiceOCR {
         return try await Task.detached(priority: .utility) {
             var reflowedChunks: [String] = []
             var originalChunks: [String] = []
+            var firstPageReflowedText: String?
             var weightedConfidenceSum = 0.0
             var weightedConfidenceCount = 0
 
-            for image in images {
+            for (index, image) in images.enumerated() {
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = .accurate
                 request.usesLanguageCorrection = true
@@ -203,6 +224,10 @@ private enum VisionInvoiceOCR {
                 if !reflowedPageText.isEmpty {
                     reflowedChunks.append(reflowedPageText)
                 }
+
+                if index == 0 {
+                    firstPageReflowedText = reflowedPageText.isEmpty ? originalPageText : reflowedPageText
+                }
             }
 
             let reflowedText = reflowedChunks.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -215,6 +240,7 @@ private enum VisionInvoiceOCR {
                 : nil
             return OCRTextResult(
                 text: chosenText,
+                firstPageText: firstPageReflowedText,
                 originalText: originalText.isEmpty ? nil : originalText,
                 confidence: confidence
             )
@@ -260,8 +286,21 @@ private enum VisionInvoiceOCR {
 
 struct OCRTextResult: Equatable, Sendable {
     let text: String
+    let firstPageText: String?
     let originalText: String?
     let confidence: Double?
+
+    init(
+        text: String,
+        firstPageText: String? = nil,
+        originalText: String?,
+        confidence: Double?
+    ) {
+        self.text = text
+        self.firstPageText = firstPageText
+        self.originalText = originalText
+        self.confidence = confidence
+    }
 }
 
 struct OCRLineObservation: Equatable, Sendable {

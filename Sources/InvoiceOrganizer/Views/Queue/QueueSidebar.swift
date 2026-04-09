@@ -121,6 +121,7 @@ struct QueueSidebar: View {
                     readStatesByArtifactID: model.readStatesByArtifactID,
                     documentMetadataByArtifactID: model.documentMetadataByArtifactID,
                     duplicateBadgeTitlesByArtifactID: model.duplicateBadgeTitlesByArtifactID,
+                    possibleSameInvoiceBadgeTitlesByArtifactID: model.possibleSameInvoiceBadgeTitlesByArtifactID,
                     ignoredArtifactIDs: model.ignoredArtifactIDs,
                     selectedArtifactIDs: selectedArtifactIDsBinding,
                     onMoveToInProgress: { orderedIDs in

@@ -18,13 +18,15 @@ enum DuplicateDetector {
     ) -> [ArtifactDuplicateCluster] {
         extractedTextDuplicateGroups(
             for: files,
-            tokenSetsByContentHash: normalizedTokenSets(from: textRecordsByContentHash)
+            tokenSetsByContentHash: normalizedTokenSets(from: textRecordsByContentHash),
+            firstPageTokenSetsByContentHash: normalizedFirstPageTokenSets(from: textRecordsByContentHash)
         )
     }
 
     static func extractedTextDuplicateGroups(
         for files: [ScannedInvoiceFile],
-        tokenSetsByContentHash: [String: Set<String>]
+        tokenSetsByContentHash: [String: Set<String>],
+        firstPageTokenSetsByContentHash: [String: Set<String>] = [:]
     ) -> [ArtifactDuplicateCluster] {
         duplicateClusters(
             candidates: files.map {
@@ -38,6 +40,7 @@ enum DuplicateDetector {
                 )
             },
             tokenSetsByContentHash: tokenSetsByContentHash,
+            firstPageTokenSetsByContentHash: firstPageTokenSetsByContentHash,
             structuredSignaturesByContentHash: [:]
         )
     }
@@ -45,6 +48,7 @@ enum DuplicateDetector {
     static func extractedTextDuplicateGroups(
         for files: [ScannedInvoiceFile],
         tokenSetsByContentHash: [String: Set<String>],
+        firstPageTokenSetsByContentHash: [String: Set<String>] = [:],
         structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord]
     ) -> [ArtifactDuplicateCluster] {
         duplicateClusters(
@@ -59,6 +63,7 @@ enum DuplicateDetector {
                 )
             },
             tokenSetsByContentHash: tokenSetsByContentHash,
+            firstPageTokenSetsByContentHash: firstPageTokenSetsByContentHash,
             structuredSignaturesByContentHash: structuredDuplicateSignatures(from: structuredRecordsByContentHash)
         )
     }
@@ -69,13 +74,15 @@ enum DuplicateDetector {
     ) -> [ArtifactDuplicateCluster] {
         extractedTextDuplicateGroups(
             for: invoices,
-            tokenSetsByContentHash: normalizedTokenSets(from: textRecordsByContentHash)
+            tokenSetsByContentHash: normalizedTokenSets(from: textRecordsByContentHash),
+            firstPageTokenSetsByContentHash: normalizedFirstPageTokenSets(from: textRecordsByContentHash)
         )
     }
 
     static func extractedTextDuplicateGroups(
         for invoices: [PhysicalArtifact],
-        tokenSetsByContentHash: [String: Set<String>]
+        tokenSetsByContentHash: [String: Set<String>],
+        firstPageTokenSetsByContentHash: [String: Set<String>] = [:]
     ) -> [ArtifactDuplicateCluster] {
         duplicateClusters(
             candidates: invoices.map {
@@ -89,6 +96,7 @@ enum DuplicateDetector {
                 )
             },
             tokenSetsByContentHash: tokenSetsByContentHash,
+            firstPageTokenSetsByContentHash: firstPageTokenSetsByContentHash,
             structuredSignaturesByContentHash: [:]
         )
     }
@@ -96,6 +104,7 @@ enum DuplicateDetector {
     static func extractedTextDuplicateGroups(
         for invoices: [PhysicalArtifact],
         tokenSetsByContentHash: [String: Set<String>],
+        firstPageTokenSetsByContentHash: [String: Set<String>] = [:],
         structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord]
     ) -> [ArtifactDuplicateCluster] {
         duplicateClusters(
@@ -110,6 +119,7 @@ enum DuplicateDetector {
                 )
             },
             tokenSetsByContentHash: tokenSetsByContentHash,
+            firstPageTokenSetsByContentHash: firstPageTokenSetsByContentHash,
             structuredSignaturesByContentHash: structuredDuplicateSignatures(from: structuredRecordsByContentHash)
         )
     }
@@ -117,6 +127,7 @@ enum DuplicateDetector {
     private static func duplicateClusters(
         candidates: [DuplicateCandidate],
         tokenSetsByContentHash: [String: Set<String>],
+        firstPageTokenSetsByContentHash: [String: Set<String>],
         structuredSignaturesByContentHash: [String: StructuredDuplicateSignature]
     ) -> [ArtifactDuplicateCluster] {
         let candidatesWithTokens = candidates.compactMap { candidate -> CandidateTextSignature? in
@@ -128,6 +139,7 @@ enum DuplicateDetector {
             return CandidateTextSignature(
                 candidate: candidate,
                 tokens: tokens,
+                firstPageTokens: firstPageTokenSetsByContentHash[contentHash],
                 structuredSignature: structuredSignaturesByContentHash[contentHash]
             )
         }
@@ -168,6 +180,18 @@ enum DuplicateDetector {
         )
     }
 
+    static func normalizedFirstPageTokenSets(from textRecordsByContentHash: [String: InvoiceTextRecord]) -> [String: Set<String>] {
+        Dictionary(
+            uniqueKeysWithValues: textRecordsByContentHash.compactMap { contentHash, record in
+                guard let tokens = normalizedTokenSet(for: record.firstPageText), !tokens.isEmpty else {
+                    return nil
+                }
+
+                return (contentHash, tokens)
+            }
+        )
+    }
+
     private static func bestMatchingGroupIndex(
         for candidate: CandidateTextSignature,
         in groups: [[CandidateTextSignature]]
@@ -177,13 +201,22 @@ enum DuplicateDetector {
 
         for (index, group) in groups.enumerated() {
             let groupBestScore = group.reduce(0.0) { currentBest, member in
-                let score = jaccardSimilarity(candidate.tokens, member.tokens)
                 let hasStructuredMatch = candidate.structuredSignature != nil &&
                     candidate.structuredSignature == member.structuredSignature
+                let score = jaccardSimilarity(candidate.tokens, member.tokens)
 
-                if score >= similarityThreshold ||
-                    (hasStructuredMatch && score >= structuredMatchSimilarityThreshold) {
+                if meetsRoundedThreshold(score, threshold: similarityThreshold) ||
+                    (hasStructuredMatch && meetsRoundedThreshold(score, threshold: structuredMatchSimilarityThreshold)) {
                     return max(currentBest, score)
+                }
+
+                if hasStructuredMatch,
+                   let candidateFirstPageTokens = candidate.firstPageTokens,
+                   let memberFirstPageTokens = member.firstPageTokens {
+                    let firstPageScore = jaccardSimilarity(candidateFirstPageTokens, memberFirstPageTokens)
+                    if meetsRoundedThreshold(firstPageScore, threshold: similarityThreshold) {
+                        return max(currentBest, firstPageScore)
+                    }
                 }
 
                 return currentBest
@@ -200,7 +233,7 @@ enum DuplicateDetector {
         return bestIndex
     }
 
-    static func normalizedTokenSet(for text: String) -> Set<String>? {
+    static func normalizedTokenSet(for text: String?) -> Set<String>? {
         guard let normalizedText = DocumentTextExtractor.normalizeText(text) else { return nil }
 
         let lowercased = normalizedText.lowercased()
@@ -218,6 +251,14 @@ enum DuplicateDetector {
         guard !union.isEmpty else { return 1.0 }
         let intersection = lhs.intersection(rhs)
         return Double(intersection.count) / Double(union.count)
+    }
+
+    static func meetsRoundedThreshold(_ score: Double, threshold: Double) -> Bool {
+        roundedPercent(score) >= roundedPercent(threshold)
+    }
+
+    private static func roundedPercent(_ value: Double) -> Int {
+        Int((value * 100).rounded())
     }
 
     private static func structuredDuplicateSignatures(
@@ -269,6 +310,7 @@ private struct DuplicateCandidate: Sendable {
 private struct CandidateTextSignature: Sendable {
     let candidate: DuplicateCandidate
     let tokens: Set<String>
+    let firstPageTokens: Set<String>?
     let structuredSignature: StructuredDuplicateSignature?
 }
 

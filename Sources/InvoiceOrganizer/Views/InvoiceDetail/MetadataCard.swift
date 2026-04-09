@@ -8,8 +8,16 @@ struct MetadataCard: View {
         model.document(for: invoice.id)
     }
 
+    private var documentMetadata: DocumentMetadata {
+        model.documentMetadata(for: invoice.id)
+    }
+
     private var duplicateSimilarities: [DuplicateSimilarity] {
         model.duplicateSimilarities(for: invoice.id)
+    }
+
+    private var possibleSameInvoiceMatches: [PossibleSameInvoiceMatch] {
+        model.possibleSameInvoiceMatches(for: invoice.id)
     }
 
     private var processedFolderPath: String? {
@@ -82,10 +90,49 @@ struct MetadataCard: View {
                     .foregroundStyle(.red)
             }
 
+            if invoice.location != .processed && !possibleSameInvoiceMatches.isEmpty {
+                DisclosureGroup("Possible Same Invoice Matches") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(possibleSameInvoiceMatches) { match in
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(alignment: .firstTextBaseline) {
+                                    Button {
+                                        openPossibleSameInvoiceMatch(match)
+                                    } label: {
+                                        Text(match.matchedFileURL.lastPathComponent)
+                                            .lineLimit(1)
+                                    }
+                                    .buttonStyle(.link)
+
+                                    Spacer()
+
+                                    Text(match.matchedLocation.rawValue)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Text(match.artifactCount == 1
+                                     ? "Matched document has 1 file"
+                                     : "Matched document has \(match.artifactCount) files")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+
+                                Text("Matched fields: \(matchedFieldLabels(for: match).joined(separator: ", "))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .font(.footnote)
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+                .font(.headline)
+            }
+
             if invoice.location != .processed {
                 DisclosureGroup("Dedup Scores") {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Threshold: \(model.duplicateSimilarityThreshold.formatted(.number.precision(.fractionLength(2))))")
+                        Text("Threshold: \(model.duplicateSimilarityThreshold.formatted(.percent.precision(.fractionLength(0))))")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
 
@@ -106,7 +153,7 @@ struct MetadataCard: View {
 
                                         Spacer()
 
-                                        Text(similarity.score.formatted(.number.precision(.fractionLength(2))))
+                                        Text(similarity.score.formatted(.percent.precision(.fractionLength(0))))
                                             .foregroundStyle(similarity.meetsThreshold ? .primary : .secondary)
                                     }
 
@@ -140,5 +187,52 @@ struct MetadataCard: View {
             .background(.quaternary.opacity(0.2))
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .textSelection(.enabled)
+    }
+
+    private func matchedFieldLabels(for match: PossibleSameInvoiceMatch) -> [String] {
+        var labels: [String] = []
+
+        if normalized(documentMetadata.vendor) == normalized(match.metadata.vendor) {
+            labels.append("Vendor")
+        }
+        if documentMetadata.invoiceDate == match.metadata.invoiceDate {
+            labels.append("Invoice Date")
+        }
+        if documentMetadata.documentType == match.metadata.documentType,
+           documentMetadata.documentType != nil {
+            labels.append("Document Type")
+        }
+        if normalized(documentMetadata.invoiceNumber) == normalized(match.metadata.invoiceNumber),
+           normalized(documentMetadata.invoiceNumber) != nil {
+            labels.append("Invoice Number")
+        }
+
+        return labels
+    }
+
+    private func normalized(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+
+        return trimmed
+    }
+
+    private func openPossibleSameInvoiceMatch(_ match: PossibleSameInvoiceMatch) {
+        model.setSelectedQueueTab(queueTab(for: match.matchedLocation))
+        model.setSelectedArtifactIDs([match.matchedArtifactID])
+        model.setSelectedArtifactID(match.matchedArtifactID)
+    }
+
+    private func queueTab(for location: InvoiceLocation) -> InvoiceQueueTab {
+        switch location {
+        case .inbox:
+            return .unprocessed
+        case .processing:
+            return .inProgress
+        case .processed:
+            return .processed
+        }
     }
 }

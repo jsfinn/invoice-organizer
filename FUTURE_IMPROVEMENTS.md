@@ -75,27 +75,3 @@ Potential improvements:
 
 ### Merge Cross-Format Duplicate Families
 
-Observed cases:
-- `IMG_3022.HEIC`
-- `IMG_3022 (1).HEIC`
-- `IMG_3022.jpeg`
-- `IMG_3022 (1).jpeg`
-
-What we observed:
-- The app groups the HEIC files together and the JPEG files together
-- It does not merge the HEIC and JPEG pairs into one duplicate family because cross-format extracted-text similarity falls below the duplicate threshold
-- The files still share the same vendor, date, and receipt classification, and likely represent the same underlying receipt captured/exported in different formats
-
-Current status:
-- Improved by the new `structured match + 80% text similarity` rule
-- The `IMG_3022` HEIC/JPEG family now groups as one duplicate family in the current archive
-- Similar cross-format cases may still need review, but this specific example is no longer open in the same way
-
-Why this matters:
-- Users may see one logical receipt split into multiple duplicate groups simply because the file was converted or exported to another image format
-- Cross-format variants are common when images are copied out of phones or macOS preview/export flows
-
-Potential improvements:
-- Recognize cross-format siblings using metadata agreement plus high-but-subthreshold text similarity
-- Consider using shared capture heuristics or content-family matching to merge HEIC/JPEG variants into one logical duplicate family
-- Where confidence is insufficient for automatic merge, surface the relationship as a reviewable same-document suggestion

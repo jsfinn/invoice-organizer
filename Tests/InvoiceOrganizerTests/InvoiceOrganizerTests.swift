@@ -1274,6 +1274,116 @@ private final class RecordingPreviewPersistHandler {
     #expect(groups.first.map { Set($0.artifactIDs) } == Set([firstInbox.id, secondInbox.id]))
 }
 
+@Test func duplicateDetectorRoundsNinetyPercentThresholdForGrouping() async throws {
+    let firstInbox = ScannedInvoiceFile(
+        id: "/Inbox/rounded-a.jpg",
+        name: "rounded-a.jpg",
+        fileURL: URL(fileURLWithPath: "/Inbox/rounded-a.jpg"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .jpeg,
+        contentHash: "rounded-a"
+    )
+
+    let secondInbox = ScannedInvoiceFile(
+        id: "/Inbox/rounded-b.jpeg",
+        name: "rounded-b.jpeg",
+        fileURL: URL(fileURLWithPath: "/Inbox/rounded-b.jpeg"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .jpeg,
+        contentHash: "rounded-b"
+    )
+
+    let sharedTokens = Set((1...43).map { "token\($0)" })
+    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+        for: [firstInbox, secondInbox],
+        tokenSetsByContentHash: [
+            "rounded-a": sharedTokens,
+            "rounded-b": sharedTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"])
+        ]
+    )
+
+    #expect(abs(DuplicateDetector.jaccardSimilarity(
+        sharedTokens,
+        sharedTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"])
+    ) - (43.0 / 48.0)) < 0.0001)
+    #expect(DuplicateDetector.meetsRoundedThreshold(43.0 / 48.0, threshold: 0.9) == true)
+    #expect(groups.count == 1)
+    #expect(groups.first.map { Set($0.artifactIDs) } == Set([firstInbox.id, secondInbox.id]))
+}
+
+@Test func duplicateDetectorFallsBackToFirstPageWhenWholeDocumentMisses() async throws {
+    let firstInbox = ScannedInvoiceFile(
+        id: "/Inbox/scan0155.pdf",
+        name: "scan0155.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/scan0155.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        contentHash: "two-page"
+    )
+
+    let secondInbox = ScannedInvoiceFile(
+        id: "/Inbox/img_3005.jpeg",
+        name: "img_3005.jpeg",
+        fileURL: URL(fileURLWithPath: "/Inbox/img_3005.jpeg"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .jpeg,
+        contentHash: "one-page"
+    )
+
+    let firstPageTokens = Set((1...43).map { "token\($0)" })
+    let secondPageOnlyTokens = Set((1...35).map { "page2token\($0)" })
+    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+        for: [firstInbox, secondInbox],
+        tokenSetsByContentHash: [
+            "two-page": firstPageTokens.union(secondPageOnlyTokens),
+            "one-page": firstPageTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"])
+        ],
+        firstPageTokenSetsByContentHash: [
+            "two-page": firstPageTokens,
+            "one-page": firstPageTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"])
+        ],
+        structuredRecordsByContentHash: [
+            "two-page": InvoiceStructuredDataRecord(
+                companyName: "New England Mutual Trading, Inc",
+                invoiceNumber: "5806772",
+                invoiceDate: utcDate(year: 2026, month: 3, day: 6),
+                documentType: .invoice,
+                provider: .lmStudio,
+                modelName: "test-model"
+            ),
+            "one-page": InvoiceStructuredDataRecord(
+                companyName: "New England Mutual Trading, Inc",
+                invoiceNumber: "5806772",
+                invoiceDate: utcDate(year: 2026, month: 3, day: 6),
+                documentType: .invoice,
+                provider: .lmStudio,
+                modelName: "test-model"
+            )
+        ]
+    )
+
+    #expect(DuplicateDetector.meetsRoundedThreshold(43.0 / 83.0, threshold: 0.8) == false)
+    #expect(DuplicateDetector.meetsRoundedThreshold(43.0 / 48.0, threshold: 0.9) == true)
+    #expect(groups.count == 1)
+    #expect(groups.first.map { Set($0.artifactIDs) } == Set([firstInbox.id, secondInbox.id]))
+}
+
 @Test func browserRowsCollapseAndExpandDuplicateGroups() async throws {
     let first = PhysicalArtifact(
         name: "invoice.pdf",
@@ -1640,11 +1750,171 @@ private final class RecordingPreviewPersistHandler {
         from: [first, second],
         workflowsByArtifactID: [:],
         documentMetadataHintsByArtifactID: [:],
-        duplicateTokensByHash: [:]
+        duplicateTokensByHash: [:],
+        duplicateFirstPageTokensByHash: [:]
     )
 
     #expect(snapshot.artifacts.count == 2)
     #expect(snapshot.documents.count == 2)
+}
+
+@Test func librarySnapshotBuilderExposesPossibleSameInvoiceMatchesForInvoices() async throws {
+    let first = PhysicalArtifact(
+        name: "invoice-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-a.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        status: .unprocessed,
+        contentHash: "invoice-a"
+    )
+    let second = PhysicalArtifact(
+        name: "invoice-b.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-b.pdf"),
+        location: .processing,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        status: .inProgress,
+        contentHash: "invoice-b"
+    )
+
+    let snapshot = LibrarySnapshotBuilder(
+        structuredRecordForContentHash: { contentHash in
+            switch contentHash {
+            case "invoice-a", "invoice-b":
+                InvoiceStructuredDataRecord(
+                    companyName: "Acme Corp",
+                    invoiceNumber: "INV-42",
+                    invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                    documentType: .invoice,
+                    provider: .lmStudio,
+                    modelName: "test-model"
+                )
+            default:
+                nil
+            }
+        }
+    )
+    .build(
+        from: [first, second],
+        workflowsByArtifactID: [:],
+        documentMetadataHintsByArtifactID: [:],
+        duplicateTokensByHash: [:],
+        duplicateFirstPageTokensByHash: [:]
+    )
+
+    let firstMatches = snapshot.possibleSameInvoiceMatchesByArtifactID[first.id]
+    let secondMatches = snapshot.possibleSameInvoiceMatchesByArtifactID[second.id]
+
+    #expect(firstMatches?.count == 1)
+    #expect(firstMatches?.first?.matchedArtifactID == second.id)
+    #expect(firstMatches?.first?.matchedLocation == .processing)
+    #expect(secondMatches?.count == 1)
+    #expect(secondMatches?.first?.matchedArtifactID == first.id)
+    #expect(secondMatches?.first?.matchedLocation == .inbox)
+}
+
+@Test func librarySnapshotBuilderExposesPossibleSameInvoiceMatchesForReceiptsWithoutInvoiceNumber() async throws {
+    let first = PhysicalArtifact(
+        name: "receipt-a.heic",
+        fileURL: URL(fileURLWithPath: "/Inbox/receipt-a.heic"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .heic,
+        status: .unprocessed,
+        contentHash: "receipt-a"
+    )
+    let second = PhysicalArtifact(
+        name: "receipt-b.jpeg",
+        fileURL: URL(fileURLWithPath: "/Processed/receipt-b.jpeg"),
+        location: .processed,
+        processedAt: Date(timeIntervalSince1970: 30),
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .jpeg,
+        status: .processed,
+        contentHash: "receipt-b"
+    )
+
+    let snapshot = LibrarySnapshotBuilder(
+        structuredRecordForContentHash: { contentHash in
+            switch contentHash {
+            case "receipt-a", "receipt-b":
+                InvoiceStructuredDataRecord(
+                    companyName: "Staples",
+                    invoiceNumber: nil,
+                    invoiceDate: utcDate(year: 2024, month: 3, day: 21),
+                    documentType: .receipt,
+                    provider: .lmStudio,
+                    modelName: "test-model"
+                )
+            default:
+                nil
+            }
+        }
+    )
+    .build(
+        from: [first, second],
+        workflowsByArtifactID: [:],
+        documentMetadataHintsByArtifactID: [:],
+        duplicateTokensByHash: [:],
+        duplicateFirstPageTokensByHash: [:]
+    )
+
+    #expect(snapshot.possibleSameInvoiceMatchesByArtifactID[first.id]?.first?.matchedArtifactID == second.id)
+    #expect(snapshot.possibleSameInvoiceMatchesByArtifactID[second.id]?.first?.matchedArtifactID == first.id)
+}
+
+@Test func librarySnapshotBuilderDoesNotExposePossibleSameInvoiceMatchesWithinDuplicateDocument() async throws {
+    let first = PhysicalArtifact(
+        name: "duplicate-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/duplicate-a.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        status: .unprocessed,
+        contentHash: "duplicate-a"
+    )
+    let second = PhysicalArtifact(
+        name: "duplicate-b.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/duplicate-b.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        status: .unprocessed,
+        contentHash: "duplicate-b"
+    )
+
+    let snapshot = LibrarySnapshotBuilder(
+        structuredRecordForContentHash: { contentHash in
+            switch contentHash {
+            case "duplicate-a", "duplicate-b":
+                InvoiceStructuredDataRecord(
+                    companyName: "Acme Corp",
+                    invoiceNumber: "INV-42",
+                    invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                    documentType: .invoice,
+                    provider: .lmStudio,
+                    modelName: "test-model"
+                )
+            default:
+                nil
+            }
+        }
+    )
+    .build(
+        from: [first, second],
+        workflowsByArtifactID: [:],
+        documentMetadataHintsByArtifactID: [:],
+        duplicateTokensByHash: [
+            "duplicate-a": Set(["acme", "invoice", "inv42"]),
+            "duplicate-b": Set(["acme", "invoice", "inv42"])
+        ],
+        duplicateFirstPageTokensByHash: [:]
+    )
+
+    #expect(snapshot.documents.count == 1)
+    #expect(snapshot.possibleSameInvoiceMatchesByArtifactID[first.id] == nil)
+    #expect(snapshot.possibleSameInvoiceMatchesByArtifactID[second.id] == nil)
 }
 
 @Test func appModelReportsDedupSimilarityScoresForInvoice() async throws {
@@ -1703,6 +1973,31 @@ private final class RecordingPreviewPersistHandler {
     #expect(similarities[0].artifactCount == 1)
     #expect(similarities[1].matchedFileURL.lastPathComponent == "incoming-3.pdf")
     #expect(abs(similarities[1].score - (2.0 / 6.0)) < 0.0001)
+}
+
+@Test func documentBestSimilarityRoundsNinetyPercentThreshold() async throws {
+    let match = DocumentArtifactReference(
+        id: "/Inbox/rounded-b.jpeg",
+        fileURL: URL(fileURLWithPath: "/Inbox/rounded-b.jpeg"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .jpeg,
+        contentHash: "rounded-b"
+    )
+    let sharedTokens = Set((1...43).map { "token\($0)" })
+    let matchedTokens = sharedTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"])
+    let document = Document(artifacts: [match], metadata: .empty)
+
+    let similarity = try #require(
+        document.bestSimilarity(
+            to: sharedTokens,
+            tokensByArtifactID: [match.id: matchedTokens],
+            threshold: 0.9
+        )
+    )
+
+    #expect(abs(similarity.score - (43.0 / 48.0)) < 0.0001)
+    #expect(similarity.meetsThreshold == true)
 }
 
 @Test func appModelBuildsDistinctSingletonDocumentsForMatchingContentHashes() async throws {
@@ -2070,6 +2365,10 @@ private final class RecordingPreviewPersistHandler {
             callLog.append("pdfText")
             return "Vendor Invoice\nInvoice 42"
         },
+        extractFirstEmbeddedPDFText: { _ in
+            callLog.append("pdfFirstPageText")
+            return "Vendor Invoice"
+        },
         recognizePDFText: { _ in
             callLog.append("pdfOCR")
             return OCRTextResult(text: "Should not run", originalText: nil, confidence: 0.25)
@@ -2084,8 +2383,9 @@ private final class RecordingPreviewPersistHandler {
 
     #expect(record?.source == .pdfText)
     #expect(record?.text == "Vendor Invoice\nInvoice 42")
+    #expect(record?.firstPageText == "Vendor Invoice")
     #expect(record?.ocrConfidence == nil)
-    #expect(callLog.snapshot() == ["pdfText"])
+    #expect(callLog.snapshot() == ["pdfText", "pdfFirstPageText"])
 }
 
 @Test func documentTextExtractorFallsBackToOCRWhenEmbeddedPDFTextIsEmpty() async throws {
@@ -2113,6 +2413,7 @@ private final class RecordingPreviewPersistHandler {
 
     #expect(record?.source == .ocr)
     #expect(record?.text == "Scanned Invoice\nTotal 42.00")
+    #expect(record?.firstPageText == "Scanned Invoice\nTotal 42.00")
     #expect(record?.ocrConfidence == 0.74)
     #expect(callLog.snapshot() == ["pdfText", "pdfOCR"])
 }
@@ -2321,6 +2622,144 @@ private final class RecordingPreviewPersistHandler {
         return inboxInvoice.flatMap { model.duplicateBadgeTitlesByArtifactID[$0.id] }
     }
     #expect(badgeTitle == "Duplicate Processed")
+}
+
+@Test func appModelUsesPossibleSameInvoiceBadgeForStructuredMatches() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstInvoiceURL = inboxRoot.appendingPathComponent("incoming-1.pdf")
+    let secondInvoiceURL = inboxRoot.appendingPathComponent("incoming-2.pdf")
+    try Data("first-file-body".utf8).write(to: firstInvoiceURL)
+    try Data("second-file-body".utf8).write(to: secondInvoiceURL)
+
+    let structuredStore = InMemoryInvoiceStructuredDataStore()
+    let firstHash = try FileHasher.sha256(for: firstInvoiceURL)
+    let secondHash = try FileHasher.sha256(for: secondInvoiceURL)
+    await structuredStore.save(
+        InvoiceStructuredDataRecord(
+            companyName: "Acme Corp",
+            invoiceNumber: "INV-42",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            documentType: .invoice,
+            provider: .lmStudio,
+            modelName: "qwen-local"
+        ),
+        forContentHash: firstHash
+    )
+    await structuredStore.save(
+        InvoiceStructuredDataRecord(
+            companyName: "Acme Corp",
+            invoiceNumber: "INV-42",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            documentType: .invoice,
+            provider: .lmStudio,
+            modelName: "qwen-local"
+        ),
+        forContentHash: secondHash
+    )
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(
+                inboxURL: inboxRoot,
+                processedURL: processedRoot,
+                processingURL: processingRoot,
+                duplicatesURL: duplicatesRoot
+            ),
+            workflowByID: [:],
+            textStore: InMemoryInvoiceTextStore(),
+            textExtractor: MockDocumentTextExtractor(),
+            structuredDataStore: structuredStore,
+            structuredExtractionClient: MockStructuredExtractionClient(),
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "", modelName: "", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+
+    let badgeTitles = await MainActor.run {
+        model.invoices.reduce(into: [String: String]()) { result, invoice in
+            if let badgeTitle = model.possibleSameInvoiceBadgeTitlesByArtifactID[invoice.id] {
+                result[invoice.id] = badgeTitle
+            }
+        }
+    }
+
+    #expect(badgeTitles.count == 2)
+    #expect(Set(badgeTitles.values) == Set(["Possible Same Invoice"]))
+}
+
+@Test func appModelReturnsPossibleSameInvoiceMatchesForStructuredMatches() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let duplicatesRoot = tempRoot.appendingPathComponent("Duplicates", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: duplicatesRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstInvoiceURL = inboxRoot.appendingPathComponent("incoming-1.pdf")
+    let secondInvoiceURL = processingRoot.appendingPathComponent("incoming-2.pdf")
+    try Data("first-file-body".utf8).write(to: firstInvoiceURL)
+    try Data("second-file-body".utf8).write(to: secondInvoiceURL)
+
+    let structuredStore = InMemoryInvoiceStructuredDataStore()
+    let firstHash = try FileHasher.sha256(for: firstInvoiceURL)
+    let secondHash = try FileHasher.sha256(for: secondInvoiceURL)
+    let sharedRecord = InvoiceStructuredDataRecord(
+        companyName: "Acme Corp",
+        invoiceNumber: "INV-42",
+        invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+        documentType: .invoice,
+        provider: .lmStudio,
+        modelName: "qwen-local"
+    )
+    await structuredStore.save(sharedRecord, forContentHash: firstHash)
+    await structuredStore.save(sharedRecord, forContentHash: secondHash)
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(
+                inboxURL: inboxRoot,
+                processedURL: processedRoot,
+                processingURL: processingRoot,
+                duplicatesURL: duplicatesRoot
+            ),
+            workflowByID: [:],
+            textStore: InMemoryInvoiceTextStore(),
+            textExtractor: MockDocumentTextExtractor(),
+            structuredDataStore: structuredStore,
+            structuredExtractionClient: MockStructuredExtractionClient(),
+            llmSettings: LLMSettings(provider: .lmStudio, baseURL: "", modelName: "", apiKey: "", customInstructions: ""),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+
+    let matches = try #require(await MainActor.run {
+        let inboxInvoice = model.invoices.first(where: { $0.location == .inbox })
+        return inboxInvoice.map { model.possibleSameInvoiceMatches(for: $0.id) }
+    })
+
+    #expect(matches.count == 1)
+    #expect(matches.first?.matchedLocation == .processing)
+    #expect(matches.first?.matchedFileURL.lastPathComponent == "incoming-2.pdf")
+    #expect(matches.first?.metadata.vendor == "Acme Corp")
+    #expect(matches.first?.metadata.invoiceNumber == "INV-42")
 }
 
 @Test func appModelMovesUnprocessedDuplicatePeersToDuplicatesFolderWhenProcessingStarts() async throws {
