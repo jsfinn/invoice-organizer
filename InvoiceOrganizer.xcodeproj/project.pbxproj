@@ -29,6 +29,7 @@
 		52FC2731E83E4A0C378F19C2 /* InvoiceInternalDrag.swift in Sources */ = {isa = PBXBuildFile; fileRef = B35FE8B116D9A63DD99B2CD7 /* InvoiceInternalDrag.swift */; };
 		59DBDC8510729494AF771643 /* DuplicateDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A28C5011B0C04CA094EC2609 /* DuplicateDetector.swift */; };
 		619BDB7310BD91F7B64A5AE2 /* PreviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19C3303215CD07153C549E46 /* PreviewCard.swift */; };
+		632AA60CA3CB899E01E5393D /* AppStorageKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 539E3D8463B2C036C9957727 /* AppStorageKeys.swift */; };
 		674515D41F153EC079AB144F /* DragExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C2B0EF7678E0C79BC24E477 /* DragExportService.swift */; };
 		690DBE2327AFFDD86FCAB2A3 /* PreviewCommitRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39F70B699EF2BE473851EF93 /* PreviewCommitRequest.swift */; };
 		69D8B620E43207AF67A772B6 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A587DF34889CF4FA79C18976 /* SettingsView.swift */; };
@@ -87,6 +88,7 @@
 		3F148EE8CC3F868A3314FE06 /* QueueStatusCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueStatusCard.swift; sourceTree = "<group>"; };
 		43D52179153F771CF8FB386D /* InvoiceWorkflowStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceWorkflowStore.swift; sourceTree = "<group>"; };
 		466579A9DB3D8829B3512351 /* DataEntryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataEntryCard.swift; sourceTree = "<group>"; };
+		539E3D8463B2C036C9957727 /* AppStorageKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStorageKeys.swift; sourceTree = "<group>"; };
 		54CB09A3CB7ADCEEC97939DA /* ActivePreviewContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivePreviewContext.swift; sourceTree = "<group>"; };
 		5C2B0EF7678E0C79BC24E477 /* DragExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragExportService.swift; sourceTree = "<group>"; };
 		5EAC66A753028AC2F98A8C20 /* CommitOnBlurTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitOnBlurTextField.swift; sourceTree = "<group>"; };
@@ -305,6 +307,7 @@
 		B0C58A3062C1386ACB590BD3 /* InvoiceOrganizer */ = {
 			isa = PBXGroup;
 			children = (
+				539E3D8463B2C036C9957727 /* AppStorageKeys.swift */,
 				1D393E630B373F584368E1C1 /* Assets.xcassets */,
 				A10DF2A883449B3756EB0884 /* ContentView.swift */,
 				25AE75170AD6AFA7BA874908 /* Info.plist */,
@@ -404,7 +407,7 @@
 			path = State;
 			sourceTree = "<group>";
 		};
-		"TEMP_0F2A81A3-DFB7-4261-AA9E-5C3E804E15D1" /* Resources */ = {
+		"TEMP_23D75E49-7999-4C42-9C76-489F3078723D" /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -499,6 +502,7 @@
 			files = (
 				888957EC03D662551738A5F1 /* ActivePreviewContext.swift in Sources */,
 				76ACC649AB66DB4F0C6A9380 /* AppModel.swift in Sources */,
+				632AA60CA3CB899E01E5393D /* AppStorageKeys.swift in Sources */,
 				6BBBDC0A858120A4FFA00036 /* ArchivePathBuilder.swift in Sources */,
 				DE099784CA01A55E7785B247 /* ArtifactAccessCoordinator.swift in Sources */,
 				50DDBA9ADE86B41DF95FFB33 /* ArtifactComputationCache.swift in Sources */,
@@ -675,14 +679,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/InvoiceOrganizer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.3.4;
+				MARKETING_VERSION = 0.3.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pkm.invoiceorganizer;
 				PRODUCT_MODULE_NAME = InvoiceOrganizer;
 				PRODUCT_NAME = "Invoice Organizer";
@@ -696,14 +700,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/InvoiceOrganizer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.3.4;
+				MARKETING_VERSION = 0.3.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pkm.invoiceorganizer;
 				PRODUCT_MODULE_NAME = InvoiceOrganizer;
 				PRODUCT_NAME = "Invoice Organizer";
