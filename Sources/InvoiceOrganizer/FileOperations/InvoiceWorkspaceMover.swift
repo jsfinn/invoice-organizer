@@ -5,8 +5,12 @@ enum InvoiceWorkspaceMover {
         try move(invoice, to: processingRoot)
     }
 
+    static func moveToArchive(_ invoice: PhysicalArtifact, archiveRoot: URL) throws -> URL {
+        try move(invoice, to: archiveRoot)
+    }
+
     static func moveToDuplicates(_ invoice: PhysicalArtifact, duplicatesRoot: URL) throws -> URL {
-        try move(invoice, to: duplicatesRoot)
+        try moveToArchive(invoice, archiveRoot: duplicatesRoot)
     }
 
     static func moveToInbox(_ invoice: PhysicalArtifact, inboxRoot: URL) throws -> URL {

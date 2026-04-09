@@ -120,6 +120,11 @@ struct QueueSidebar: View {
                             await model.rescanInvoices(ids: model.selectedArtifactIDs)
                         }
                     },
+                    onArchive: { orderedIDs in
+                        Task {
+                            await model.archiveInvoices(ids: orderedIDs)
+                        }
+                    },
                     onOpenInPreview: { orderedIDs in
                         model.openInPreview(ids: orderedIDs)
                     },

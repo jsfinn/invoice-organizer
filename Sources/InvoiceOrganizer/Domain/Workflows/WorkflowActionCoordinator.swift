@@ -200,6 +200,43 @@ struct WorkflowActionCoordinator {
         )
     }
 
+    func moveToArchive(
+        orderedIDs: [PhysicalArtifact.ID],
+        artifacts: [PhysicalArtifact],
+        workflowsByID: [String: StoredInvoiceWorkflow],
+        archiveRoot: URL
+    ) throws -> WorkflowActionResult {
+        let artifactByID = Dictionary(uniqueKeysWithValues: artifacts.map { ($0.id, $0) })
+        var seenIDs: Set<PhysicalArtifact.ID> = []
+        var selectedArtifacts: [PhysicalArtifact] = []
+        for artifactID in orderedIDs {
+            guard seenIDs.insert(artifactID).inserted,
+                  let artifact = artifactByID[artifactID] else {
+                continue
+            }
+            selectedArtifacts.append(artifact)
+        }
+
+        guard !selectedArtifacts.isEmpty else {
+            return WorkflowActionResult(
+                workflowsByID: workflowsByID,
+                selectedArtifactIDs: []
+            )
+        }
+
+        var nextWorkflows = workflowsByID
+
+        for artifact in selectedArtifacts {
+            _ = try InvoiceWorkspaceMover.moveToArchive(artifact, archiveRoot: archiveRoot)
+            nextWorkflows.removeValue(forKey: artifact.id)
+        }
+
+        return WorkflowActionResult(
+            workflowsByID: nextWorkflows,
+            selectedArtifactIDs: []
+        )
+    }
+
     func applyWorkflow(
         _ workflow: StoredInvoiceWorkflow,
         to artifactID: PhysicalArtifact.ID,

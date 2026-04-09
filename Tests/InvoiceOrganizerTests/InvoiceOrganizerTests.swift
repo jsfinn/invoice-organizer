@@ -2915,6 +2915,79 @@ private final class RecordingPreviewPersistHandler {
     #expect(remainingInvoices.count == 1)
 }
 
+@Test func appModelArchivesSelectedInvoicesAndForgetsOrphanedCaches() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    let archiveRoot = tempRoot.appendingPathComponent("Archive", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: archiveRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let invoiceURL = inboxRoot.appendingPathComponent("incoming.pdf")
+    try Data("archivable-body".utf8).write(to: invoiceURL)
+    let contentHash = try FileHasher.sha256(for: invoiceURL)
+
+    let textStore = InMemoryInvoiceTextStore()
+    let structuredStore = InMemoryInvoiceStructuredDataStore()
+    await textStore.save(
+        InvoiceTextRecord(text: "Vendor: Archive Test\nInvoice: INV-1", source: .pdfText),
+        forContentHash: contentHash
+    )
+    await structuredStore.save(
+        InvoiceStructuredDataRecord(
+            companyName: "Archive Test",
+            invoiceNumber: "INV-1",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            documentType: .invoice,
+            provider: .lmStudio,
+            modelName: "test-model"
+        ),
+        forContentHash: contentHash
+    )
+
+    let model = await MainActor.run {
+        AppModel(
+            folderSettings: FolderSettings(
+                inboxURL: inboxRoot,
+                processedURL: processedRoot,
+                processingURL: processingRoot,
+                duplicatesURL: archiveRoot
+            ),
+            workflowByID: [:],
+            textStore: textStore,
+            textExtractor: MockDocumentTextExtractor(),
+            structuredDataStore: structuredStore,
+            structuredExtractionClient: MockStructuredExtractionClient(),
+            autoRefresh: false
+        )
+    }
+
+    await model.reloadLibraryForTesting()
+
+    let invoiceID = try #require(await MainActor.run { model.invoices.first?.id })
+    #expect(await MainActor.run { model.extractedTextHashes } == Set([contentHash]))
+    #expect(await MainActor.run { model.structuredDataHashes } == Set([contentHash]))
+
+    await model.archiveInvoices(ids: [invoiceID])
+
+    let archiveFiles = try FileManager.default.contentsOfDirectory(
+        at: archiveRoot,
+        includingPropertiesForKeys: nil
+    )
+
+    #expect(await MainActor.run { model.invoices.isEmpty })
+    #expect(await MainActor.run { model.documents.isEmpty })
+    #expect(await MainActor.run { model.extractedTextHashes.isEmpty })
+    #expect(await MainActor.run { model.structuredDataHashes.isEmpty })
+    #expect(await textStore.cachedContentHashes().isEmpty)
+    #expect(await structuredStore.cachedContentHashes().isEmpty)
+    #expect(archiveFiles.map(\.lastPathComponent) == ["incoming.pdf"])
+}
+
 @Test func appModelLeavesAllInboxPeersActionableAfterExtractionBackedReload() async throws {
     let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)

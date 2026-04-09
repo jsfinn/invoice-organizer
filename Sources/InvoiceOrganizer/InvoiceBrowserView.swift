@@ -17,6 +17,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
     let onMoveToUnprocessed: () -> Void
     let onMoveToProcessed: () -> Void
     let onRescan: () -> Void
+    let onArchive: ([PhysicalArtifact.ID]) -> Void
     let onOpenInPreview: ([PhysicalArtifact.ID]) -> Void
     let onVendorChange: (PhysicalArtifact.ID, String) -> Void
     let onInvoiceDateChange: (PhysicalArtifact.ID, Date) -> Void
@@ -408,6 +409,10 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 let openInPreviewItem = NSMenuItem(title: "Open in Preview", action: #selector(openSelectionInPreview), keyEquivalent: "")
                 openInPreviewItem.target = self
                 menu.addItem(openInPreviewItem)
+
+                let archiveItem = NSMenuItem(title: "Archive", action: #selector(archiveSelection), keyEquivalent: "")
+                archiveItem.target = self
+                menu.addItem(archiveItem)
             }
 
             tableView.menu = menu
@@ -437,6 +442,11 @@ struct InvoiceBrowserView: NSViewRepresentable {
         @objc
         private func openSelectionInPreview() {
             parent.onOpenInPreview(orderedSelectedInvoiceIDs())
+        }
+
+        @objc
+        private func archiveSelection() {
+            parent.onArchive(orderedSelectedInvoiceIDs())
         }
 
         private func syncSelection(to selectedIDs: Set<PhysicalArtifact.ID>) {

@@ -591,6 +591,61 @@ final class AppModel: ObservableObject {
         moveInvoicesToInProgress(ids: orderedSelectedIDs)
     }
 
+    func archiveInvoices(ids: [PhysicalArtifact.ID]) async {
+        guard let archiveRoot = folderSettings.duplicatesURL else {
+            settingsErrorMessage = "Choose an Archive folder before archiving invoices."
+            return
+        }
+
+        var seenIDs: Set<PhysicalArtifact.ID> = []
+        var selectedArtifacts: [PhysicalArtifact] = []
+        for artifactID in ids {
+            guard seenIDs.insert(artifactID).inserted,
+                  let artifact = invoices.first(where: { $0.id == artifactID }) else {
+                continue
+            }
+            selectedArtifacts.append(artifact)
+        }
+
+        guard !selectedArtifacts.isEmpty else { return }
+
+        let archivedArtifactIDs = Set(selectedArtifacts.map { $0.id })
+        let archivedContentHashes = Set(selectedArtifacts.compactMap { $0.contentHash })
+        let remainingContentHashes = Set(
+            invoices
+                .filter { !archivedArtifactIDs.contains($0.id) }
+                .compactMap { $0.contentHash }
+        )
+        let orphanedContentHashes = archivedContentHashes.subtracting(remainingContentHashes)
+
+        do {
+            let result = try workflowActionCoordinator.moveToArchive(
+                orderedIDs: ids,
+                artifacts: invoices,
+                workflowsByID: workflowByID,
+                archiveRoot: archiveRoot
+            )
+            workflowByID = result.workflowsByID
+            persistWorkflow()
+
+            if !orphanedContentHashes.isEmpty {
+                await computationCache.invalidate(contentHashes: orphanedContentHashes)
+                syncComputationHashes()
+                textPendingHashes.subtract(orphanedContentHashes)
+                textFailedHashes.subtract(orphanedContentHashes)
+                structuredPendingHashes.subtract(orphanedContentHashes)
+                structuredFailedHashes.subtract(orphanedContentHashes)
+            }
+
+            fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
+            settingsErrorMessage = nil
+            setSelection(ids: [], primary: nil)
+            await fileSystemReconciler.reconcileNow()
+        } catch {
+            settingsErrorMessage = error.localizedDescription
+        }
+    }
+
     func rescanInvoices(ids: Set<PhysicalArtifact.ID>) async {
         await queueHandlerSetupTask?.value
         let selectedArtifacts = invoices.filter { ids.contains($0.id) }
