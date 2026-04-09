@@ -50,6 +50,23 @@ jobs:
             exit 1
           fi
 
+      - name: Read build number
+        id: build
+        run: |
+          build_number="$(python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          text = Path("project.yml").read_text()
+          match = re.search(r'(^\s*CURRENT_PROJECT_VERSION:\s*)(\d+)\s*$', text, re.MULTILINE)
+          if match is None:
+              raise SystemExit("Could not read CURRENT_PROJECT_VERSION from project.yml")
+
+          print(match.group(2))
+          PY
+          )"
+          echo "value=${build_number}" >> "$GITHUB_OUTPUT"
+
       - name: Build DMG
         env:
           VERSION: ${{ steps.version.outputs.value }}
@@ -58,6 +75,20 @@ jobs:
           chmod +x ./make-dmg.sh
           ./make-dmg.sh
 
+      - name: Resolve Sparkle tools
+        run: swift package resolve
+
+      - name: Sign DMG and update appcast
+        env:
+          SPARKLE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          dmg_file="$(ls dist/*.dmg | head -1)"
+          version="${{ steps.version.outputs.value }}"
+          build="${{ steps.build.outputs.value }}"
+          download_url="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$(basename "${dmg_file}")"
+          chmod +x ./update-appcast.sh
+          ./update-appcast.sh "${dmg_file}" "${version}" "${build}" "${download_url}"
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2.6.0
         with:
@@ -65,3 +96,15 @@ jobs:
           generate_release_notes: true
           files: dist/*.dmg
           fail_on_unmatched_files: true
+
+      - name: Push appcast to main
+        run: |
+          cp appcast.xml /tmp/appcast.xml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          cp /tmp/appcast.xml appcast.xml
+          git add appcast.xml
+          git commit -m "Update appcast for ${{ github.ref_name }}"
+          git push origin main

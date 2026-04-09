@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 import SwiftUI
 
 @main
@@ -18,6 +19,11 @@ struct InvoiceOrganizerApp: App {
                 }
         }
         .defaultSize(width: 1280, height: 760)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: appDelegate.updaterController.updater)
+            }
+        }
 
         Settings {
             SettingsView(model: model)
@@ -26,7 +32,13 @@ struct InvoiceOrganizerApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
     weak var rotationCoordinator: PreviewRotationCoordinator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
