@@ -25,13 +25,6 @@ struct QueueSidebar: View {
         )
     }
 
-    private var showIgnoredInvoicesBinding: Binding<Bool> {
-        Binding(
-            get: { model.showIgnoredInvoices },
-            set: { model.setShowIgnoredInvoices($0) }
-        )
-    }
-
     private var selectedArtifactIDsBinding: Binding<Set<PhysicalArtifact.ID>> {
         Binding(
             get: { model.selectedArtifactIDs },
@@ -96,17 +89,7 @@ struct QueueSidebar: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if model.hiddenIgnoredCountInVisibleQueue > 0 {
-                    Text("• \(model.hiddenIgnoredCountInVisibleQueue) ignored hidden")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
                 Spacer()
-
-                Toggle("Show Ignored", isOn: showIgnoredInvoicesBinding)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
             }
 
             if model.visibleArtifacts.isEmpty {
@@ -122,7 +105,6 @@ struct QueueSidebar: View {
                     documentMetadataByArtifactID: model.documentMetadataByArtifactID,
                     duplicateBadgeTitlesByArtifactID: model.duplicateBadgeTitlesByArtifactID,
                     possibleSameInvoiceBadgeTitlesByArtifactID: model.possibleSameInvoiceBadgeTitlesByArtifactID,
-                    ignoredArtifactIDs: model.ignoredArtifactIDs,
                     selectedArtifactIDs: selectedArtifactIDsBinding,
                     onMoveToInProgress: { orderedIDs in
                         model.moveInvoicesToInProgress(ids: orderedIDs)
@@ -137,9 +119,6 @@ struct QueueSidebar: View {
                         Task {
                             await model.rescanInvoices(ids: model.selectedArtifactIDs)
                         }
-                    },
-                    onSetIgnored: { ignored in
-                        model.setIgnored(ignored, for: model.selectedArtifactIDs)
                     },
                     onOpenInPreview: { orderedIDs in
                         model.openInPreview(ids: orderedIDs)

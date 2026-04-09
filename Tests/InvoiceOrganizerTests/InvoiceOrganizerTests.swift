@@ -2601,36 +2601,6 @@ private final class RecordingPreviewPersistHandler {
     #expect(await extractor.totalCallCount() == 1)
 }
 
-@Test func appModelHidesIgnoredInvoicesByDefault() async throws {
-    let model = await MainActor.run {
-        AppModel(autoRefresh: false)
-    }
-    let ignoredURL = URL(fileURLWithPath: "/Inbox/\(UUID().uuidString).pdf")
-    let ignoredInvoice = PhysicalArtifact(
-        name: "ignored.pdf",
-        fileURL: ignoredURL,
-        location: .inbox,
-        addedAt: .now,
-        fileType: .pdf,
-        status: .unprocessed
-    )
-
-    await MainActor.run {
-        model.invoices = [ignoredInvoice]
-        model.setIgnored(true, for: [ignoredInvoice.id])
-    }
-
-    let hiddenVisibleInvoices = await MainActor.run { model.visibleArtifacts }
-    #expect(hiddenVisibleInvoices.isEmpty)
-
-    let shownVisibleInvoices = await MainActor.run {
-        model.showIgnoredInvoices = true
-        return model.visibleArtifacts
-    }
-    #expect(shownVisibleInvoices.map(\.id) == [ignoredInvoice.id])
-    #expect(await MainActor.run { model.isIgnored(ignoredInvoice.id) })
-}
-
 @Test func appModelUsesDuplicateProcessedBadgeForProcessedPeerGroup() async throws {
     let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)

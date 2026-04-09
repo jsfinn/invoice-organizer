@@ -2,14 +2,12 @@ import Foundation
 
 struct WorkflowActionResult {
     var workflowsByID: [String: StoredInvoiceWorkflow]
-    var ignoredArtifactIDs: Set<PhysicalArtifact.ID>
     var selectedArtifactIDs: Set<PhysicalArtifact.ID>
 }
 
 struct WorkflowRenameResult {
     var artifacts: [PhysicalArtifact]
     var workflowsByID: [String: StoredInvoiceWorkflow]
-    var ignoredArtifactIDs: Set<PhysicalArtifact.ID>
     var selectedArtifactIDs: Set<PhysicalArtifact.ID>
     var selectedArtifactID: PhysicalArtifact.ID?
     var updatedArtifactID: PhysicalArtifact.ID
@@ -36,7 +34,6 @@ struct WorkflowActionCoordinator {
         artifacts: [PhysicalArtifact],
         snapshot: LibrarySnapshot,
         workflowsByID: [String: StoredInvoiceWorkflow],
-        ignoredArtifactIDs: Set<PhysicalArtifact.ID>,
         processingRoot: URL,
         duplicatesRoot: URL,
         structuredRecordForContentHash: (String) -> InvoiceStructuredDataRecord?
@@ -46,13 +43,11 @@ struct WorkflowActionCoordinator {
         guard !eligibleArtifacts.isEmpty else {
             return WorkflowActionResult(
                 workflowsByID: workflowsByID,
-                ignoredArtifactIDs: ignoredArtifactIDs,
                 selectedArtifactIDs: []
             )
         }
 
         var nextWorkflows = workflowsByID
-        var nextIgnoredIDs = ignoredArtifactIDs
         var movedIDs: Set<PhysicalArtifact.ID> = []
         let movePlan = processingMovePlan(for: eligibleArtifacts.map(\.id), snapshot: snapshot)
 
@@ -102,13 +97,11 @@ struct WorkflowActionCoordinator {
 
             let newID = PhysicalArtifact.stableID(for: finalURL)
             nextWorkflows[newID] = workflow
-            remapIgnoredID(from: oldID, to: newID, ignoredArtifactIDs: &nextIgnoredIDs)
             movedIDs.insert(newID)
         }
 
         return WorkflowActionResult(
             workflowsByID: nextWorkflows,
-            ignoredArtifactIDs: nextIgnoredIDs,
             selectedArtifactIDs: movedIDs
         )
     }
@@ -118,20 +111,17 @@ struct WorkflowActionCoordinator {
         artifacts: [PhysicalArtifact],
         snapshot: LibrarySnapshot,
         workflowsByID: [String: StoredInvoiceWorkflow],
-        ignoredArtifactIDs: Set<PhysicalArtifact.ID>,
         inboxRoot: URL
     ) throws -> WorkflowActionResult {
         let eligibleIDs = Set(artifacts.filter { ids.contains($0.id) && $0.location == .processing }.map(\.id))
         guard !eligibleIDs.isEmpty else {
             return WorkflowActionResult(
                 workflowsByID: workflowsByID,
-                ignoredArtifactIDs: ignoredArtifactIDs,
                 selectedArtifactIDs: []
             )
         }
 
         var nextWorkflows = workflowsByID
-        var nextIgnoredIDs = ignoredArtifactIDs
         var movedIDs: Set<PhysicalArtifact.ID> = []
 
         for artifact in artifacts where eligibleIDs.contains(artifact.id) {
@@ -147,13 +137,11 @@ struct WorkflowActionCoordinator {
                 isInProgress: false
             )
             nextWorkflows[newID] = workflow
-            remapIgnoredID(from: oldID, to: newID, ignoredArtifactIDs: &nextIgnoredIDs)
             movedIDs.insert(newID)
         }
 
         return WorkflowActionResult(
             workflowsByID: nextWorkflows,
-            ignoredArtifactIDs: nextIgnoredIDs,
             selectedArtifactIDs: movedIDs
         )
     }
@@ -163,20 +151,17 @@ struct WorkflowActionCoordinator {
         artifacts: [PhysicalArtifact],
         snapshot: LibrarySnapshot,
         workflowsByID: [String: StoredInvoiceWorkflow],
-        ignoredArtifactIDs: Set<PhysicalArtifact.ID>,
         processedRoot: URL
     ) throws -> WorkflowActionResult {
         let eligibleArtifacts = artifacts.filter { ids.contains($0.id) && $0.canMarkDone }
         guard !eligibleArtifacts.isEmpty else {
             return WorkflowActionResult(
                 workflowsByID: workflowsByID,
-                ignoredArtifactIDs: ignoredArtifactIDs,
                 selectedArtifactIDs: []
             )
         }
 
         var nextWorkflows = workflowsByID
-        var nextIgnoredIDs = ignoredArtifactIDs
         var archivedIDs: Set<PhysicalArtifact.ID> = []
         let processedAt = Date()
 
@@ -206,13 +191,11 @@ struct WorkflowActionCoordinator {
             workflow.documentType = metadata.documentType
             workflow.isInProgress = false
             nextWorkflows[archivedID] = workflow
-            remapIgnoredID(from: artifact.id, to: archivedID, ignoredArtifactIDs: &nextIgnoredIDs)
             archivedIDs.insert(archivedID)
         }
 
         return WorkflowActionResult(
             workflowsByID: nextWorkflows,
-            ignoredArtifactIDs: nextIgnoredIDs,
             selectedArtifactIDs: archivedIDs
         )
     }
@@ -222,7 +205,6 @@ struct WorkflowActionCoordinator {
         to artifactID: PhysicalArtifact.ID,
         artifacts: [PhysicalArtifact],
         workflowsByID: [String: StoredInvoiceWorkflow],
-        ignoredArtifactIDs: Set<PhysicalArtifact.ID>,
         selectedArtifactIDs: Set<PhysicalArtifact.ID>,
         selectedArtifactID: PhysicalArtifact.ID?
     ) throws -> WorkflowRenameResult? {
@@ -232,7 +214,6 @@ struct WorkflowActionCoordinator {
 
         var nextArtifacts = artifacts
         var nextWorkflows = workflowsByID
-        var nextIgnoredIDs = ignoredArtifactIDs
         let artifact = artifacts[index]
         var targetArtifact = artifact
         var nextID = artifactID
@@ -261,7 +242,6 @@ struct WorkflowActionCoordinator {
 
         nextWorkflows.removeValue(forKey: artifactID)
         nextWorkflows[nextID] = workflow
-        remapIgnoredID(from: artifactID, to: nextID, ignoredArtifactIDs: &nextIgnoredIDs)
         nextArtifacts[index] = targetArtifact
 
         let remappedSelection = Set(selectedArtifactIDs.map { $0 == artifactID ? nextID : $0 })
@@ -270,7 +250,6 @@ struct WorkflowActionCoordinator {
         return WorkflowRenameResult(
             artifacts: nextArtifacts,
             workflowsByID: nextWorkflows,
-            ignoredArtifactIDs: nextIgnoredIDs,
             selectedArtifactIDs: remappedSelection,
             selectedArtifactID: remappedPrimary,
             updatedArtifactID: nextID
@@ -326,18 +305,6 @@ struct WorkflowActionCoordinator {
         let vendor = (workflow.vendor ?? fallbackMetadata.vendor)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let invoiceDate = workflow.invoiceDate ?? fallbackMetadata.invoiceDate
         return !(vendor?.isEmpty ?? true) && invoiceDate != nil
-    }
-
-    private func remapIgnoredID(
-        from previousID: PhysicalArtifact.ID,
-        to updatedID: PhysicalArtifact.ID,
-        ignoredArtifactIDs: inout Set<PhysicalArtifact.ID>
-    ) {
-        guard previousID != updatedID, ignoredArtifactIDs.remove(previousID) != nil else {
-            return
-        }
-
-        ignoredArtifactIDs.insert(updatedID)
     }
 
     private func normalizedInvoiceNumber(from invoiceNumber: String) -> String? {

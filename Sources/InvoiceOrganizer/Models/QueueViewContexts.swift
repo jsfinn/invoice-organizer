@@ -2,16 +2,13 @@ import Foundation
 
 struct QueueScreenContext: Equatable {
     var selectedTab: InvoiceQueueTab
-    var showIgnoredInvoices: Bool
     private var tabContexts: [InvoiceQueueTab: QueueTabContext]
 
     init(
         selectedTab: InvoiceQueueTab = .unprocessed,
-        showIgnoredInvoices: Bool = false,
         tabContexts: [InvoiceQueueTab: QueueTabContext] = [:]
     ) {
         self.selectedTab = selectedTab
-        self.showIgnoredInvoices = showIgnoredInvoices
         self.tabContexts = Dictionary(
             uniqueKeysWithValues: InvoiceQueueTab.allCases.map { tab in
                 (tab, tabContexts[tab] ?? QueueTabContext(queueTab: tab))

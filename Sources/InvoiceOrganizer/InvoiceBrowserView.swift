@@ -12,13 +12,11 @@ struct InvoiceBrowserView: NSViewRepresentable {
     let documentMetadataByArtifactID: [PhysicalArtifact.ID: DocumentMetadata]
     let duplicateBadgeTitlesByArtifactID: [PhysicalArtifact.ID: String]
     let possibleSameInvoiceBadgeTitlesByArtifactID: [PhysicalArtifact.ID: String]
-    let ignoredArtifactIDs: Set<PhysicalArtifact.ID>
     @Binding var selectedArtifactIDs: Set<PhysicalArtifact.ID>
     let onMoveToInProgress: ([PhysicalArtifact.ID]) -> Void
     let onMoveToUnprocessed: () -> Void
     let onMoveToProcessed: () -> Void
     let onRescan: () -> Void
-    let onSetIgnored: (Bool) -> Void
     let onOpenInPreview: ([PhysicalArtifact.ID]) -> Void
     let onVendorChange: (PhysicalArtifact.ID, String) -> Void
     let onInvoiceDateChange: (PhysicalArtifact.ID, Date) -> Void
@@ -360,7 +358,6 @@ struct InvoiceBrowserView: NSViewRepresentable {
             let selectedArtifacts = parent.invoices.filter { parent.selectedArtifactIDs.contains($0.id) }
             let menu = NSMenu()
             let canRescan = parent.queueTab != .processed && selectedArtifacts.contains { $0.contentHash != nil }
-            let allIgnored = !selectedArtifacts.isEmpty && selectedArtifacts.allSatisfy { parent.ignoredArtifactIDs.contains($0.id) }
 
             switch parent.queueTab {
             case .unprocessed:
@@ -411,14 +408,6 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 let openInPreviewItem = NSMenuItem(title: "Open in Preview", action: #selector(openSelectionInPreview), keyEquivalent: "")
                 openInPreviewItem.target = self
                 menu.addItem(openInPreviewItem)
-
-                menu.addItem(.separator())
-
-                let ignoreTitle = allIgnored ? "Unignore" : "Ignore"
-                let ignoreItem = NSMenuItem(title: ignoreTitle, action: #selector(toggleIgnoredSelection(_:)), keyEquivalent: "")
-                ignoreItem.target = self
-                ignoreItem.representedObject = allIgnored
-                menu.addItem(ignoreItem)
             }
 
             tableView.menu = menu
@@ -448,12 +437,6 @@ struct InvoiceBrowserView: NSViewRepresentable {
         @objc
         private func openSelectionInPreview() {
             parent.onOpenInPreview(orderedSelectedInvoiceIDs())
-        }
-
-        @objc
-        private func toggleIgnoredSelection(_ sender: NSMenuItem) {
-            let currentlyIgnored = (sender.representedObject as? Bool) ?? false
-            parent.onSetIgnored(!currentlyIgnored)
         }
 
         private func syncSelection(to selectedIDs: Set<PhysicalArtifact.ID>) {
@@ -542,10 +525,6 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 badges.append(.duplicate(duplicateBadge))
             } else if let possibleSameInvoiceBadge = parent.possibleSameInvoiceBadgeTitlesByArtifactID[row.invoice.id] {
                 badges.append(.possibleSameInvoice(possibleSameInvoiceBadge))
-            }
-
-            if parent.ignoredArtifactIDs.contains(row.invoice.id) {
-                badges.append(.ignored)
             }
 
             return badges
@@ -819,7 +798,6 @@ func disclosureNavigationAction(for row: InvoiceBrowserRow, keyCode: UInt16) -> 
 enum InvoiceBrowserBadge: Equatable {
     case duplicate(String)
     case possibleSameInvoice(String)
-    case ignored
 
     var title: String {
         switch self {
@@ -827,8 +805,6 @@ enum InvoiceBrowserBadge: Equatable {
             return title
         case .possibleSameInvoice(let title):
             return title
-        case .ignored:
-            return "Ignored"
         }
     }
 
@@ -838,8 +814,6 @@ enum InvoiceBrowserBadge: Equatable {
             return .systemRed
         case .possibleSameInvoice:
             return .systemBlue
-        case .ignored:
-            return .systemOrange
         }
     }
 
@@ -849,8 +823,6 @@ enum InvoiceBrowserBadge: Equatable {
             return NSColor.systemRed.withAlphaComponent(0.12)
         case .possibleSameInvoice:
             return NSColor.systemBlue.withAlphaComponent(0.12)
-        case .ignored:
-            return NSColor.systemOrange.withAlphaComponent(0.14)
         }
     }
 }

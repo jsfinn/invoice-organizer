@@ -17,7 +17,6 @@ final class AppModel: ObservableObject {
     @Published private(set) var textFailedHashes: Set<String> = []
     @Published private(set) var structuredPendingHashes: Set<String> = []
     @Published private(set) var structuredFailedHashes: Set<String> = []
-    @Published private(set) var ignoredArtifactIDs: Set<PhysicalArtifact.ID>
 
     private let accessCoordinator = ArtifactAccessCoordinator()
     private let openInPreviewHandler: ([URL]) -> Void
@@ -64,7 +63,6 @@ final class AppModel: ObservableObject {
         self.folderSettings = resolvedFolderSettings
         self.llmSettings = resolvedLLMSettings
         self.workflowByID = workflowByID ?? InvoiceWorkflowStore.load()
-        self.ignoredArtifactIDs = Self.loadIgnoredInvoiceIDs()
         self.openInPreviewHandler = openInPreview ?? { urls in
             AppModel.systemOpenInPreview(urls)
         }
@@ -151,14 +149,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var showIgnoredInvoices: Bool {
-        get { queueScreenContext.showIgnoredInvoices }
-        set {
-            guard newValue != showIgnoredInvoices else { return }
-            setShowIgnoredInvoices(newValue)
-        }
-    }
-
     var selectedArtifact: PhysicalArtifact? {
         guard let selectedArtifactID else { return nil }
         return invoices.first(where: { $0.id == selectedArtifactID })
@@ -212,9 +202,6 @@ final class AppModel: ObservableObject {
 
         return invoices
             .filter { invoice in
-                showIgnoredInvoices || !ignoredArtifactIDs.contains(invoice.id)
-            }
-            .filter { invoice in
                 switch selectedQueueTab {
                 case .unprocessed:
                     return invoice.location == .inbox
@@ -242,22 +229,15 @@ final class AppModel: ObservableObject {
     }
 
     var unprocessedCount: Int {
-        invoices.filter { $0.location == .inbox && (showIgnoredInvoices || !ignoredArtifactIDs.contains($0.id)) }.count
+        invoices.filter { $0.location == .inbox }.count
     }
 
     var inProgressCount: Int {
-        invoices.filter { $0.location == .processing && (showIgnoredInvoices || !ignoredArtifactIDs.contains($0.id)) }.count
+        invoices.filter { $0.location == .processing }.count
     }
 
     var processedCount: Int {
-        invoices.filter { $0.location == .processed && (showIgnoredInvoices || !ignoredArtifactIDs.contains($0.id)) }.count
-    }
-
-    var hiddenIgnoredCountInVisibleQueue: Int {
-        guard !showIgnoredInvoices else { return 0 }
-        return invoices.filter { invoice in
-            ignoredArtifactIDs.contains(invoice.id) && queueTab(for: invoice.location) == selectedQueueTab
-        }.count
+        invoices.filter { $0.location == .processed }.count
     }
 
     var activeBrowserContext: InvoiceBrowserContext {
@@ -466,12 +446,6 @@ final class AppModel: ObservableObject {
         syncSelectionForVisibleInvoices()
     }
 
-    func setShowIgnoredInvoices(_ showIgnored: Bool) {
-        guard showIgnored != showIgnoredInvoices else { return }
-        updateQueueScreenContext { $0.showIgnoredInvoices = showIgnored }
-        syncSelectionForVisibleInvoices()
-    }
-
     func setSelectedArtifactIDs(_ ids: Set<PhysicalArtifact.ID>) {
         guard ids != selectedArtifactIDs else { return }
         updateActiveQueueTabContext { $0.selectedArtifactIDs = ids }
@@ -673,23 +647,6 @@ final class AppModel: ObservableObject {
         )
     }
 
-    func setIgnored(_ ignored: Bool, for ids: Set<PhysicalArtifact.ID>) {
-        guard !ids.isEmpty else { return }
-
-        if ignored {
-            ignoredArtifactIDs.formUnion(ids)
-        } else {
-            ignoredArtifactIDs.subtract(ids)
-        }
-
-        persistIgnoredInvoiceIDs()
-        syncSelectionForVisibleInvoices()
-    }
-
-    func isIgnored(_ artifactID: PhysicalArtifact.ID) -> Bool {
-        ignoredArtifactIDs.contains(artifactID)
-    }
-
     func moveInvoicesToInProgress(ids: Set<PhysicalArtifact.ID>) {
         moveInvoicesToInProgress(
             ids: workflowActionCoordinator.orderedProcessingIDs(
@@ -716,7 +673,6 @@ final class AppModel: ObservableObject {
                 artifacts: invoices,
                 snapshot: librarySnapshot,
                 workflowsByID: workflowByID,
-                ignoredArtifactIDs: ignoredArtifactIDs,
                 processingRoot: processingRoot,
                 duplicatesRoot: duplicatesRoot,
                 structuredRecordForContentHash: { [computationCache] contentHash in
@@ -724,9 +680,7 @@ final class AppModel: ObservableObject {
                 }
             )
             workflowByID = result.workflowsByID
-            ignoredArtifactIDs = result.ignoredArtifactIDs
             persistWorkflow()
-            persistIgnoredInvoiceIDs()
             settingsErrorMessage = nil
             refreshLibrary()
             selectedArtifactIDs = result.selectedArtifactIDs
@@ -751,13 +705,10 @@ final class AppModel: ObservableObject {
                 artifacts: invoices,
                 snapshot: librarySnapshot,
                 workflowsByID: workflowByID,
-                ignoredArtifactIDs: ignoredArtifactIDs,
                 inboxRoot: inboxRoot
             )
             workflowByID = result.workflowsByID
-            ignoredArtifactIDs = result.ignoredArtifactIDs
             persistWorkflow()
-            persistIgnoredInvoiceIDs()
             settingsErrorMessage = nil
             refreshLibrary()
             selectedArtifactIDs = result.selectedArtifactIDs
@@ -789,13 +740,10 @@ final class AppModel: ObservableObject {
                 artifacts: invoices,
                 snapshot: librarySnapshot,
                 workflowsByID: workflowByID,
-                ignoredArtifactIDs: ignoredArtifactIDs,
                 processedRoot: processedRoot
             )
             workflowByID = result.workflowsByID
-            ignoredArtifactIDs = result.ignoredArtifactIDs
             persistWorkflow()
-            persistIgnoredInvoiceIDs()
             settingsErrorMessage = nil
             refreshLibrary()
             selectedArtifactIDs = result.selectedArtifactIDs
@@ -962,7 +910,6 @@ final class AppModel: ObservableObject {
         invoices = snapshot.artifacts
         documentMetadataHintsByArtifactID = snapshot.documentMetadataHintsByArtifactID
         pruneWorkflowState(using: snapshot.artifacts)
-        pruneIgnoredState(using: snapshot.artifacts)
         settingsErrorMessage = nil
         await computationCache.loadAll()
         syncComputationHashes()
@@ -985,15 +932,6 @@ final class AppModel: ObservableObject {
         guard !staleKeys.isEmpty else { return }
         staleKeys.forEach { workflowByID.removeValue(forKey: $0) }
         persistWorkflow()
-    }
-
-    private func pruneIgnoredState(using loadedInvoices: [PhysicalArtifact]) {
-        let activeIDs = Set(loadedInvoices.map(\.id))
-        let staleIDs = ignoredArtifactIDs.subtracting(activeIDs)
-        guard !staleIDs.isEmpty else { return }
-
-        ignoredArtifactIDs.subtract(staleIDs)
-        persistIgnoredInvoiceIDs()
     }
 
     private func persistWorkflow() {
@@ -1123,7 +1061,6 @@ final class AppModel: ObservableObject {
                 to: invoiceID,
                 artifacts: invoices,
                 workflowsByID: workflowByID,
-                ignoredArtifactIDs: ignoredArtifactIDs,
                 selectedArtifactIDs: selectedArtifactIDs,
                 selectedArtifactID: selectedArtifactID
             ) else {
@@ -1132,9 +1069,7 @@ final class AppModel: ObservableObject {
 
             invoices = result.artifacts
             workflowByID = result.workflowsByID
-            ignoredArtifactIDs = result.ignoredArtifactIDs
             persistWorkflow()
-            persistIgnoredInvoiceIDs()
             setSelection(ids: result.selectedArtifactIDs, primary: result.selectedArtifactID)
             rebuildLibrarySnapshot()
             return result.updatedArtifactID
@@ -1149,17 +1084,6 @@ final class AppModel: ObservableObject {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func queueTab(for location: InvoiceLocation) -> InvoiceQueueTab {
-        switch location {
-        case .inbox:
-            return .unprocessed
-        case .processing:
-            return .inProgress
-        case .processed:
-            return .processed
-        }
-    }
-
     private func normalizePreviewRotation(_ value: Int) -> Int {
         let normalized = value % 4
         return normalized >= 0 ? normalized : normalized + 4
@@ -1171,11 +1095,6 @@ final class AppModel: ObservableObject {
         defaults.set(folderSettings.processedURL?.path, forKey: UserDefaultsKey.processedPath)
         defaults.set(folderSettings.processingURL?.path, forKey: UserDefaultsKey.processingPath)
         defaults.set(folderSettings.duplicatesURL?.path, forKey: UserDefaultsKey.duplicatesPath)
-    }
-
-    private func persistIgnoredInvoiceIDs() {
-        let defaults = UserDefaults.standard
-        defaults.set(Array(ignoredArtifactIDs).sorted(), forKey: UserDefaultsKey.ignoredArtifactIDs)
     }
 
     private func persistLLMSettings() {
@@ -1195,12 +1114,6 @@ final class AppModel: ObservableObject {
             processingURL: defaults.string(forKey: UserDefaultsKey.processingPath).map { URL(fileURLWithPath: $0) },
             duplicatesURL: defaults.string(forKey: UserDefaultsKey.duplicatesPath).map { URL(fileURLWithPath: $0) }
         )
-    }
-
-    private static func loadIgnoredInvoiceIDs() -> Set<PhysicalArtifact.ID> {
-        let defaults = UserDefaults.standard
-        let storedIDs = defaults.stringArray(forKey: UserDefaultsKey.ignoredArtifactIDs) ?? []
-        return Set(storedIDs)
     }
 
     private static func loadLLMSettings() -> LLMSettings {
@@ -1435,7 +1348,6 @@ private enum UserDefaultsKey {
     static let processedPath = "settings.processedPath"
     static let processingPath = "settings.processingPath"
     static let duplicatesPath = "settings.duplicatesPath"
-    static let ignoredArtifactIDs = "settings.ignoredArtifactIDs"
     static let llmProvider = "settings.llmProvider"
     static let llmBaseURL = "settings.llmBaseURL"
     static let llmModelName = "settings.llmModelName"
