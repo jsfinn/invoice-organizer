@@ -3,6 +3,10 @@ import SwiftUI
 struct MetadataCard: View {
     @ObservedObject var model: AppModel
     let invoice: PhysicalArtifact
+    @AppStorage(AppStorageKey.debugMode) private var debugMode = false
+    @State private var isPossibleSameInvoiceExpanded = true
+    @State private var isOCRInformationExpanded = false
+    @State private var isDedupScoresExpanded = false
 
     private var document: Document? {
         model.document(for: invoice.id)
@@ -52,6 +56,10 @@ struct MetadataCard: View {
         return originalText != extractedTextRecord.text
     }
 
+    private var shouldShowOCRInformation: Bool {
+        debugMode && (extractedTextSourceLabel != nil || shouldShowOCRComparison)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Metadata")
@@ -65,33 +73,9 @@ struct MetadataCard: View {
                 LabeledContent("Processed Folder", value: processedFolderPath)
             }
             LabeledContent("Date Added", value: invoice.addedAt.formatted(date: .abbreviated, time: .shortened))
-            if let extractedTextSourceLabel {
-                LabeledContent("Text Source", value: extractedTextSourceLabel)
-            }
-            if shouldShowOCRComparison, let extractedTextRecord {
-                DisclosureGroup("OCR Text Comparison") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Active OCR Text")
-                            .font(.headline)
-                        selectableTextBlock(extractedTextRecord.text)
-
-                        Text("Original Vision Order")
-                            .font(.headline)
-                        selectableTextBlock(extractedTextRecord.ocrOriginalText ?? "")
-                    }
-                    .padding(.top, 6)
-                }
-                .font(.headline)
-            }
-
-            if let duplicateReason = invoice.duplicateReason {
-                Text(duplicateReason)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
 
             if invoice.location != .processed && !possibleSameInvoiceMatches.isEmpty {
-                DisclosureGroup("Possible Same Invoice Matches") {
+                collapsibleSection("Possible Same Invoice Matches", isExpanded: $isPossibleSameInvoiceExpanded) {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(possibleSameInvoiceMatches) { match in
                             VStack(alignment: .leading, spacing: 3) {
@@ -126,11 +110,38 @@ struct MetadataCard: View {
                     }
                     .padding(.top, 6)
                 }
-                .font(.headline)
             }
 
-            if invoice.location != .processed {
-                DisclosureGroup("Dedup Scores") {
+            if shouldShowOCRInformation, let extractedTextRecord {
+                collapsibleSection("OCR Information", isExpanded: $isOCRInformationExpanded) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if let extractedTextSourceLabel {
+                            LabeledContent("Text Source", value: extractedTextSourceLabel)
+                                .font(.footnote)
+                        }
+
+                        if debugMode && shouldShowOCRComparison {
+                            Text("OCR Comparison")
+                                .font(.headline)
+                            selectableTextBlock(extractedTextRecord.text)
+
+                            Text("Original Vision Order")
+                                .font(.headline)
+                            selectableTextBlock(extractedTextRecord.ocrOriginalText ?? "")
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+            }
+
+            if let duplicateReason = invoice.duplicateReason {
+                Text(duplicateReason)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+
+            if debugMode && invoice.location != .processed {
+                collapsibleSection("Dedup Scores", isExpanded: $isDedupScoresExpanded) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Threshold: \(model.duplicateSimilarityThreshold.formatted(.percent.precision(.fractionLength(0))))")
                             .font(.footnote)
@@ -169,7 +180,6 @@ struct MetadataCard: View {
                     }
                     .padding(.top, 6)
                 }
-                .font(.headline)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -187,6 +197,35 @@ struct MetadataCard: View {
             .background(.quaternary.opacity(0.2))
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .textSelection(.enabled)
+    }
+
+    @ViewBuilder
+    private func collapsibleSection<Content: View>(
+        _ title: String,
+        isExpanded: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                isExpanded.wrappedValue.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded.wrappedValue {
+                content()
+            }
+        }
     }
 
     private func matchedFieldLabels(for match: PossibleSameInvoiceMatch) -> [String] {

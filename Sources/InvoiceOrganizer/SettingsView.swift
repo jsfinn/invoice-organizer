@@ -91,6 +91,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
 
 private struct GeneralSettingsSection: View {
     @ObservedObject var model: AppModel
+    @AppStorage(AppStorageKey.debugMode) private var debugMode = false
 
     var body: some View {
         Form {
@@ -139,6 +140,13 @@ private struct GeneralSettingsSection: View {
                 LabeledContent("Archive Ready", value: model.folderSettings.duplicatesURL == nil ? "No" : "Yes")
                 LabeledContent("Watching Folders", value: model.isWatchingFolders ? "Yes" : "No")
                 LabeledContent("Invoices Loaded", value: "\(model.invoices.count)")
+            }
+
+            Section("Preferences") {
+                Toggle("Debug Mode", isOn: $debugMode)
+                Text("Show OCR comparison and dedup diagnostics in invoice metadata.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             if let errorMessage = model.settingsErrorMessage {
