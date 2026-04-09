@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var ignoredArtifactIDs: Set<PhysicalArtifact.ID>
 
     private let accessCoordinator = ArtifactAccessCoordinator()
+    private let openInPreviewHandler: ([URL]) -> Void
     private let computationCache: ArtifactComputationCache
     private let snapshotBuilder: LibrarySnapshotBuilder
     private let textStore: any InvoiceTextStoring
@@ -53,7 +54,8 @@ final class AppModel: ObservableObject {
         structuredDataStore: any InvoiceStructuredDataStoring = InvoiceStructuredDataStore.shared,
         structuredExtractionClient: any InvoiceStructuredExtractionClient = RoutedStructuredExtractionClient(),
         llmSettings: LLMSettings? = nil,
-        autoRefresh: Bool = true
+        autoRefresh: Bool = true,
+        openInPreview: (([URL]) -> Void)? = nil
     ) {
         let resolvedFolderSettings = folderSettings ?? Self.loadFolderSettings()
         let resolvedLLMSettings = llmSettings ?? Self.loadLLMSettings()
@@ -63,6 +65,9 @@ final class AppModel: ObservableObject {
         self.llmSettings = resolvedLLMSettings
         self.workflowByID = workflowByID ?? InvoiceWorkflowStore.load()
         self.ignoredArtifactIDs = Self.loadIgnoredInvoiceIDs()
+        self.openInPreviewHandler = openInPreview ?? { urls in
+            AppModel.systemOpenInPreview(urls)
+        }
         self.textStore = textStore
         self.structuredDataStore = structuredDataStore
         self.computationCache = ArtifactComputationCache(
@@ -333,6 +338,26 @@ final class AppModel: ObservableObject {
         try accessCoordinator.dragExportURL(for: invoice.handle)
     }
 
+    func openInPreview(ids: [PhysicalArtifact.ID]) {
+        var seenURLs: Set<URL> = []
+        let urls = ids.reduce(into: [URL]()) { urls, artifactID in
+            guard let handle = invoices.first(where: { $0.id == artifactID })?.handle,
+                  accessCoordinator.fileExists(for: handle),
+                  seenURLs.insert(handle.fileURL).inserted else {
+                return
+            }
+
+            urls.append(handle.fileURL)
+        }
+
+        guard !urls.isEmpty else {
+            NSSound.beep()
+            return
+        }
+
+        openInPreviewHandler(urls)
+    }
+
     func fileIcon(for invoice: PhysicalArtifact) -> NSImage {
         accessCoordinator.fileIcon(for: invoice.handle)
     }
@@ -365,6 +390,26 @@ final class AppModel: ObservableObject {
     private func syncComputationHashes() {
         extractedTextHashes = computationCache.extractedTextHashes
         structuredDataHashes = computationCache.structuredDataHashes
+    }
+
+    nonisolated private static func systemOpenInPreview(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+
+        if let previewAppURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Preview") {
+            NSWorkspace.shared.open(urls, withApplicationAt: previewAppURL, configuration: configuration) { _, error in
+                if error != nil {
+                    NSSound.beep()
+                }
+            }
+            return
+        }
+
+        for url in urls {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     var ocrStatesByArtifactID: [PhysicalArtifact.ID: InvoiceOCRState] {

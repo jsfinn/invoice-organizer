@@ -141,6 +141,9 @@ struct QueueSidebar: View {
                     onSetIgnored: { ignored in
                         model.setIgnored(ignored, for: model.selectedArtifactIDs)
                     },
+                    onOpenInPreview: { orderedIDs in
+                        model.openInPreview(ids: orderedIDs)
+                    },
                     onVendorChange: { invoiceID, vendor in
                         model.updateVendor(vendor, for: invoiceID)
                     },

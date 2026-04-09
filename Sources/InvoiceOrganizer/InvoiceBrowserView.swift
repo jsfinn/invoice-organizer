@@ -19,6 +19,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
     let onMoveToProcessed: () -> Void
     let onRescan: () -> Void
     let onSetIgnored: (Bool) -> Void
+    let onOpenInPreview: ([PhysicalArtifact.ID]) -> Void
     let onVendorChange: (PhysicalArtifact.ID, String) -> Void
     let onInvoiceDateChange: (PhysicalArtifact.ID, Date) -> Void
     let dragExportURL: (PhysicalArtifact) throws -> URL
@@ -407,6 +408,12 @@ struct InvoiceBrowserView: NSViewRepresentable {
                     menu.addItem(.separator())
                 }
 
+                let openInPreviewItem = NSMenuItem(title: "Open in Preview", action: #selector(openSelectionInPreview), keyEquivalent: "")
+                openInPreviewItem.target = self
+                menu.addItem(openInPreviewItem)
+
+                menu.addItem(.separator())
+
                 let ignoreTitle = allIgnored ? "Unignore" : "Ignore"
                 let ignoreItem = NSMenuItem(title: ignoreTitle, action: #selector(toggleIgnoredSelection(_:)), keyEquivalent: "")
                 ignoreItem.target = self
@@ -436,6 +443,11 @@ struct InvoiceBrowserView: NSViewRepresentable {
         @objc
         private func rescanSelection() {
             parent.onRescan()
+        }
+
+        @objc
+        private func openSelectionInPreview() {
+            parent.onOpenInPreview(orderedSelectedInvoiceIDs())
         }
 
         @objc

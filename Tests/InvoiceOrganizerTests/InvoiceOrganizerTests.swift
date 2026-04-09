@@ -2342,6 +2342,57 @@ private final class RecordingPreviewPersistHandler {
     #expect(model.activeBrowserContext.expandedGroupIDs == ["/Processed/A/Amazon/invoice.pdf"])
 }
 
+@MainActor
+@Test func appModelOpenInPreviewUsesRequestedOrderAndSkipsMissingFiles() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstURL = tempRoot.appendingPathComponent("first.pdf")
+    let secondURL = tempRoot.appendingPathComponent("second.pdf")
+    let missingURL = tempRoot.appendingPathComponent("missing.pdf")
+    try Data("first".utf8).write(to: firstURL)
+    try Data("second".utf8).write(to: secondURL)
+
+    let first = PhysicalArtifact(
+        name: "first.pdf",
+        fileURL: firstURL,
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        status: .unprocessed
+    )
+    let second = PhysicalArtifact(
+        name: "second.pdf",
+        fileURL: secondURL,
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        status: .unprocessed
+    )
+    let missing = PhysicalArtifact(
+        name: "missing.pdf",
+        fileURL: missingURL,
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 30),
+        fileType: .pdf,
+        status: .unprocessed
+    )
+
+    var openedURLs: [URL] = []
+    let model = AppModel(
+        autoRefresh: false,
+        openInPreview: { urls in
+            openedURLs = urls
+        }
+    )
+    model.invoices = [first, second, missing]
+
+    model.openInPreview(ids: [second.id, missing.id, first.id, second.id])
+
+    #expect(openedURLs == [secondURL, firstURL])
+}
+
 @Test func invoiceTextStoreCachesRecordsByContentHash() async throws {
     let suiteName = "InvoiceTextStoreTests-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
