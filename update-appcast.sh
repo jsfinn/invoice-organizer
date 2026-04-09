@@ -70,7 +70,7 @@ for item in channel.findall("item"):
         channel.remove(item)
         break
 
-item = ET.SubElement(channel, "item")
+item = ET.Element("item")
 ET.SubElement(item, "title").text = f"Version {version}"
 ET.SubElement(item, f"{{{SPARKLE_NS}}}version").text = build_number
 ET.SubElement(item, f"{{{SPARKLE_NS}}}shortVersionString").text = version
@@ -82,6 +82,8 @@ ET.SubElement(item, "enclosure", {
     f"{{{SPARKLE_NS}}}edSignature": ed_signature,
     "length": length,
 })
+insert_at = 1 if len(channel) > 0 and channel[0].tag == "title" else 0
+channel.insert(insert_at, item)
 
 ET.indent(tree, space="  ")
 tree.write(appcast_path, xml_declaration=True, encoding="unicode")

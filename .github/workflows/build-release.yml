@@ -75,6 +75,12 @@ jobs:
           chmod +x ./make-dmg.sh
           ./make-dmg.sh
 
+      - name: Prepare appcast from release branch
+        run: |
+          git fetch origin release
+          git worktree add -B release-sync /tmp/release-worktree origin/release
+          cp /tmp/release-worktree/appcast.xml appcast.xml
+
       - name: Sign DMG and update appcast
         env:
           SPARKLE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
@@ -95,14 +101,12 @@ jobs:
           files: dist/*.dmg
           fail_on_unmatched_files: true
 
-      - name: Push appcast to main
+      - name: Push appcast to release branch
         run: |
-          cp appcast.xml /tmp/appcast.xml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git checkout main
-          cp /tmp/appcast.xml appcast.xml
+          cp appcast.xml /tmp/release-worktree/appcast.xml
+          cd /tmp/release-worktree
           git add appcast.xml
           git commit -m "Update appcast for ${{ github.ref_name }}"
-          git push origin main
+          git push origin HEAD:release

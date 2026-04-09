@@ -27,7 +27,7 @@
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>SUFeedURL</key>
-    <string>https://raw.githubusercontent.com/jsfinn/invoice-organizer/main/appcast.xml</string>
+    <string>https://raw.githubusercontent.com/jsfinn/invoice-organizer/release/appcast.xml</string>
     <key>SUPublicEDKey</key>
     <string>kCB1uTEeCjkK/zIM4x2WB6Hsd+5iDrMKtFvSQqr/QSY=</string>
 </dict>
