@@ -50,17 +50,24 @@ jobs:
           security set-keychain-settings -lut 21600 "$keychain_path"
           security unlock-keychain -p "$BUILD_KEYCHAIN_PASSWORD" "$keychain_path"
           security import "$cert_path" -k "$keychain_path" -P "$DEVELOPER_ID_P12_PASSWORD" -f pkcs12 -A
-          security list-keychains -d user -s "$keychain_path"
+          existing_keychains=()
+          while IFS= read -r keychain; do
+            keychain="${keychain//\"/}"
+            if [[ -n "${keychain}" ]]; then
+              existing_keychains+=("${keychain}")
+            fi
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$keychain_path" "${existing_keychains[@]}"
           security default-keychain -d user -s "$keychain_path"
           security set-key-partition-list -S apple-tool:,apple: -k "$BUILD_KEYCHAIN_PASSWORD" "$keychain_path"
 
-          identity="$(security find-identity -v -p codesigning "$keychain_path" | sed -n 's/.*\"\\(Developer ID Application:.*\\)\"/\\1/p' | head -1)"
+          identity="$(security find-identity -v -p codesigning 2>&1 | python3 -c 'import re, sys; data = sys.stdin.read(); match = re.search(r"\"(Developer ID Application:[^\"]+)\"", data); print(match.group(1) if match else "")')"
           if [[ -z "${identity}" ]]; then
             echo "Could not find a Developer ID Application identity in the imported certificate." >&2
             exit 1
           fi
 
-          team_id="$(printf '%s' "${identity}" | sed -n 's/.*(\\([A-Z0-9]*\\)).*/\\1/p')"
+          team_id="$(python3 -c 'import re, sys; m = re.search(r"\(([A-Z0-9]+)\)$", sys.argv[1]); print(m.group(1) if m else "")' "${identity}")"
           if [[ -z "${team_id}" ]]; then
             echo "Could not derive the team ID from signing identity: ${identity}" >&2
             exit 1
@@ -160,7 +167,18 @@ jobs:
         run: |
           dmg_file="$(ls dist/*.dmg | head -1)"
           api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_KEY_ID}.p8"
-          xcrun notarytool submit "${dmg_file}" --key "${api_key_path}" --key-id "${APPLE_KEY_ID}" --issuer "${APPLE_ISSUER_ID}" --wait
+
+          submission_output="$(xcrun notarytool submit "${dmg_file}" --key "${api_key_path}" --key-id "${APPLE_KEY_ID}" --issuer "${APPLE_ISSUER_ID}" --wait 2>&1)"
+          echo "${submission_output}"
+
+          submission_id="$(echo "${submission_output}" | python3 -c 'import re, sys; m = re.search(r"id: ([0-9a-f-]+)", sys.stdin.read()); print(m.group(1) if m else "")')"
+
+          if echo "${submission_output}" | grep -q "status: Invalid"; then
+            echo "Notarization failed. Fetching rejection log..."
+            xcrun notarytool log "${submission_id}" --key "${api_key_path}" --key-id "${APPLE_KEY_ID}" --issuer "${APPLE_ISSUER_ID}" || true
+            exit 1
+          fi
+
           xcrun stapler staple "${dmg_file}"
           xcrun stapler validate "${dmg_file}"
 

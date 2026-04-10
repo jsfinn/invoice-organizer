@@ -122,6 +122,32 @@ fi
 
 xcodebuild "${xcodebuild_args[@]}" build
 
+if [[ -n "${XCODE_CODE_SIGN_IDENTITY:-}" ]]; then
+  echo "Re-signing nested binaries with Developer ID..."
+  keychain_flag=()
+  if [[ -n "${XCODE_OTHER_CODE_SIGN_FLAGS:-}" ]]; then
+    keychain_flag=(${XCODE_OTHER_CODE_SIGN_FLAGS})
+  fi
+
+  find "${APP_PATH}/Contents/Frameworks" \
+    -type f -perm +111 -o -name "*.dylib" | while IFS= read -r binary; do
+    codesign --force --sign "${XCODE_CODE_SIGN_IDENTITY}" \
+      --options runtime --timestamp "${keychain_flag[@]}" "${binary}" 2>/dev/null || true
+  done
+
+  find "${APP_PATH}/Contents/Frameworks" \
+    \( -name "*.xpc" -o -name "*.framework" \) -print0 | while IFS= read -r -d '' bundle; do
+    codesign --force --sign "${XCODE_CODE_SIGN_IDENTITY}" \
+      --options runtime --timestamp "${keychain_flag[@]}" "${bundle}" || true
+  done
+
+  codesign --force --sign "${XCODE_CODE_SIGN_IDENTITY}" \
+    --options runtime --timestamp "${keychain_flag[@]}" "${APP_PATH}"
+
+  echo "Verifying final app signature..."
+  codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
+fi
+
 rm -rf "${DIST_DIR}" "${STAGING_DIR}"
 mkdir -p "${DIST_DIR}" "${STAGING_DIR}"
 
