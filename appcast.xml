@@ -2,5 +2,29 @@
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
   <channel>
     <title>Invoice Organizer</title>
+    <item>
+      <title>Version 0.4.1</title>
+      <sparkle:version>11</sparkle:version>
+      <sparkle:shortVersionString>0.4.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Thu, 09 Apr 2026 23:50:18 +0000</pubDate>
+      <enclosure url="https://github.com/jsfinn/invoice-organizer/releases/download/v0.4.1/InvoiceOrganizer-0.4.1.dmg" type="application/octet-stream" sparkle:edSignature="F/6qxg+y4U/moOeqUnrq3u1vU2I/aWGXplHj97Uph2JXuAO4guSXZXihIN5CIoyN+SIg6JFDvxifbZd47mTZAQ==" length="3949286" />
+    </item>
+    <item>
+      <title>Version 0.4.2</title>
+      <sparkle:version>12</sparkle:version>
+      <sparkle:shortVersionString>0.4.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Thu, 09 Apr 2026 23:59:50 +0000</pubDate>
+      <enclosure url="https://github.com/jsfinn/invoice-organizer/releases/download/v0.4.2/InvoiceOrganizer-0.4.2.dmg" type="application/octet-stream" sparkle:edSignature="9JfMloIivxUGjxHZzUZcDOZ8WiP6rXktCvYIwgd0VLUqeJoGfsU1QV+M1gF8rfxnGZVqGQOBQsE85PHO8JjvCg==" length="3949293" />
+    </item>
+    <item>
+      <title>Version 0.4.3</title>
+      <sparkle:version>13</sparkle:version>
+      <sparkle:shortVersionString>0.4.3</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Fri, 10 Apr 2026 00:06:16 +0000</pubDate>
+      <enclosure url="https://github.com/jsfinn/invoice-organizer/releases/download/v0.4.3/InvoiceOrganizer-0.4.3.dmg" type="application/octet-stream" sparkle:edSignature="NXhHhJQ8TTfmzmyJXxJcgxg/Ld8aRmXGR4jT/5BU8v7mUiQL4lJekRZvsPksX3zKHF0JUbR0dg0Crtaa9ep8Bw==" length="3949236" />
+    </item>
   </channel>
 </rss>
