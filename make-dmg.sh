@@ -88,14 +88,39 @@ APP_PATH="${DERIVED_DATA_PATH}/Build/Products/${CONFIGURATION}/${APP_NAME}.app"
 DMG_PATH="${DIST_DIR}/${OUTPUT_BASENAME}-${VERSION}.dmg"
 
 ensure_xcode_project
+xcodebuild_args=(
+  -project "${PROJECT}"
+  -scheme "${SCHEME}"
+  -configuration "${CONFIGURATION}"
+  -derivedDataPath "${DERIVED_DATA_PATH}"
+  "MARKETING_VERSION=${VERSION}"
+)
 
-xcodebuild \
-  -project "${PROJECT}" \
-  -scheme "${SCHEME}" \
-  -configuration "${CONFIGURATION}" \
-  -derivedDataPath "${DERIVED_DATA_PATH}" \
-  MARKETING_VERSION="${VERSION}" \
-  build
+if [[ -n "${XCODE_CODE_SIGNING_ALLOWED:-}" ]]; then
+  xcodebuild_args+=("CODE_SIGNING_ALLOWED=${XCODE_CODE_SIGNING_ALLOWED}")
+fi
+
+if [[ -n "${XCODE_CODE_SIGN_STYLE:-}" ]]; then
+  xcodebuild_args+=("CODE_SIGN_STYLE=${XCODE_CODE_SIGN_STYLE}")
+fi
+
+if [[ -n "${XCODE_CODE_SIGN_IDENTITY:-}" ]]; then
+  xcodebuild_args+=("CODE_SIGN_IDENTITY=${XCODE_CODE_SIGN_IDENTITY}")
+fi
+
+if [[ -n "${XCODE_DEVELOPMENT_TEAM:-}" ]]; then
+  xcodebuild_args+=("DEVELOPMENT_TEAM=${XCODE_DEVELOPMENT_TEAM}")
+fi
+
+if [[ -n "${XCODE_OTHER_CODE_SIGN_FLAGS:-}" ]]; then
+  xcodebuild_args+=("OTHER_CODE_SIGN_FLAGS=${XCODE_OTHER_CODE_SIGN_FLAGS}")
+fi
+
+if [[ -n "${XCODE_ENABLE_HARDENED_RUNTIME:-}" ]]; then
+  xcodebuild_args+=("ENABLE_HARDENED_RUNTIME=${XCODE_ENABLE_HARDENED_RUNTIME}")
+fi
+
+xcodebuild "${xcodebuild_args[@]}" build
 
 rm -rf "${DIST_DIR}" "${STAGING_DIR}"
 mkdir -p "${DIST_DIR}" "${STAGING_DIR}"
