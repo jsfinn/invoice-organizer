@@ -5,15 +5,6 @@ import SwiftUI
 enum PreviewViewport: Equatable {
     case fit
     case scale(Double)
-
-    var zoomLabel: String {
-        switch self {
-        case .fit:
-            return "Fit"
-        case .scale(let value):
-            return "\(Int((value * 100).rounded()))%"
-        }
-    }
 }
 
 struct ReplacementPreviewRendererView: View {
@@ -22,8 +13,6 @@ struct ReplacementPreviewRendererView: View {
     let viewport: PreviewViewport
     let rotationQuarterTurns: Int
     let onChooseFit: () -> Void
-    let onChooseZoomPreset: (Double?) -> Void
-    let onStepZoom: (Double) -> Void
     let onRotate: (Int) -> Void
 
     var body: some View {
@@ -37,41 +26,9 @@ struct ReplacementPreviewRendererView: View {
 
     private var controls: some View {
         HStack(spacing: 8) {
-            Text("Zoom")
-                .font(.system(size: 13, weight: .semibold))
-
             Button("Fit", action: onChooseFit)
                 .buttonStyle(.bordered)
                 .fontWeight(viewport == .fit ? .semibold : .regular)
-
-            Menu(viewport.zoomLabel) {
-                Button("Fit") {
-                    onChooseFit()
-                }
-
-                Divider()
-
-                ForEach(PreviewZoomPreset.allCases) { preset in
-                    Button(preset.label) {
-                        onChooseZoomPreset(preset.rawValue)
-                    }
-                }
-            }
-            .menuStyle(.borderlessButton)
-
-            Button {
-                onStepZoom(-0.25)
-            } label: {
-                Image(systemName: "minus.magnifyingglass")
-            }
-            .buttonStyle(.borderless)
-
-            Button {
-                onStepZoom(0.25)
-            } label: {
-                Image(systemName: "plus.magnifyingglass")
-            }
-            .buttonStyle(.borderless)
 
             Button {
                 onRotate(1)
@@ -89,7 +46,7 @@ struct ReplacementPreviewRendererView: View {
 
             Spacer(minLength: 0)
 
-            Text("Pinch to zoom or drag below to resize")
+            Text("Pinch to zoom · Drag below to resize")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
@@ -162,21 +119,6 @@ private struct PreviewErrorView: View {
         }
         .padding(24)
         .frame(width: size.width, height: size.height)
-    }
-}
-
-private enum PreviewZoomPreset: Double, CaseIterable, Identifiable {
-    case fifty = 0.5
-    case seventyFive = 0.75
-    case oneHundred = 1.0
-    case oneTwentyFive = 1.25
-    case oneFifty = 1.5
-    case twoHundred = 2.0
-
-    var id: Double { rawValue }
-
-    var label: String {
-        "\(Int(rawValue * 100))%"
     }
 }
 
@@ -265,26 +207,28 @@ private final class PDFPreviewSurfaceView: NSView {
     }
 
     private func applyViewport() {
-        guard let document = pdfView.document,
-              let page = pdfView.currentPage ?? document.page(at: 0) else {
-            return
-        }
+        guard pdfView.document != nil else { return }
 
-        let fitScale = fitWidthScale(for: page)
-        let effectiveScale: CGFloat
         switch currentViewport {
         case .fit:
-            effectiveScale = fitScale
+            pdfView.autoScales = true
         case .scale(let value):
-            effectiveScale = fitScale * CGFloat(value)
+            pdfView.autoScales = false
+            guard let page = pdfView.currentPage ?? pdfView.document?.page(at: 0) else { return }
+            let fitScale = fitWidthScale(for: page)
+            let effectiveScale = fitScale * CGFloat(value)
+            pdfView.scaleFactor = min(max(effectiveScale, pdfView.minScaleFactor), pdfView.maxScaleFactor)
         }
-
-        pdfView.autoScales = false
-        pdfView.scaleFactor = min(max(effectiveScale, pdfView.minScaleFactor), pdfView.maxScaleFactor)
     }
 
     private func fitWidthScale(for page: PDFPage) -> CGFloat {
-        let availableWidth = max(visibleWidth(for: pdfView, fallback: pdfView.bounds.width) - 32, 200)
+        let contentWidth: CGFloat
+        if let innerScrollView = pdfView.subviews.first(where: { $0 is NSScrollView }) as? NSScrollView {
+            contentWidth = innerScrollView.contentView.bounds.width
+        } else {
+            contentWidth = visibleWidth(for: pdfView, fallback: pdfView.bounds.width)
+        }
+        let availableWidth = max(contentWidth - 32, 200)
         let pageBounds = page.bounds(for: pdfView.displayBox)
         let pageWidth = max(pageBounds.width, 1)
         return availableWidth / pageWidth

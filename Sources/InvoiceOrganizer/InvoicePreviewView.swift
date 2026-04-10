@@ -6,8 +6,8 @@ struct InvoicePreviewView: View {
     let rotationCoordinator: PreviewRotationCoordinator
 
     @AppStorage("preview.height") private var previewHeight = 620.0
-    @AppStorage("preview.zoomScale") private var zoomScale = 1.0
-    @AppStorage("preview.zoomToFit") private var zoomToFit = true
+    @State private var zoomScale = 1.0
+    @State private var zoomToFit = true
     @StateObject private var previewState: PreviewViewState
     @State private var resizeBaseHeight: Double?
     @State private var gestureBaseZoomScale: Double?
@@ -35,8 +35,6 @@ struct InvoicePreviewView: View {
                 viewport: viewport,
                 rotationQuarterTurns: previewState.rotationQuarterTurns,
                 onChooseFit: applyFitZoom,
-                onChooseZoomPreset: applyZoomPreset,
-                onStepZoom: adjustZoom,
                 onRotate: { delta in
                     previewState.rotate(by: delta, for: invoice)
                 }
@@ -93,22 +91,6 @@ struct InvoicePreviewView: View {
     private func applyFitZoom() {
         zoomToFit = true
         zoomScale = 1.0
-    }
-
-    private func applyZoomPreset(_ preset: Double?) {
-        guard let preset else {
-            applyFitZoom()
-            return
-        }
-
-        zoomToFit = false
-        zoomScale = preset
-    }
-
-    private func adjustZoom(_ delta: Double) {
-        let base = zoomToFit ? 1.0 : zoomScale
-        zoomToFit = false
-        zoomScale = clampZoom(base + delta)
     }
 
     private func clampPreviewHeight(_ value: Double) -> Double {
