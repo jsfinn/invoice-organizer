@@ -192,6 +192,7 @@ struct LibrarySnapshotBuilder {
             fileURL: artifact.fileURL,
             location: artifact.location,
             addedAt: artifact.addedAt,
+            modifiedAt: artifact.modifiedAt,
             fileType: artifact.fileType,
             contentHash: artifact.contentHash
         )
@@ -420,6 +421,7 @@ private extension PhysicalArtifact {
             fileURL: reference.fileURL,
             location: reference.location,
             addedAt: reference.addedAt,
+            modifiedAt: reference.modifiedAt,
             fileType: reference.fileType,
             status: .unprocessed,
             contentHash: reference.contentHash

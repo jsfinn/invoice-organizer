@@ -79,6 +79,7 @@ enum InvoiceBrowserColumnID: String, CaseIterable {
     case ocr
     case read
     case addedAt
+    case modifiedAt
     case fileType
     case vendor
     case invoiceDate
@@ -110,10 +111,10 @@ func invoiceBrowserSortDescriptorsMatch(
 func invoiceBrowserVisibleColumnIDs(for queueTab: InvoiceQueueTab) -> [InvoiceBrowserColumnID] {
     switch queueTab {
     case .unprocessed:
-        return [.name, .ocr, .read, .addedAt, .fileType]
+        return [.name, .ocr, .read, .addedAt, .modifiedAt, .fileType]
     case .inProgress:
-        return [.name, .ocr, .read, .vendor, .invoiceDate, .addedAt, .fileType]
+        return [.name, .ocr, .read, .vendor, .invoiceDate, .addedAt, .modifiedAt, .fileType]
     case .processed:
-        return [.name, .vendor, .invoiceDate, .addedAt, .fileType]
+        return [.name, .vendor, .invoiceDate, .addedAt, .modifiedAt, .fileType]
     }
 }

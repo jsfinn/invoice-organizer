@@ -42,6 +42,7 @@ struct DocumentArtifactReference: Identifiable, Equatable, Sendable {
     let fileURL: URL
     let location: InvoiceLocation
     let addedAt: Date
+    let modifiedAt: Date
     let fileType: InvoiceFileType
     let contentHash: String?
 

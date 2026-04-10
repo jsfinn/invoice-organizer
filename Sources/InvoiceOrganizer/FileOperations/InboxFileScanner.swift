@@ -10,8 +10,35 @@ struct ScannedInvoiceFile: Hashable, Sendable {
     let invoiceDate: Date?
     let processedAt: Date?
     let addedAt: Date
+    let modifiedAt: Date
     let fileType: InvoiceFileType
     let contentHash: String?
+
+    init(
+        id: String,
+        name: String,
+        fileURL: URL,
+        location: InvoiceLocation,
+        vendor: String?,
+        invoiceDate: Date?,
+        processedAt: Date?,
+        addedAt: Date,
+        modifiedAt: Date? = nil,
+        fileType: InvoiceFileType,
+        contentHash: String?
+    ) {
+        self.id = id
+        self.name = name
+        self.fileURL = fileURL
+        self.location = location
+        self.vendor = vendor
+        self.invoiceDate = invoiceDate
+        self.processedAt = processedAt
+        self.addedAt = addedAt
+        self.modifiedAt = modifiedAt ?? addedAt
+        self.fileType = fileType
+        self.contentHash = contentHash
+    }
 }
 
 enum InboxFileScanner {
@@ -24,6 +51,7 @@ enum InboxFileScanner {
         let resourceKeys: Set<URLResourceKey> = [
             .isRegularFileKey,
             .isDirectoryKey,
+            .addedToDirectoryDateKey,
             .creationDateKey,
             .contentModificationDateKey,
         ]
@@ -41,7 +69,8 @@ enum InboxFileScanner {
             guard values.isRegularFile == true else { return nil }
             guard let fileType = fileType(for: fileURL) else { return nil }
 
-            let fallbackDate = values.creationDate ?? values.contentModificationDate ?? .now
+            let fallbackDate = values.addedToDirectoryDate ?? values.creationDate ?? values.contentModificationDate ?? .now
+            let modifiedDate = values.contentModificationDate ?? fallbackDate
             let processedMetadata = location == .processed ? ArchivePathBuilder.processedMetadata(from: fileURL) : nil
             let contentHash = try? FileHasher.sha256(for: fileURL)
 
@@ -54,6 +83,7 @@ enum InboxFileScanner {
                 invoiceDate: processedMetadata?.invoiceDate,
                 processedAt: processedMetadata?.processedAt,
                 addedAt: processedMetadata?.processedAt ?? fallbackDate,
+                modifiedAt: modifiedDate,
                 fileType: fileType,
                 contentHash: contentHash
             )
@@ -81,6 +111,7 @@ enum InboxFileScanner {
             invoiceNumber: workflow?.invoiceNumber,
             documentType: workflow?.documentType,
             addedAt: file.addedAt,
+            modifiedAt: file.modifiedAt,
             fileType: file.fileType,
             status: status,
             contentHash: file.contentHash,
@@ -100,6 +131,7 @@ enum InboxFileScanner {
             documentType: workflow?.documentType,
             processedAt: file.processedAt,
             addedAt: file.addedAt,
+            modifiedAt: file.modifiedAt,
             fileType: file.fileType,
             status: .processed,
             contentHash: file.contentHash

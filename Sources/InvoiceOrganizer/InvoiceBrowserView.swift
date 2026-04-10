@@ -185,6 +185,10 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 let view = tableView.makeView(withIdentifier: TextCellView.reuseIdentifier, owner: nil) as? TextCellView ?? TextCellView()
                 view.configure(text: invoice.addedAt.formatted(date: .abbreviated, time: .shortened), secondary: true)
                 return view
+            case .modifiedAt:
+                let view = tableView.makeView(withIdentifier: TextCellView.reuseIdentifier, owner: nil) as? TextCellView ?? TextCellView()
+                view.configure(text: invoice.modifiedAt.formatted(date: .abbreviated, time: .shortened), secondary: true)
+                return view
             case .ocr:
                 let view = tableView.makeView(withIdentifier: TextCellView.reuseIdentifier, owner: nil) as? TextCellView ?? TextCellView()
                 view.configure(state: ocrStatesByArtifactID[invoice.id])
@@ -583,6 +587,9 @@ struct InvoiceBrowserView: NSViewRepresentable {
             case .addedAt:
                 if lhs.addedAt == rhs.addedAt { return .orderedSame }
                 return lhs.addedAt < rhs.addedAt ? .orderedAscending : .orderedDescending
+            case .modifiedAt:
+                if lhs.modifiedAt == rhs.modifiedAt { return .orderedSame }
+                return lhs.modifiedAt < rhs.modifiedAt ? .orderedAscending : .orderedDescending
             case .ocr:
                 return compareOCRState(lhs: ocrStatesByArtifactID[lhs.id], rhs: ocrStatesByArtifactID[rhs.id])
             case .read:
@@ -664,6 +671,8 @@ private extension InvoiceBrowserColumnID {
             return "Read"
         case .addedAt:
             return "Added"
+        case .modifiedAt:
+            return "Modified"
         case .fileType:
             return "Type"
         case .vendor:
@@ -682,6 +691,8 @@ private extension InvoiceBrowserColumnID {
         case .read:
             return 55
         case .addedAt:
+            return 150
+        case .modifiedAt:
             return 150
         case .fileType:
             return 90
@@ -702,6 +713,8 @@ private extension InvoiceBrowserColumnID {
             return 50
         case .addedAt:
             return 110
+        case .modifiedAt:
+            return 110
         case .fileType:
             return 80
         case .vendor:
@@ -713,7 +726,7 @@ private extension InvoiceBrowserColumnID {
 
     var ascending: Bool {
         switch self {
-        case .addedAt, .invoiceDate:
+        case .addedAt, .modifiedAt, .invoiceDate:
             return false
         case .name, .ocr, .read, .fileType, .vendor:
             return true

@@ -51,6 +51,7 @@ struct PhysicalArtifact: Identifiable, Hashable, Sendable {
     var location: InvoiceLocation
     var processedAt: Date?
     var addedAt: Date
+    var modifiedAt: Date
     var fileType: InvoiceFileType
     var status: InvoiceStatus
     var contentHash: String?
@@ -67,6 +68,7 @@ struct PhysicalArtifact: Identifiable, Hashable, Sendable {
         documentType: DocumentType? = nil,
         processedAt: Date? = nil,
         addedAt: Date,
+        modifiedAt: Date? = nil,
         fileType: InvoiceFileType,
         status: InvoiceStatus,
         contentHash: String? = nil,
@@ -80,6 +82,7 @@ struct PhysicalArtifact: Identifiable, Hashable, Sendable {
         self.location = location
         self.processedAt = processedAt
         self.addedAt = addedAt
+        self.modifiedAt = modifiedAt ?? addedAt
         self.fileType = fileType
         self.status = status
         self.contentHash = contentHash
