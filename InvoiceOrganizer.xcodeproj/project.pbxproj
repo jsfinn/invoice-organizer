@@ -54,8 +54,8 @@
 		C3D71663279699EF4D274B0A /* PreviewViewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C63BE6A6AEABB8ED101E4CD1 /* PreviewViewState.swift */; };
 		C5DE422C5F2C010162EA5087 /* InvoicePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C58BFD64B2F94DFEF9D5D35A /* InvoicePreviewView.swift */; };
 		CB0C9AAB745C730D39C7EE16 /* VendorAutocompleteField.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9E7182CC08CA312192393A4 /* VendorAutocompleteField.swift */; };
-		CEE4D62FDF30B9CE0C77EE94 /* InvoiceStructuredExtractionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89CD40B232579C41D8D56E55 /* InvoiceStructuredExtractionQueue.swift */; };
-		D0A00CCA924BF1F51A8B134A /* InvoiceTextExtractionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D530A5802C98B30BAE584A4 /* InvoiceTextExtractionQueue.swift */; };
+		CEE4D62FDF30B9CE0C77EE94 /* StructuredExtractionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89CD40B232579C41D8D56E55 /* StructuredExtractionHandler.swift */; };
+		D0A00CCA924BF1F51A8B134A /* TextExtractionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D530A5802C98B30BAE584A4 /* TextExtractionHandler.swift */; };
 		D2A5F0806A2229109D804A14 /* CommitOnBlurDatePickerField.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39099637111A5D33F01AB1F /* CommitOnBlurDatePickerField.swift */; };
 		D3FC7CA9540984636610BC0F /* QueueViewContexts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2029C3196E67EF6A47A3366 /* QueueViewContexts.swift */; };
 		DE099784CA01A55E7785B247 /* ArtifactAccessCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6796E8204ECE65BE00F76321 /* ArtifactAccessCoordinator.swift */; };
@@ -87,7 +87,7 @@
 		352246B9A9E5914AD01C319E /* SetupRequiredView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupRequiredView.swift; sourceTree = "<group>"; };
 		39F70B699EF2BE473851EF93 /* PreviewCommitRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewCommitRequest.swift; sourceTree = "<group>"; };
 		3B234C551E2440907921BBB2 /* CheckForUpdatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckForUpdatesView.swift; sourceTree = "<group>"; };
-		3D530A5802C98B30BAE584A4 /* InvoiceTextExtractionQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceTextExtractionQueue.swift; sourceTree = "<group>"; };
+		3D530A5802C98B30BAE584A4 /* TextExtractionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextExtractionHandler.swift; sourceTree = "<group>"; };
 		3F148EE8CC3F868A3314FE06 /* QueueStatusCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueStatusCard.swift; sourceTree = "<group>"; };
 		43D52179153F771CF8FB386D /* InvoiceWorkflowStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceWorkflowStore.swift; sourceTree = "<group>"; };
 		466579A9DB3D8829B3512351 /* DataEntryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataEntryCard.swift; sourceTree = "<group>"; };
@@ -105,7 +105,7 @@
 		84B72E2F14F2484DF372353A /* FolderPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPicker.swift; sourceTree = "<group>"; };
 		890624B54CA6140BDBEF5B82 /* ReplacementPreviewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplacementPreviewRenderer.swift; sourceTree = "<group>"; };
 		8954A8C3B26AEE2DDE97AD98 /* InvoiceOrganizerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InvoiceOrganizerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		89CD40B232579C41D8D56E55 /* InvoiceStructuredExtractionQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceStructuredExtractionQueue.swift; sourceTree = "<group>"; };
+		89CD40B232579C41D8D56E55 /* StructuredExtractionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredExtractionHandler.swift; sourceTree = "<group>"; };
 		A10DF2A883449B3756EB0884 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A28C5011B0C04CA094EC2609 /* DuplicateDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateDetector.swift; sourceTree = "<group>"; };
 		A4BEDBC9AE365973B7AFAA0C /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -405,8 +405,8 @@
 				F4C394D71B7FE207AB3901D9 /* ArtifactComputationCache.swift */,
 				7AB0FA9279C3AF73F4A32F11 /* DocumentTextExtractor.swift */,
 				F85923FD6EF7364C426A589D /* InvoiceStructuredExtractionClient.swift */,
-				89CD40B232579C41D8D56E55 /* InvoiceStructuredExtractionQueue.swift */,
-				3D530A5802C98B30BAE584A4 /* InvoiceTextExtractionQueue.swift */,
+				89CD40B232579C41D8D56E55 /* StructuredExtractionHandler.swift */,
+				3D530A5802C98B30BAE584A4 /* TextExtractionHandler.swift */,
 			);
 			path = Extraction;
 			sourceTree = "<group>";
@@ -552,8 +552,8 @@
 				C5DE422C5F2C010162EA5087 /* InvoicePreviewView.swift in Sources */,
 				6A89CC3CBAFCBD7A8FAD032F /* InvoiceStructuredDataStore.swift in Sources */,
 				E2A2F8CF74CE82DD1542D6BD /* InvoiceStructuredExtractionClient.swift in Sources */,
-				CEE4D62FDF30B9CE0C77EE94 /* InvoiceStructuredExtractionQueue.swift in Sources */,
-				D0A00CCA924BF1F51A8B134A /* InvoiceTextExtractionQueue.swift in Sources */,
+				CEE4D62FDF30B9CE0C77EE94 /* StructuredExtractionHandler.swift in Sources */,
+				D0A00CCA924BF1F51A8B134A /* TextExtractionHandler.swift in Sources */,
 				2E9533B2D8AF0A8D79A7EA1C /* InvoiceTextStore.swift in Sources */,
 				710CB18BC5826C5B8973D5CB /* InvoiceWorkflowStore.swift in Sources */,
 				45DE59470A3570960FE04BFF /* InvoiceWorkspaceMover.swift in Sources */,

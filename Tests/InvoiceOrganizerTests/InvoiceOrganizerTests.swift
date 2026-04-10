@@ -2519,9 +2519,11 @@ private final class RecordingPreviewPersistHandler {
             invoiceURL.path: InvoiceTextRecord(text: "Parsed text", source: .pdfText)
         ]
     )
-    let queue = InvoiceTextExtractionQueue(store: store, extractor: extractor)
+    let handler = TextExtractionHandler(store: store, extractor: extractor)
+    let queue = ContentHashQueue(handler: handler)
 
-    await queue.enqueue(invoices: [invoice], knownCachedHashes: [])
+    let requests = handler.buildRequests(from: [invoice])
+    await queue.enqueue(requests, excludingHashes: [])
     await queue.waitForIdle()
 
     #expect(await store.cachedText(forContentHash: "hash-123")?.text == "Parsed text")
@@ -3293,11 +3295,12 @@ private final class RecordingPreviewPersistHandler {
         provider: .lmStudio,
         modelName: "qwen-local"
     ))
-    let queue = InvoiceStructuredExtractionQueue(
+    let handler = StructuredExtractionHandler(
         textStore: textStore,
         structuredDataStore: structuredStore,
         client: client
     )
+    let queue = ContentHashQueue(handler: handler)
     let invoice = PhysicalArtifact(
         name: "incoming.pdf",
         fileURL: URL(fileURLWithPath: "/tmp/incoming.pdf"),
@@ -3308,11 +3311,9 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "hash-123"
     )
 
-    await queue.enqueue(
-        invoices: [invoice],
-        knownStructuredHashes: ["hash-123"],
-        settings: LLMSettings(provider: .lmStudio, baseURL: "http://localhost:1234/v1", modelName: "qwen-local", apiKey: "", customInstructions: "")
-    )
+    let settings = LLMSettings(provider: .lmStudio, baseURL: "http://localhost:1234/v1", modelName: "qwen-local", apiKey: "", customInstructions: "")
+    let requests = handler.buildRequests(from: [invoice], settings: settings)
+    await queue.enqueue(requests, excludingHashes: ["hash-123"])
     await queue.waitForIdle()
 
     #expect(await client.totalCallCount() == 0)

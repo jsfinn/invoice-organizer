@@ -17,16 +17,20 @@ final class AppModel: ObservableObject {
     @Published private(set) var textFailedHashes: Set<String> = []
     @Published private(set) var structuredPendingHashes: Set<String> = []
     @Published private(set) var structuredFailedHashes: Set<String> = []
+    @Published private(set) var textQueueDepth: Int = 0
+    @Published private(set) var structuredQueueDepth: Int = 0
 
     private let accessCoordinator = ArtifactAccessCoordinator()
     private let openInPreviewHandler: ([URL]) -> Void
     private let computationCache: ArtifactComputationCache
     private let snapshotBuilder: LibrarySnapshotBuilder
     private let textStore: any InvoiceTextStoring
-    private let textExtractionQueue: InvoiceTextExtractionQueue
+    private let textExtractionHandler: TextExtractionHandler
+    private let textExtractionQueue: ContentHashQueue<TextExtractionHandler>
     private let structuredDataStore: any InvoiceStructuredDataStoring
     private let structuredExtractionClient: any InvoiceStructuredExtractionClient
-    private let structuredExtractionQueue: InvoiceStructuredExtractionQueue
+    private let structuredExtractionHandler: StructuredExtractionHandler
+    private let structuredExtractionQueue: ContentHashQueue<StructuredExtractionHandler>
     private let workflowActionCoordinator = WorkflowActionCoordinator()
     private lazy var fileSystemReconciler = FileSystemReconciler(
         folderSettings: folderSettings,
@@ -79,39 +83,51 @@ final class AppModel: ObservableObject {
         )
         self.structuredExtractionClient = structuredExtractionClient
         self.llmPreflightStatus = Self.initialLLMPreflightStatus(for: resolvedLLMSettings)
-        self.textExtractionQueue = InvoiceTextExtractionQueue(store: textStore, extractor: textExtractor)
-        self.structuredExtractionQueue = InvoiceStructuredExtractionQueue(
+        let textHandler = TextExtractionHandler(store: textStore, extractor: textExtractor)
+        self.textExtractionHandler = textHandler
+        self.textExtractionQueue = ContentHashQueue(handler: textHandler)
+
+        let structuredHandler = StructuredExtractionHandler(
             textStore: textStore,
             structuredDataStore: structuredDataStore,
             client: structuredExtractionClient
         )
+        self.structuredExtractionHandler = structuredHandler
+        self.structuredExtractionQueue = ContentHashQueue(handler: structuredHandler)
+
         self.invoices = []
         self.queueHandlerSetupTask = Task { [textExtractionQueue = self.textExtractionQueue, structuredExtractionQueue = self.structuredExtractionQueue] in
-            await textExtractionQueue.setOnRequestStarted { contentHash in
+            textHandler.onRequestStarted = { contentHash in
                 self.textPendingHashes.insert(contentHash)
                 self.textFailedHashes.remove(contentHash)
             }
-            await textExtractionQueue.setOnRecordSaved { contentHash in
+            textHandler.onRecordSaved = { contentHash in
                 await self.handleExtractedTextSaved(contentHash)
             }
-            await textExtractionQueue.setOnRequestFailed { contentHash in
+            textHandler.onRequestFailed = { contentHash in
                 self.textPendingHashes.remove(contentHash)
                 self.textFailedHashes.insert(contentHash)
                 self.handleRescannedDocumentContentHashCompleted(contentHash)
                 self.rebuildLibrarySnapshot()
             }
-            await structuredExtractionQueue.setOnRequestStarted { contentHash in
+            structuredHandler.onRequestStarted = { contentHash in
                 self.structuredPendingHashes.insert(contentHash)
                 self.structuredFailedHashes.remove(contentHash)
             }
-            await structuredExtractionQueue.setOnRecordSaved { contentHash, record in
+            structuredHandler.onRecordSaved = { contentHash, record in
                 self.handleStructuredDataSaved(contentHash: contentHash, record: record)
             }
-            await structuredExtractionQueue.setOnRequestFailed { contentHash, status in
+            structuredHandler.onRequestFailed = { contentHash, status in
                 self.structuredPendingHashes.remove(contentHash)
                 self.structuredFailedHashes.insert(contentHash)
                 self.handleRescannedDocumentContentHashCompleted(contentHash)
                 self.llmPreflightStatus = status
+            }
+            await textExtractionQueue.setOnQueueDepthChanged { depth in
+                self.textQueueDepth = depth
+            }
+            await structuredExtractionQueue.setOnQueueDepthChanged { depth in
+                self.structuredQueueDepth = depth
             }
         }
         fileSystemReconciler.updateConfiguration(folderSettings: resolvedFolderSettings, autoRefresh: autoRefresh)
@@ -695,11 +711,11 @@ final class AppModel: ObservableObject {
         structuredFailedHashes.subtract(contentHashes)
         rebuildLibrarySnapshot()
 
-        await textExtractionQueue.enqueue(
-            invoices: Array(Dictionary(uniqueKeysWithValues: invoicesToRescan.map { ($0.id, $0) }).values),
-            knownCachedHashes: extractedTextHashes.union(textFailedHashes),
+        let rescanRequests = textExtractionHandler.buildRequests(
+            from: Array(Dictionary(uniqueKeysWithValues: invoicesToRescan.map { ($0.id, $0) }).values),
             force: true
         )
+        await textExtractionQueue.enqueue(rescanRequests, excludingHashes: extractedTextHashes.union(textFailedHashes))
     }
 
     func moveInvoicesToInProgress(ids: Set<PhysicalArtifact.ID>) {
@@ -970,10 +986,8 @@ final class AppModel: ObservableObject {
         syncComputationHashes()
         rebuildLibrarySnapshot()
         syncSelectionForVisibleInvoices()
-        await textExtractionQueue.enqueue(
-            invoices: invoices,
-            knownCachedHashes: extractedTextHashes.union(textFailedHashes)
-        )
+        let textRequests = textExtractionHandler.buildRequests(from: invoices)
+        await textExtractionQueue.enqueue(textRequests, excludingHashes: extractedTextHashes.union(textFailedHashes))
         if canAttemptStructuredExtraction(with: llmSettings) {
             await enqueueStructuredExtraction(for: invoices)
         }
@@ -1224,12 +1238,8 @@ final class AppModel: ObservableObject {
     private func enqueueStructuredExtraction(for invoices: [PhysicalArtifact], force: Bool = false) async {
         let cachedHashes = await computationCache.reloadStructuredRecords()
         syncComputationHashes()
-        await structuredExtractionQueue.enqueue(
-            invoices: invoices,
-            knownStructuredHashes: cachedHashes.union(structuredFailedHashes),
-            settings: llmSettings,
-            force: force
-        )
+        let structuredRequests = structuredExtractionHandler.buildRequests(from: invoices, settings: llmSettings, force: force)
+        await structuredExtractionQueue.enqueue(structuredRequests, excludingHashes: cachedHashes.union(structuredFailedHashes))
     }
 
     private func handleExtractedTextSaved(_ contentHash: String) async {

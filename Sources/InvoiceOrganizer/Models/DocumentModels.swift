@@ -46,6 +46,24 @@ struct DocumentArtifactReference: Identifiable, Equatable, Sendable {
     let fileType: InvoiceFileType
     let contentHash: String?
 
+    init(
+        id: PhysicalArtifact.ID,
+        fileURL: URL,
+        location: InvoiceLocation,
+        addedAt: Date,
+        modifiedAt: Date? = nil,
+        fileType: InvoiceFileType,
+        contentHash: String?
+    ) {
+        self.id = id
+        self.fileURL = fileURL
+        self.location = location
+        self.addedAt = addedAt
+        self.modifiedAt = modifiedAt ?? addedAt
+        self.fileType = fileType
+        self.contentHash = contentHash
+    }
+
     var identityKey: String {
         let hashComponent = if let contentHash, !contentHash.isEmpty {
             "hash:\(contentHash)"
