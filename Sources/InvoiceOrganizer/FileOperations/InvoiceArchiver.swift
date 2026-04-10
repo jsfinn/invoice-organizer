@@ -6,7 +6,7 @@ enum InvoiceArchiver {
         processedRoot: URL,
         vendor: String?,
         invoiceDate: Date,
-        processedAt: Date
+        invoiceNumber: String?
     ) throws -> URL {
         let destinationFolder = ArchivePathBuilder.destinationFolder(root: processedRoot, vendor: vendor)
         try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
@@ -16,7 +16,7 @@ enum InvoiceArchiver {
             preferredName: ArchivePathBuilder.processedFilename(
                 vendor: vendor,
                 invoiceDate: invoiceDate,
-                processedAt: processedAt,
+                invoiceNumber: invoiceNumber,
                 originalFileURL: invoice.fileURL
             )
         )

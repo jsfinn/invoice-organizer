@@ -164,7 +164,6 @@ struct WorkflowActionCoordinator {
 
         var nextWorkflows = workflowsByID
         var archivedIDs: Set<PhysicalArtifact.ID> = []
-        let processedAt = Date()
 
         for artifact in eligibleArtifacts {
             let metadata = snapshot.metadata(for: artifact.id)
@@ -175,7 +174,7 @@ struct WorkflowActionCoordinator {
                 processedRoot: processedRoot,
                 vendor: vendor,
                 invoiceDate: invoiceDate,
-                processedAt: processedAt
+                invoiceNumber: metadata.invoiceNumber
             )
 
             let archivedID = PhysicalArtifact.stableID(for: destinationURL)

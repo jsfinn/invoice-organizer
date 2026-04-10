@@ -25,17 +25,25 @@ enum ArchivePathBuilder {
         return sanitized.isEmpty ? "Misc" : sanitized
     }
 
-    static func processedFilename(vendor: String?, invoiceDate: Date, processedAt: Date, originalFileURL: URL) -> String {
-        let normalizedVendor = normalizedVendorName(from: vendor)
-        let invoiceDatePart = invoiceDateFormatter.string(from: invoiceDate)
-        let processedTimePart = processedTimestampFormatter.string(from: processedAt)
-        let fileExtension = originalFileURL.pathExtension
-
-        if fileExtension.isEmpty {
-            return "\(normalizedVendor)-\(invoiceDatePart)-\(processedTimePart)"
+    static func processedFilename(vendor: String?, invoiceDate: Date, invoiceNumber: String?, originalFileURL: URL) -> String {
+        let invoiceNumberPart = normalizedFileComponent(invoiceNumber)
+        let components: [String] = [
+            normalizedVendorName(from: vendor),
+            invoiceDateFormatter.string(from: invoiceDate),
+            invoiceNumberPart
+        ]
+        .compactMap { component in
+            guard let component, !component.isEmpty else { return nil }
+            return component
         }
 
-        return "\(normalizedVendor)-\(invoiceDatePart)-\(processedTimePart).\(fileExtension)"
+        let baseName = components.isEmpty ? originalFileURL.deletingPathExtension().lastPathComponent : components.joined(separator: "-")
+        let fileExtension = originalFileURL.pathExtension
+        if fileExtension.isEmpty {
+            return baseName
+        }
+
+        return "\(baseName).\(fileExtension)"
     }
 
     static func processingFilename(vendor: String?, invoiceDate: Date?, invoiceNumber: String?, originalFileURL: URL) -> String {

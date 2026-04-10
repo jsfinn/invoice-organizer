@@ -180,24 +180,25 @@ private final class RecordingPreviewPersistHandler {
     #expect(destination.path == "/Processed/M/Misc")
 }
 
-@Test func processedFilenameRoundTripsMetadata() async throws {
+@Test func processedFilenameIncludesInvoiceNumber() async throws {
     let invoiceDate = utcDate(year: 2024, month: 1, day: 5)
-    let processedAt = utcDate(year: 2024, month: 3, day: 30, hour: 6, minute: 24, second: 5)
     let fileURL = URL(fileURLWithPath: "/tmp/invoice.pdf")
 
-    let filename = ArchivePathBuilder.processedFilename(
+    let withNumber = ArchivePathBuilder.processedFilename(
         vendor: "Amazon",
         invoiceDate: invoiceDate,
-        processedAt: processedAt,
+        invoiceNumber: "INV-1234",
         originalFileURL: fileURL
     )
+    #expect(withNumber == "Amazon-2024-01-05-INV-1234.pdf")
 
-    #expect(filename == "Amazon-2024-01-05-20240330-062405.pdf")
-
-    let parsed = ArchivePathBuilder.processedMetadata(from: URL(fileURLWithPath: "/tmp/\(filename)"))
-    #expect(parsed?.vendor == "Amazon")
-    #expect(parsed?.invoiceDate == invoiceDate)
-    #expect(parsed?.processedAt == processedAt)
+    let withoutNumber = ArchivePathBuilder.processedFilename(
+        vendor: "Amazon",
+        invoiceDate: invoiceDate,
+        invoiceNumber: nil,
+        originalFileURL: fileURL
+    )
+    #expect(withoutNumber == "Amazon-2024-01-05.pdf")
 }
 
 @Test func scannerRecognizesSupportedExtensions() async throws {
@@ -838,7 +839,6 @@ private final class RecordingPreviewPersistHandler {
     let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
     try "one".data(using: .utf8)?.write(to: inboxURL)
     let invoiceDate = utcDate(year: 2024, month: 1, day: 5)
-    let processedAt = utcDate(year: 2024, month: 3, day: 30, hour: 6, minute: 24, second: 5)
 
     let invoice = PhysicalArtifact(
         name: "invoice.pdf",
@@ -856,9 +856,9 @@ private final class RecordingPreviewPersistHandler {
         processedRoot: processedRoot,
         vendor: "Amazon",
         invoiceDate: invoiceDate,
-        processedAt: processedAt
+        invoiceNumber: "INV-99"
     )
-    #expect(archivedURL.lastPathComponent == "Amazon-2024-01-05-20240330-062405.pdf")
+    #expect(archivedURL.lastPathComponent == "Amazon-2024-01-05-INV-99.pdf")
     #expect(FileManager.default.fileExists(atPath: archivedURL.path))
 }
 
