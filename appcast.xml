@@ -3,6 +3,14 @@
   <channel>
     <title>Invoice Organizer</title>
     <item>
+      <title>Version 0.4.13</title>
+      <sparkle:version>23</sparkle:version>
+      <sparkle:shortVersionString>0.4.13</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Fri, 10 Apr 2026 14:53:49 +0000</pubDate>
+      <enclosure url="https://github.com/jsfinn/invoice-organizer/releases/download/v0.4.13/InvoiceOrganizer-0.4.13.dmg" type="application/octet-stream" sparkle:edSignature="eLePZ4/D7pH6yRFkjLsUD84Wobs2Obaaq+oVJ06ngVonY67jdqgpUD2i1cAJPwCa6Mdt14vlTYErJ9LQg7C1CQ==" length="4046496" />
+    </item>
+    <item>
       <title>Version 0.4.6</title>
       <sparkle:version>16</sparkle:version>
       <sparkle:shortVersionString>0.4.6</sparkle:shortVersionString>
