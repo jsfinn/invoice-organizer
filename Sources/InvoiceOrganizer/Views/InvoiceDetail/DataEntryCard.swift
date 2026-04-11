@@ -2,30 +2,24 @@ import SwiftUI
 
 struct DataEntryCard: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var previewState: PreviewViewState
     let invoice: PhysicalArtifact
 
-    private var activeInvoiceID: PhysicalArtifact.ID {
-        model.selectedArtifactID ?? invoice.id
-    }
-
-    private var committedInvoice: PhysicalArtifact {
-        model.selectedArtifact ?? invoice
-    }
-
-    private var committedMetadata: DocumentMetadata {
-        model.documentMetadata(for: activeInvoiceID)
+    private var pendingMetadata: DocumentMetadata {
+        previewState.activeContext?.pendingMetadata
+            ?? model.documentMetadata(for: invoice.id)
     }
 
     private var documentArtifactCount: Int {
-        model.document(for: activeInvoiceID)?.artifacts.count ?? 1
+        model.document(for: invoice.id)?.artifacts.count ?? 1
     }
 
     private var documentTypeBinding: Binding<DocumentType?> {
         Binding(
-            get: { committedMetadata.documentType },
+            get: { pendingMetadata.documentType },
             set: { newValue in
-                guard committedMetadata.documentType != newValue else { return }
-                model.updateDocumentType(newValue, for: activeInvoiceID)
+                guard pendingMetadata.documentType != newValue else { return }
+                previewState.updatePendingDocumentType(newValue)
             }
         )
     }
@@ -46,16 +40,19 @@ struct DataEntryCard: View {
                         .foregroundStyle(.secondary)
 
                     VendorAutocompleteField(
-                        text: committedMetadata.vendor ?? "",
+                        text: pendingMetadata.vendor ?? "",
                         suggestions: model.knownVendors,
                         placeholder: "Vendor or Misc",
-                        onCommit: { model.updateVendor($0, for: activeInvoiceID) }
+                        onCommit: { value in
+                            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                            previewState.updatePendingVendor(trimmed.isEmpty ? nil : trimmed)
+                        }
                     )
                     .frame(height: 24)
 
                     CommitOnBlurDatePickerField(
-                        date: committedMetadata.invoiceDate ?? committedInvoice.addedAt,
-                        onCommit: { model.updateInvoiceDate($0, for: activeInvoiceID) }
+                        date: pendingMetadata.invoiceDate ?? invoice.addedAt,
+                        onCommit: { previewState.updatePendingInvoiceDate($0) }
                     )
 
                     Picker("Document Type", selection: documentTypeBinding) {
@@ -69,9 +66,12 @@ struct DataEntryCard: View {
                         .foregroundStyle(.secondary)
 
                     CommitOnBlurTextField(
-                        text: committedMetadata.invoiceNumber ?? "",
+                        text: pendingMetadata.invoiceNumber ?? "",
                         placeholder: "Invoice Number",
-                        onCommit: { model.updateInvoiceNumber($0, for: activeInvoiceID) }
+                        onCommit: { value in
+                            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                            previewState.updatePendingInvoiceNumber(trimmed.isEmpty ? nil : trimmed)
+                        }
                     )
                     .frame(height: 22)
 

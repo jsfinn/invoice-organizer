@@ -10,15 +10,24 @@ func normalizedPreviewRotationQuarterTurns(_ value: Int) -> Int {
 }
 
 struct ActivePreviewContext {
-    let invoice: PhysicalArtifact
+    var invoice: PhysicalArtifact
     let sessionID: PreviewSessionID
     var content: PreviewContent
+
+    // MARK: - Rotation
+
     var rotationQuarterTurns: Int
     var persistedQuarterTurns: Int
     var rotationSaveStatus: PreviewRotationCoordinator.SaveStatus
 
+    // MARK: - Metadata
+
+    var pendingMetadata: DocumentMetadata
+    var committedMetadata: DocumentMetadata
+
     init(
         invoice: PhysicalArtifact,
+        metadata: DocumentMetadata,
         persistedQuarterTurns: Int,
         rotationSaveStatus: PreviewRotationCoordinator.SaveStatus
     ) {
@@ -29,15 +38,30 @@ struct ActivePreviewContext {
         self.rotationQuarterTurns = normalizedRotation
         self.persistedQuarterTurns = normalizedRotation
         self.rotationSaveStatus = rotationSaveStatus
+        self.pendingMetadata = metadata
+        self.committedMetadata = metadata
     }
 
-    var isDirty: Bool {
+    var isRotationDirty: Bool {
         rotationQuarterTurns != persistedQuarterTurns
     }
 
-    var commitRequest: PreviewCommitRequest? {
-        guard isDirty else { return nil }
+    var isMetadataDirty: Bool {
+        pendingMetadata != committedMetadata
+    }
+
+    var isDirty: Bool {
+        isRotationDirty || isMetadataDirty
+    }
+
+    var rotationCommitRequest: PreviewCommitRequest? {
+        guard isRotationDirty else { return nil }
         return PreviewCommitRequest(invoice: invoice, quarterTurns: rotationQuarterTurns)
+    }
+
+    var metadataCommitRequest: MetadataCommitRequest? {
+        guard isMetadataDirty else { return nil }
+        return MetadataCommitRequest(artifactID: invoice.id, metadata: pendingMetadata)
     }
 
     mutating func rotate(by quarterTurnsDelta: Int) -> Bool {

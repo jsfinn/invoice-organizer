@@ -1,8 +1,7 @@
 import SwiftUI
 
 struct PreviewCard: View {
-    @ObservedObject var model: AppModel
-    let rotationCoordinator: PreviewRotationCoordinator
+    @ObservedObject var previewState: PreviewViewState
     let invoice: PhysicalArtifact
 
     var body: some View {
@@ -14,7 +13,7 @@ struct PreviewCard: View {
 
             InvoicePreviewView(
                 invoice: invoice,
-                rotationCoordinator: rotationCoordinator
+                previewState: previewState
             )
         }
     }

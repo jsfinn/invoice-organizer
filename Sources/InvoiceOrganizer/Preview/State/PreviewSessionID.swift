@@ -1,9 +1,11 @@
 import Foundation
 
 struct PreviewSessionID: Hashable {
-    let handle: ArtifactHandle
+    let contentHash: String?
+    let fileType: InvoiceFileType
 
     init(invoice: PhysicalArtifact) {
-        handle = invoice.handle
+        contentHash = invoice.contentHash
+        fileType = invoice.fileType
     }
 }

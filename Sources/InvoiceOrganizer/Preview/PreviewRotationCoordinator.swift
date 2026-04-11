@@ -38,7 +38,7 @@ final class PreviewRotationCoordinator: ObservableObject {
 
     /// Enqueues a background commit from an active context if that context has unsaved rotation changes.
     func enqueueCommitIfNeeded(from context: ActivePreviewContext?) {
-        guard let request = context?.commitRequest else {
+        guard let request = context?.rotationCommitRequest else {
             return
         }
 

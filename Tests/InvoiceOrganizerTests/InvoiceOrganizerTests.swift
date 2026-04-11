@@ -574,10 +574,10 @@ private final class RecordingPreviewPersistHandler {
     )
 
     let firstLoad = Task { @MainActor in
-        await state.loadPreview(for: firstInvoice)
+        await state.loadPreview(for: firstInvoice, metadata: .empty)
     }
     try await Task.sleep(for: .milliseconds(20))
-    await state.loadPreview(for: secondInvoice)
+    await state.loadPreview(for: secondInvoice, metadata: .empty)
     await firstLoad.value
 
     guard case .asset(.image(let image)) = state.content else {
@@ -622,11 +622,11 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "second"
     )
 
-    await state.loadPreview(for: firstInvoice)
+    await state.loadPreview(for: firstInvoice, metadata: .empty)
     state.rotate(by: 1, for: firstInvoice)
     state.rotate(by: 1, for: firstInvoice)
 
-    await state.loadPreview(for: secondInvoice)
+    await state.loadPreview(for: secondInvoice, metadata: .empty)
     await coordinator.commitAllPendingRequests()
 
     #expect(recorder.requests.count == 1)
@@ -671,11 +671,11 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "second"
     )
 
-    await state.loadPreview(for: firstInvoice)
+    await state.loadPreview(for: firstInvoice, metadata: .empty)
     state.rotate(by: 1, for: firstInvoice)
 
     let secondLoad = Task { @MainActor in
-        await state.loadPreview(for: secondInvoice)
+        await state.loadPreview(for: secondInvoice, metadata: .empty)
     }
 
     try await Task.sleep(for: .milliseconds(40))
@@ -726,11 +726,11 @@ private final class RecordingPreviewPersistHandler {
         rotationCoordinator: coordinator
     )
 
-    await state.loadPreview(for: firstInvoice)
+    await state.loadPreview(for: firstInvoice, metadata: .empty)
     state.rotate(by: 1, for: firstInvoice)
     state.rotate(by: 1, for: firstInvoice)
 
-    await state.loadPreview(for: duplicateInvoice)
+    await state.loadPreview(for: duplicateInvoice, metadata: .empty)
     await coordinator.commitAllPendingRequests()
 
     let updatedFirstInvoice = try #require(model.invoices.first(where: { $0.id == firstInvoice.id }))
@@ -739,7 +739,7 @@ private final class RecordingPreviewPersistHandler {
 
     #expect(rotatedPage.rotation == 180)
 
-    await state.loadPreview(for: updatedFirstInvoice)
+    await state.loadPreview(for: updatedFirstInvoice, metadata: .empty)
 
     guard case .asset(.pdf(let document)) = state.content,
           let firstPage = document.page(at: 0) else {
@@ -769,6 +769,7 @@ private final class RecordingPreviewPersistHandler {
 
     let context = ActivePreviewContext(
         invoice: invoice,
+        metadata: .empty,
         persistedQuarterTurns: 0,
         rotationSaveStatus: .idle
     )

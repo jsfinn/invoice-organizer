@@ -3,29 +3,13 @@ import SwiftUI
 
 struct InvoicePreviewView: View {
     let invoice: PhysicalArtifact
-    let rotationCoordinator: PreviewRotationCoordinator
+    @ObservedObject var previewState: PreviewViewState
 
     @AppStorage("preview.height") private var previewHeight = 620.0
     @State private var zoomScale = 1.0
     @State private var zoomToFit = true
-    @StateObject private var previewState: PreviewViewState
     @State private var resizeBaseHeight: Double?
     @State private var gestureBaseZoomScale: Double?
-
-    init(
-        invoice: PhysicalArtifact,
-        rotationCoordinator: PreviewRotationCoordinator,
-        assetProvider: any PreviewAssetProviding = PreviewAssetProvider.shared
-    ) {
-        self.invoice = invoice
-        self.rotationCoordinator = rotationCoordinator
-        _previewState = StateObject(
-            wrappedValue: PreviewViewState(
-                assetProvider: assetProvider,
-                rotationCoordinator: rotationCoordinator
-            )
-        )
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -72,15 +56,6 @@ struct InvoicePreviewView: View {
                             resizeBaseHeight = nil
                         }
                 )
-        }
-        .task(id: PreviewSessionID(invoice: invoice)) {
-            await previewState.loadPreview(for: invoice)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-            previewState.scheduleCommitCurrentSessionIfNeeded()
-        }
-        .onDisappear {
-            previewState.scheduleCommitCurrentSessionIfNeeded()
         }
     }
 

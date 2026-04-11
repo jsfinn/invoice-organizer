@@ -2,10 +2,17 @@ import Foundation
 
 @MainActor
 final class PreviewViewState: ObservableObject {
+    typealias MetadataFlushHandler = @MainActor (PhysicalArtifact.ID, DocumentMetadata) -> Void
+
     @Published private(set) var activeContext: ActivePreviewContext?
+
+    var metadataFlushHandler: MetadataFlushHandler?
 
     private let assetProvider: any PreviewAssetProviding
     private let rotationCoordinator: PreviewRotationCoordinator
+    private var metadataFlushTask: Task<Void, Never>?
+
+    private static let metadataFlushDelay: Duration = .milliseconds(150)
 
     init(
         assetProvider: any PreviewAssetProviding,
@@ -31,7 +38,9 @@ final class PreviewViewState: ObservableObject {
         activeContext?.rotationSaveStatus ?? .idle
     }
 
-    func loadPreview(for invoice: PhysicalArtifact) async {
+    // MARK: - Preview Loading
+
+    func loadPreview(for invoice: PhysicalArtifact, metadata: DocumentMetadata) async {
         let nextSessionID = PreviewSessionID(invoice: invoice)
         let isSameRevision = activeContext?.sessionID == nextSessionID
 
@@ -48,6 +57,7 @@ final class PreviewViewState: ObservableObject {
         let saveStatus = rotationCoordinator.saveStatus(for: invoice.id)
         activeContext = ActivePreviewContext(
             invoice: invoice,
+            metadata: metadata,
             persistedQuarterTurns: pendingQuarterTurns,
             rotationSaveStatus: saveStatus
         )
@@ -79,6 +89,8 @@ final class PreviewViewState: ObservableObject {
         }
     }
 
+    // MARK: - Rotation
+
     func rotate(by quarterTurnsDelta: Int, for invoice: PhysicalArtifact) {
         guard activeContext?.invoice.id == invoice.id else {
             return
@@ -89,13 +101,81 @@ final class PreviewViewState: ObservableObject {
         }
     }
 
+    // MARK: - Metadata Editing
+
+    func updatePendingVendor(_ vendor: String?) {
+        updateActiveContext { $0.pendingMetadata.vendor = vendor }
+        scheduleMetadataFlush()
+    }
+
+    func updatePendingInvoiceDate(_ date: Date?) {
+        updateActiveContext { $0.pendingMetadata.invoiceDate = date }
+        scheduleMetadataFlush()
+    }
+
+    func updatePendingInvoiceNumber(_ invoiceNumber: String?) {
+        updateActiveContext { $0.pendingMetadata.invoiceNumber = invoiceNumber }
+        scheduleMetadataFlush()
+    }
+
+    func updatePendingDocumentType(_ documentType: DocumentType?) {
+        updateActiveContext { $0.pendingMetadata.documentType = documentType }
+        scheduleMetadataFlush()
+    }
+
+    /// Updates the artifact reference when the underlying file was renamed
+    /// but the content stayed the same (same session).
+    func syncArtifactReference(_ invoice: PhysicalArtifact, metadata: DocumentMetadata) {
+        guard let activeContext,
+              activeContext.sessionID == PreviewSessionID(invoice: invoice),
+              activeContext.invoice.id != invoice.id else {
+            return
+        }
+
+        updateActiveContext {
+            $0.invoice = invoice
+            $0.committedMetadata = metadata
+            if !$0.isMetadataDirty {
+                $0.pendingMetadata = metadata
+            }
+        }
+    }
+
+    // MARK: - Commit / Flush
+
     func scheduleCommitCurrentSessionIfNeeded() {
         guard let activeContext else {
             return
         }
 
+        flushMetadataImmediately()
         rotationCoordinator.enqueueCommitIfNeeded(from: activeContext)
         syncSaveState(for: activeContext.invoice.id)
+    }
+
+    func flushMetadataImmediately() {
+        metadataFlushTask?.cancel()
+        metadataFlushTask = nil
+
+        guard let context = activeContext, context.isMetadataDirty else {
+            return
+        }
+
+        metadataFlushHandler?(context.invoice.id, context.pendingMetadata)
+        updateActiveContext {
+            $0.committedMetadata = $0.pendingMetadata
+        }
+    }
+
+    // MARK: - Private
+
+    private func scheduleMetadataFlush() {
+        metadataFlushTask?.cancel()
+        metadataFlushTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.metadataFlushDelay)
+            guard !Task.isCancelled else { return }
+            self?.flushMetadataImmediately()
+        }
     }
 
     private func handoffActiveContextIfNeeded(for nextInvoice: PhysicalArtifact) {
@@ -104,6 +184,7 @@ final class PreviewViewState: ObservableObject {
             return
         }
 
+        flushMetadataImmediately()
         rotationCoordinator.enqueueCommitIfNeeded(from: activeContext)
     }
 

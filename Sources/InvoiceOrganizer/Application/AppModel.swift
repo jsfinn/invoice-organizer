@@ -608,6 +608,8 @@ final class AppModel: ObservableObject {
     }
 
     func archiveInvoices(ids: [PhysicalArtifact.ID]) async {
+        metadataFlushGuard?()
+
         guard let archiveRoot = folderSettings.duplicatesURL else {
             settingsErrorMessage = "Choose an Archive folder before archiving invoices."
             return
@@ -787,6 +789,8 @@ final class AppModel: ObservableObject {
     }
 
     func moveInvoicesToUnprocessed(ids: Set<PhysicalArtifact.ID>) {
+        metadataFlushGuard?()
+
         guard !ids.isEmpty else { return }
         guard let inboxRoot = folderSettings.inboxURL else {
             settingsErrorMessage = "Choose an Inbox folder before moving invoices back to Unprocessed."
@@ -814,6 +818,8 @@ final class AppModel: ObservableObject {
     }
 
     func moveInvoicesToProcessed(ids: Set<PhysicalArtifact.ID>) {
+        metadataFlushGuard?()
+
         guard !ids.isEmpty else { return }
         guard let processedRoot = folderSettings.processedURL else {
             settingsErrorMessage = "Choose a Processed folder before archiving invoices."
@@ -846,6 +852,22 @@ final class AppModel: ObservableObject {
         } catch {
             settingsErrorMessage = error.localizedDescription
         }
+    }
+
+    /// Closure invoked before any move operation to flush buffered metadata edits.
+    /// Set by the view layer (InvoiceDetailView) to drain the editing context.
+    var metadataFlushGuard: (() -> Void)?
+
+    func applyBufferedMetadata(_ metadata: DocumentMetadata, for artifactID: PhysicalArtifact.ID) {
+        guard let invoice = invoices.first(where: { $0.id == artifactID }),
+              invoice.location == .processing else {
+            return
+        }
+        guard let document = librarySnapshot.document(for: artifactID),
+              document.metadata != metadata else {
+            return
+        }
+        setDocumentMetadata(metadata, for: document.id, renameProcessingFiles: true)
     }
 
     func updateVendor(_ vendor: String, for artifactID: PhysicalArtifact.ID) {
