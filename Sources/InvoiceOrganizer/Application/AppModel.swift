@@ -728,7 +728,40 @@ final class AppModel: ObservableObject {
         )
     }
 
+    private func reopenProcessedToInProgress(ids: Set<PhysicalArtifact.ID>) {
+        guard let processingRoot = folderSettings.processingURL else {
+            settingsErrorMessage = "Choose a Processing folder before moving invoices into In Progress."
+            return
+        }
+
+        do {
+            let result = try workflowActionCoordinator.reopenToInProgress(
+                ids: ids,
+                artifacts: invoices,
+                snapshot: librarySnapshot,
+                workflowsByID: workflowByID,
+                processingRoot: processingRoot
+            )
+            workflowByID = result.workflowsByID
+            persistWorkflow()
+            settingsErrorMessage = nil
+            refreshLibrary()
+            selectedArtifactIDs = result.selectedArtifactIDs
+        } catch {
+            settingsErrorMessage = error.localizedDescription
+        }
+    }
+
     func moveInvoicesToInProgress(ids: [PhysicalArtifact.ID]) {
+        let allIDs = Set(ids)
+        let processedIDs = Set(invoices.filter { allIDs.contains($0.id) && $0.canReopenToInProgress }.map(\.id))
+        if !processedIDs.isEmpty {
+            reopenProcessedToInProgress(ids: processedIDs)
+        }
+
+        let inboxIDs = ids.filter { !processedIDs.contains($0) }
+        guard !inboxIDs.isEmpty else { return }
+
         guard let processingRoot = folderSettings.processingURL else {
             settingsErrorMessage = "Choose a Processing folder before moving invoices into In Progress."
             return

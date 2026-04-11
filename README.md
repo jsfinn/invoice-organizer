@@ -26,22 +26,20 @@ The app extracts text from PDFs and images, uses that text to detect likely dupl
 To reset OCR results, structured extraction results, and saved workflow state without losing app configuration, close the app first and run:
 
 ```sh
-defaults delete InvoiceOrganizer workflow.invoiceExtractedText || true
-defaults delete InvoiceOrganizer workflow.invoiceStructuredData || true
-defaults delete InvoiceOrganizer workflow.invoiceMetadata || true
-defaults delete InvoiceOrganizer settings.ignoredInvoiceIDs || true
-
-defaults delete com.pkm.invoiceorganizer workflow.invoiceExtractedText || true
-defaults delete com.pkm.invoiceorganizer workflow.invoiceStructuredData || true
-defaults delete com.pkm.invoiceorganizer workflow.invoiceMetadata || true
-defaults delete com.pkm.invoiceorganizer settings.ignoredInvoiceIDs || true
+for domain in InvoiceOrganizer com.pkm.invoiceorganizer; do
+  defaults delete "$domain" workflow.invoiceExtractedText 2>/dev/null
+  defaults delete "$domain" workflow.invoiceStructuredData 2>/dev/null
+  defaults delete "$domain" workflow.invoiceMetadata 2>/dev/null
+done
+echo "Done."
 ```
+
+The app uses `InvoiceOrganizer` (debug/SPM builds) or `com.pkm.invoiceorganizer` (release builds) depending on how it was launched, so the script clears both.
 
 This clears:
 - OCR / extracted text cache
 - structured extraction cache
 - saved invoice workflow metadata
-- ignored invoice state
 
 This does **not** clear:
 - folder paths

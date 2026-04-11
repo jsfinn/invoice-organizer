@@ -33,7 +33,7 @@ struct ContentView: View {
             if model.hasRequiredFolders {
                 StatusBarView(
                     ocrQueueCount: model.textQueueDepth,
-                    llmQueueCount: model.structuredQueueDepth
+                    structuredQueueCount: model.structuredQueueDepth
                 )
             }
         }
@@ -42,16 +42,17 @@ struct ContentView: View {
 
 private struct StatusBarView: View {
     let ocrQueueCount: Int
-    let llmQueueCount: Int
+    let structuredQueueCount: Int
 
     var body: some View {
         HStack(spacing: 16) {
             label("OCR", count: ocrQueueCount)
             Divider().frame(height: 12)
-            label("LLM", count: llmQueueCount)
+            label("Structured Data Extraction", count: structuredQueueCount)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 26)
+        .padding(.trailing, 12)
         .padding(.vertical, 6)
         .background(.bar)
         .overlay(alignment: .top) {
@@ -64,7 +65,10 @@ private struct StatusBarView: View {
             Text(title)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
-            Text("\(count) in queue")
+            Text(count.formatted(.number.grouping(.never)))
+                .font(.system(size: 11).monospacedDigit())
+                .foregroundStyle(.tertiary)
+            Text("in queue")
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
         }

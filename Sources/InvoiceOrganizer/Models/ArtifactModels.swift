@@ -110,8 +110,12 @@ struct PhysicalArtifact: Identifiable, Hashable, Sendable {
         location == .processing && status == .inProgress
     }
 
+    var canReopenToInProgress: Bool {
+        location == .processed && status == .processed
+    }
+
     var canDragBetweenQueues: Bool {
-        canMoveToInProgress || canMarkDone
+        canMoveToInProgress || canMarkDone || canReopenToInProgress
     }
 
     var canDragToQuickBooks: Bool {

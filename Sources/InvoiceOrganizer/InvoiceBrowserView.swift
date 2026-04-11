@@ -396,6 +396,12 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 guard !selectedArtifacts.isEmpty else {
                     return nil
                 }
+
+                if selectedArtifacts.contains(where: \.canReopenToInProgress) {
+                    let item = NSMenuItem(title: "Move to In Progress", action: #selector(moveSelectionToInProgress), keyEquivalent: "")
+                    item.target = self
+                    menu.addItem(item)
+                }
             }
 
             if canRescan {

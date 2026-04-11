@@ -147,6 +147,47 @@ struct WorkflowActionCoordinator {
         )
     }
 
+    func reopenToInProgress(
+        ids: Set<PhysicalArtifact.ID>,
+        artifacts: [PhysicalArtifact],
+        snapshot: LibrarySnapshot,
+        workflowsByID: [String: StoredInvoiceWorkflow],
+        processingRoot: URL
+    ) throws -> WorkflowActionResult {
+        let eligibleArtifacts = artifacts.filter { ids.contains($0.id) && $0.canReopenToInProgress }
+        guard !eligibleArtifacts.isEmpty else {
+            return WorkflowActionResult(
+                workflowsByID: workflowsByID,
+                selectedArtifactIDs: []
+            )
+        }
+
+        var nextWorkflows = workflowsByID
+        var movedIDs: Set<PhysicalArtifact.ID> = []
+
+        for artifact in eligibleArtifacts {
+            let destinationURL = try InvoiceWorkspaceMover.moveToProcessing(artifact, processingRoot: processingRoot)
+            let oldID = artifact.id
+            let newID = PhysicalArtifact.stableID(for: destinationURL)
+            let metadata = snapshot.metadata(for: oldID)
+            var workflow = nextWorkflows.removeValue(forKey: oldID) ?? StoredInvoiceWorkflow(
+                vendor: metadata.vendor,
+                invoiceDate: metadata.invoiceDate,
+                invoiceNumber: metadata.invoiceNumber,
+                documentType: metadata.documentType,
+                isInProgress: false
+            )
+            workflow.isInProgress = true
+            nextWorkflows[newID] = workflow
+            movedIDs.insert(newID)
+        }
+
+        return WorkflowActionResult(
+            workflowsByID: nextWorkflows,
+            selectedArtifactIDs: movedIDs
+        )
+    }
+
     func moveToProcessed(
         ids: Set<PhysicalArtifact.ID>,
         artifacts: [PhysicalArtifact],
