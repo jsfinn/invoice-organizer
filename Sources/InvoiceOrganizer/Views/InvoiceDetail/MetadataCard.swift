@@ -182,6 +182,7 @@ struct MetadataCard: View {
                 }
             }
         }
+        .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(.quaternary.opacity(0.25))
@@ -196,7 +197,6 @@ struct MetadataCard: View {
             .padding(10)
             .background(.quaternary.opacity(0.2))
             .clipShape(RoundedRectangle(cornerRadius: 10))
-            .textSelection(.enabled)
     }
 
     @ViewBuilder

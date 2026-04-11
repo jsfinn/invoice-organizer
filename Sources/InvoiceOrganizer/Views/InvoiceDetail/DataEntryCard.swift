@@ -93,6 +93,7 @@ struct DataEntryCard: View {
                 }
             }
         }
+        .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(.quaternary.opacity(0.25))
