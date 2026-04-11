@@ -8,13 +8,14 @@ struct VendorAutocompleteField: NSViewRepresentable {
     let onCommit: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: text, onCommit: onCommit)
+        Coordinator(text: text, suggestions: suggestions, onCommit: onCommit)
     }
 
     func makeNSView(context: Context) -> CancelableComboBox {
         let comboBox = CancelableComboBox()
-        comboBox.usesDataSource = false
+        comboBox.usesDataSource = true
         comboBox.completes = true
+        comboBox.dataSource = context.coordinator
         comboBox.delegate = context.coordinator
         comboBox.isEditable = true
         comboBox.numberOfVisibleItems = 12
@@ -22,6 +23,7 @@ struct VendorAutocompleteField: NSViewRepresentable {
         comboBox.placeholderString = placeholder
         comboBox.font = .systemFont(ofSize: NSFont.systemFontSize)
         comboBox.committedText = text
+        context.coordinator.comboBox = comboBox
         return comboBox
     }
 
@@ -30,10 +32,10 @@ struct VendorAutocompleteField: NSViewRepresentable {
         context.coordinator.committedText = text
         comboBox.committedText = text
 
-        let existingItems = comboBox.objectValues.compactMap { $0 as? String }
-        if existingItems != suggestions {
-            comboBox.removeAllItems()
-            comboBox.addItems(withObjectValues: suggestions)
+        if context.coordinator.allSuggestions != suggestions {
+            context.coordinator.allSuggestions = suggestions
+            context.coordinator.refilter()
+            comboBox.reloadData()
         }
 
         if !context.coordinator.isEditing, comboBox.stringValue != text {
@@ -44,17 +46,66 @@ struct VendorAutocompleteField: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSComboBoxDelegate, NSTextFieldDelegate {
+    final class Coordinator: NSObject, NSComboBoxDelegate, NSComboBoxDataSource, NSTextFieldDelegate {
         var committedText: String
         let onCommit: (String) -> Void
+        var allSuggestions: [String]
+        var filteredSuggestions: [String]
         var isUpdating = false
         var isPopupOpen = false
         var pendingSelection: String?
         var isEditing = false
+        weak var comboBox: CancelableComboBox?
 
-        init(text: String, onCommit: @escaping (String) -> Void) {
+        init(text: String, suggestions: [String], onCommit: @escaping (String) -> Void) {
             self.committedText = text
+            self.allSuggestions = suggestions
+            self.filteredSuggestions = suggestions
             self.onCommit = onCommit
+        }
+
+        func refilter() {
+            guard let comboBox else {
+                filteredSuggestions = allSuggestions
+                return
+            }
+            let query = comboBox.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if query.isEmpty {
+                filteredSuggestions = allSuggestions
+            } else {
+                filteredSuggestions = allSuggestions.filter {
+                    $0.localizedCaseInsensitiveContains(query)
+                }
+            }
+        }
+
+        // MARK: - NSComboBoxDataSource
+
+        func numberOfItems(in comboBox: NSComboBox) -> Int {
+            filteredSuggestions.count
+        }
+
+        func comboBox(_ comboBox: NSComboBox, objectValueForItemAt index: Int) -> Any? {
+            guard index >= 0, index < filteredSuggestions.count else { return nil }
+            return filteredSuggestions[index]
+        }
+
+        func comboBox(_ comboBox: NSComboBox, completedString string: String) -> String? {
+            allSuggestions.first {
+                $0.commonPrefix(with: string, options: .caseInsensitive).count == string.count
+            }
+        }
+
+        func comboBox(_ comboBox: NSComboBox, indexOfItemWithStringValue string: String) -> Int {
+            filteredSuggestions.firstIndex { $0.caseInsensitiveCompare(string) == .orderedSame } ?? NSNotFound
+        }
+
+        // MARK: - NSComboBoxDelegate
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard !isUpdating, let comboBox = notification.object as? CancelableComboBox else { return }
+            refilter()
+            comboBox.reloadData()
         }
 
         func controlTextDidBeginEditing(_ notification: Notification) {
@@ -87,6 +138,8 @@ struct VendorAutocompleteField: NSViewRepresentable {
         func comboBoxWillPopUp(_ notification: Notification) {
             isPopupOpen = true
             pendingSelection = nil
+            refilter()
+            comboBox?.reloadData()
         }
 
         func comboBoxWillDismiss(_ notification: Notification) {
@@ -108,7 +161,10 @@ struct VendorAutocompleteField: NSViewRepresentable {
             guard !isUpdating,
                   let comboBox = notification.object as? CancelableComboBox else { return }
 
-            defer { isEditing = false }
+            defer {
+                isEditing = false
+                filteredSuggestions = allSuggestions
+            }
 
             if comboBox.isCancelling || (notification.userInfo?["NSTextMovement"] as? Int) == NSCancelTextMovement {
                 comboBox.stringValue = committedText
