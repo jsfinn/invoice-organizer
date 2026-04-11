@@ -53,14 +53,16 @@
 		C3458C702A574D12EA6725A6 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 62C5D55AC0D492C024EC571F /* Sparkle */; };
 		C3D71663279699EF4D274B0A /* PreviewViewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C63BE6A6AEABB8ED101E4CD1 /* PreviewViewState.swift */; };
 		C5DE422C5F2C010162EA5087 /* InvoicePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C58BFD64B2F94DFEF9D5D35A /* InvoicePreviewView.swift */; };
+		C78061C69E4D70916133E061 /* TextExtractionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = E303DDF3793A4D54315D3D7A /* TextExtractionHandler.swift */; };
 		CB0C9AAB745C730D39C7EE16 /* VendorAutocompleteField.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9E7182CC08CA312192393A4 /* VendorAutocompleteField.swift */; };
-		CEE4D62FDF30B9CE0C77EE94 /* StructuredExtractionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89CD40B232579C41D8D56E55 /* StructuredExtractionHandler.swift */; };
-		D0A00CCA924BF1F51A8B134A /* TextExtractionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D530A5802C98B30BAE584A4 /* TextExtractionHandler.swift */; };
 		D2A5F0806A2229109D804A14 /* CommitOnBlurDatePickerField.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39099637111A5D33F01AB1F /* CommitOnBlurDatePickerField.swift */; };
 		D3FC7CA9540984636610BC0F /* QueueViewContexts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2029C3196E67EF6A47A3366 /* QueueViewContexts.swift */; };
+		DA52C84315CFF7BB898AAC3F /* ContentHashQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA4F1B6D149E7E195DAD42A /* ContentHashQueue.swift */; };
 		DE099784CA01A55E7785B247 /* ArtifactAccessCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6796E8204ECE65BE00F76321 /* ArtifactAccessCoordinator.swift */; };
 		E2A2F8CF74CE82DD1542D6BD /* InvoiceStructuredExtractionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F85923FD6EF7364C426A589D /* InvoiceStructuredExtractionClient.swift */; };
 		E65919A51DC8A1835F5CC1B4 /* QueueStatusCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F148EE8CC3F868A3314FE06 /* QueueStatusCard.swift */; };
+		EC27B68333CFF2ABCB357807 /* MetadataCommitRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F970815666CD666FD723E03 /* MetadataCommitRequest.swift */; };
+		F1DD263D8142276399819C2A /* StructuredExtractionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 150C9BA921200FE9C87F83F6 /* StructuredExtractionHandler.swift */; };
 		F302FA072F9A49B5BBFF102D /* CheckForUpdatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B234C551E2440907921BBB2 /* CheckForUpdatesView.swift */; };
 		FCB15CFC8FB3A1C3DCB67942 /* FileHasher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6D5AC17B04AE12587BC23B /* FileHasher.swift */; };
 /* End PBXBuildFile section */
@@ -77,6 +79,7 @@
 
 /* Begin PBXFileReference section */
 		14871783BF02D73949C3FD6B /* InvoiceArchiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceArchiver.swift; sourceTree = "<group>"; };
+		150C9BA921200FE9C87F83F6 /* StructuredExtractionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredExtractionHandler.swift; sourceTree = "<group>"; };
 		19C3303215CD07153C549E46 /* PreviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewCard.swift; sourceTree = "<group>"; };
 		1D2F94DFF5AF590676A83D33 /* InvoiceWorkspaceMover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceWorkspaceMover.swift; sourceTree = "<group>"; };
 		1D393E630B373F584368E1C1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -87,7 +90,6 @@
 		352246B9A9E5914AD01C319E /* SetupRequiredView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupRequiredView.swift; sourceTree = "<group>"; };
 		39F70B699EF2BE473851EF93 /* PreviewCommitRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewCommitRequest.swift; sourceTree = "<group>"; };
 		3B234C551E2440907921BBB2 /* CheckForUpdatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckForUpdatesView.swift; sourceTree = "<group>"; };
-		3D530A5802C98B30BAE584A4 /* TextExtractionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextExtractionHandler.swift; sourceTree = "<group>"; };
 		3F148EE8CC3F868A3314FE06 /* QueueStatusCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueStatusCard.swift; sourceTree = "<group>"; };
 		43D52179153F771CF8FB386D /* InvoiceWorkflowStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceWorkflowStore.swift; sourceTree = "<group>"; };
 		466579A9DB3D8829B3512351 /* DataEntryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataEntryCard.swift; sourceTree = "<group>"; };
@@ -97,6 +99,7 @@
 		5EAC66A753028AC2F98A8C20 /* CommitOnBlurTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitOnBlurTextField.swift; sourceTree = "<group>"; };
 		661B9E1AD61E265CA0D271C5 /* PreviewAssetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewAssetProvider.swift; sourceTree = "<group>"; };
 		6796E8204ECE65BE00F76321 /* ArtifactAccessCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactAccessCoordinator.swift; sourceTree = "<group>"; };
+		6F970815666CD666FD723E03 /* MetadataCommitRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataCommitRequest.swift; sourceTree = "<group>"; };
 		719CEBD6BDEFA69B3F710CFF /* PreviewSessionID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSessionID.swift; sourceTree = "<group>"; };
 		71E06555631417D9EC5E3DCA /* FileSystemReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSystemReconciler.swift; sourceTree = "<group>"; };
 		78FD9A85C78EBE3E91D8A16B /* InvoiceOrganizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceOrganizer.swift; sourceTree = "<group>"; };
@@ -105,11 +108,11 @@
 		84B72E2F14F2484DF372353A /* FolderPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPicker.swift; sourceTree = "<group>"; };
 		890624B54CA6140BDBEF5B82 /* ReplacementPreviewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplacementPreviewRenderer.swift; sourceTree = "<group>"; };
 		8954A8C3B26AEE2DDE97AD98 /* InvoiceOrganizerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InvoiceOrganizerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		89CD40B232579C41D8D56E55 /* StructuredExtractionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredExtractionHandler.swift; sourceTree = "<group>"; };
 		A10DF2A883449B3756EB0884 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A28C5011B0C04CA094EC2609 /* DuplicateDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateDetector.swift; sourceTree = "<group>"; };
 		A4BEDBC9AE365973B7AFAA0C /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A587DF34889CF4FA79C18976 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		ACA4F1B6D149E7E195DAD42A /* ContentHashQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentHashQueue.swift; sourceTree = "<group>"; };
 		AD2966DA8927843A277944D0 /* MetadataCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataCard.swift; sourceTree = "<group>"; };
 		AF26BF029CF6CC63B244CE12 /* InvoiceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceDetailView.swift; sourceTree = "<group>"; };
 		B35FE8B116D9A63DD99B2CD7 /* InvoiceInternalDrag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceInternalDrag.swift; sourceTree = "<group>"; };
@@ -127,6 +130,7 @@
 		D275D6E83B86659A791D96C0 /* LibrarySnapshotBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySnapshotBuilder.swift; sourceTree = "<group>"; };
 		E1E8D83B92318C265A64BB5A /* InvoiceBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceBrowserView.swift; sourceTree = "<group>"; };
 		E268A82D45D710A14642278A /* FileSystemWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSystemWatcher.swift; sourceTree = "<group>"; };
+		E303DDF3793A4D54315D3D7A /* TextExtractionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextExtractionHandler.swift; sourceTree = "<group>"; };
 		E39099637111A5D33F01AB1F /* CommitOnBlurDatePickerField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitOnBlurDatePickerField.swift; sourceTree = "<group>"; };
 		E391D90F06336251FDD582F2 /* WorkflowActionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowActionCoordinator.swift; sourceTree = "<group>"; };
 		EAD98E348516723DF65B3072 /* InvoiceTextStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceTextStore.swift; sourceTree = "<group>"; };
@@ -403,10 +407,11 @@
 			isa = PBXGroup;
 			children = (
 				F4C394D71B7FE207AB3901D9 /* ArtifactComputationCache.swift */,
+				ACA4F1B6D149E7E195DAD42A /* ContentHashQueue.swift */,
 				7AB0FA9279C3AF73F4A32F11 /* DocumentTextExtractor.swift */,
 				F85923FD6EF7364C426A589D /* InvoiceStructuredExtractionClient.swift */,
-				89CD40B232579C41D8D56E55 /* StructuredExtractionHandler.swift */,
-				3D530A5802C98B30BAE584A4 /* TextExtractionHandler.swift */,
+				150C9BA921200FE9C87F83F6 /* StructuredExtractionHandler.swift */,
+				E303DDF3793A4D54315D3D7A /* TextExtractionHandler.swift */,
 			);
 			path = Extraction;
 			sourceTree = "<group>";
@@ -415,6 +420,7 @@
 			isa = PBXGroup;
 			children = (
 				54CB09A3CB7ADCEEC97939DA /* ActivePreviewContext.swift */,
+				6F970815666CD666FD723E03 /* MetadataCommitRequest.swift */,
 				39F70B699EF2BE473851EF93 /* PreviewCommitRequest.swift */,
 				719CEBD6BDEFA69B3F710CFF /* PreviewSessionID.swift */,
 				C63BE6A6AEABB8ED101E4CD1 /* PreviewViewState.swift */,
@@ -422,7 +428,7 @@
 			path = State;
 			sourceTree = "<group>";
 		};
-		"TEMP_EDB228B0-87B5-400D-928C-18CB8A383AA5" /* Resources */ = {
+		"TEMP_ACD5E91B-66B9-4578-BB29-3B011FDCB1DC" /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -531,6 +537,7 @@
 				F302FA072F9A49B5BBFF102D /* CheckForUpdatesView.swift in Sources */,
 				D2A5F0806A2229109D804A14 /* CommitOnBlurDatePickerField.swift in Sources */,
 				52212CE521644B03E71056B5 /* CommitOnBlurTextField.swift in Sources */,
+				DA52C84315CFF7BB898AAC3F /* ContentHashQueue.swift in Sources */,
 				5083F31BF23A63D2CD1E6BDE /* ContentView.swift in Sources */,
 				83ECCB9A5900200E7F2BA87A /* DataEntryCard.swift in Sources */,
 				1165F9DA6EA3092C39C86D9C /* DocumentModels.swift in Sources */,
@@ -552,13 +559,12 @@
 				C5DE422C5F2C010162EA5087 /* InvoicePreviewView.swift in Sources */,
 				6A89CC3CBAFCBD7A8FAD032F /* InvoiceStructuredDataStore.swift in Sources */,
 				E2A2F8CF74CE82DD1542D6BD /* InvoiceStructuredExtractionClient.swift in Sources */,
-				CEE4D62FDF30B9CE0C77EE94 /* StructuredExtractionHandler.swift in Sources */,
-				D0A00CCA924BF1F51A8B134A /* TextExtractionHandler.swift in Sources */,
 				2E9533B2D8AF0A8D79A7EA1C /* InvoiceTextStore.swift in Sources */,
 				710CB18BC5826C5B8973D5CB /* InvoiceWorkflowStore.swift in Sources */,
 				45DE59470A3570960FE04BFF /* InvoiceWorkspaceMover.swift in Sources */,
 				0F6634A3CFB26914E3E63CE4 /* LibrarySnapshotBuilder.swift in Sources */,
 				A968A5F4295E7484CDE14E37 /* MetadataCard.swift in Sources */,
+				EC27B68333CFF2ABCB357807 /* MetadataCommitRequest.swift in Sources */,
 				376C57B76E8FB72913092367 /* PreviewAssetProvider.swift in Sources */,
 				619BDB7310BD91F7B64A5AE2 /* PreviewCard.swift in Sources */,
 				690DBE2327AFFDD86FCAB2A3 /* PreviewCommitRequest.swift in Sources */,
@@ -571,6 +577,8 @@
 				831B14D18FD8EED458D3CDA2 /* ReplacementPreviewRenderer.swift in Sources */,
 				69D8B620E43207AF67A772B6 /* SettingsView.swift in Sources */,
 				82FA2918CA0BD70D45E76E0C /* SetupRequiredView.swift in Sources */,
+				F1DD263D8142276399819C2A /* StructuredExtractionHandler.swift in Sources */,
+				C78061C69E4D70916133E061 /* TextExtractionHandler.swift in Sources */,
 				CB0C9AAB745C730D39C7EE16 /* VendorAutocompleteField.swift in Sources */,
 				0AAE579343E7D53F5B825E37 /* WorkflowActionCoordinator.swift in Sources */,
 			);
@@ -700,14 +708,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 25;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/InvoiceOrganizer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.4.14;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pkm.invoiceorganizer;
 				PRODUCT_MODULE_NAME = InvoiceOrganizer;
 				PRODUCT_NAME = "Invoice Organizer";
@@ -721,14 +729,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 25;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/InvoiceOrganizer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.4.14;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pkm.invoiceorganizer;
 				PRODUCT_MODULE_NAME = InvoiceOrganizer;
 				PRODUCT_NAME = "Invoice Organizer";
