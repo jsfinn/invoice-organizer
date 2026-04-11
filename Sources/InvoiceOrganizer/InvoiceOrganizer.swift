@@ -35,10 +35,18 @@ struct InvoiceOrganizerApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let updaterController = SPUStandardUpdaterController(
-        startingUpdater: true,
+        startingUpdater: !isDebugBuild,
         updaterDelegate: nil,
         userDriverDelegate: nil
     )
+
+    private static var isDebugBuild: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
     weak var rotationCoordinator: PreviewRotationCoordinator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
