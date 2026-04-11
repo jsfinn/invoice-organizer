@@ -58,6 +58,9 @@ struct InvoiceBrowserView: NSViewRepresentable {
         tableView.disclosureNavigationHandler = { [weak coordinator = context.coordinator] keyCode in
             coordinator?.handleDisclosureNavigation(keyCode: keyCode) ?? false
         }
+        tableView.copyHandler = { [weak coordinator = context.coordinator] in
+            coordinator?.copySelectedFilenames()
+        }
 
         Self.configureColumns(for: tableView, queueTab: queueTab)
 
@@ -497,6 +500,17 @@ struct InvoiceBrowserView: NSViewRepresentable {
             syncSelection(to: parent.selectedArtifactIDs)
         }
 
+        func copySelectedFilenames() {
+            guard let tableView else { return }
+            let names = tableView.selectedRowIndexes.compactMap { index -> String? in
+                guard index < displayedRows.count else { return nil }
+                return displayedRows[index].invoice.name
+            }
+            guard !names.isEmpty else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(names.joined(separator: "\n"), forType: .string)
+        }
+
         func handleDisclosureNavigation(keyCode: UInt16) -> Bool {
             guard let tableView else { return false }
 
@@ -921,7 +935,12 @@ func buildInvoiceBrowserRows(
 final class FinderLikeTableView: NSTableView {
     var contextMenuProvider: ((Int) -> NSMenu?)?
     var disclosureNavigationHandler: ((UInt16) -> Bool)?
+    var copyHandler: (() -> Void)?
     var didBeginDragDuringMouseInteraction = false
+
+    @objc func copy(_ sender: Any?) {
+        copyHandler?()
+    }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
