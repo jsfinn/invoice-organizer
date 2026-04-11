@@ -14,58 +14,42 @@ struct WorkflowRenameResult {
 }
 
 struct WorkflowActionCoordinator {
-    func orderedProcessingIDs(
-        requestedIDs: Set<PhysicalArtifact.ID>,
-        visibleArtifacts: [PhysicalArtifact],
-        allArtifacts: [PhysicalArtifact]
-    ) -> [PhysicalArtifact.ID] {
-        let visibleOrderedIDs = visibleArtifacts
-            .map(\.id)
-            .filter { requestedIDs.contains($0) }
-        let visibleOrderedSet = Set(visibleOrderedIDs)
-        let remainingIDs = allArtifacts
-            .map(\.id)
-            .filter { requestedIDs.contains($0) && !visibleOrderedSet.contains($0) }
-        return visibleOrderedIDs + remainingIDs
-    }
 
     func moveToInProgress(
-        orderedIDs: [PhysicalArtifact.ID],
-        artifacts: [PhysicalArtifact],
-        snapshot: LibrarySnapshot,
+        documents: [Document],
+        artifactsByID: [PhysicalArtifact.ID: PhysicalArtifact],
         workflowsByID: [String: StoredInvoiceWorkflow],
         processingRoot: URL,
         duplicatesRoot: URL,
         structuredRecordForContentHash: (String) -> InvoiceStructuredDataRecord?
     ) throws -> WorkflowActionResult {
-        let artifactByID = Dictionary(uniqueKeysWithValues: artifacts.map { ($0.id, $0) })
-        let eligibleArtifacts = orderedIDs.compactMap { artifactByID[$0] }.filter(\.canMoveToInProgress)
-        guard !eligibleArtifacts.isEmpty else {
-            return WorkflowActionResult(
-                workflowsByID: workflowsByID,
-                selectedArtifactIDs: []
-            )
+        guard !documents.isEmpty else {
+            return WorkflowActionResult(workflowsByID: workflowsByID, selectedArtifactIDs: [])
         }
 
         var nextWorkflows = workflowsByID
         var movedIDs: Set<PhysicalArtifact.ID> = []
-        let movePlan = processingMovePlan(for: eligibleArtifacts.map(\.id), snapshot: snapshot)
 
-        for artifact in artifacts where movePlan.duplicateIDs.contains(artifact.id) {
-            _ = try InvoiceWorkspaceMover.moveToDuplicates(artifact, duplicatesRoot: duplicatesRoot)
-        }
+        for document in documents {
+            guard let preferred = document.preferredArtifact,
+                  let artifact = artifactsByID[preferred.id] else {
+                continue
+            }
 
-        for artifactID in movePlan.processingIDs {
-            guard let artifact = artifactByID[artifactID] else { continue }
+            for duplicate in document.artifacts where duplicate.id != preferred.id && duplicate.location != .processed {
+                if let duplicateArtifact = artifactsByID[duplicate.id] {
+                    _ = try InvoiceWorkspaceMover.moveToDuplicates(duplicateArtifact, duplicatesRoot: duplicatesRoot)
+                }
+            }
+
             let destinationURL = try InvoiceWorkspaceMover.moveToProcessing(artifact, processingRoot: processingRoot)
-            let metadata = snapshot.metadata(for: artifactID)
             let oldID = artifact.id
             var finalURL = destinationURL
             var workflow = nextWorkflows.removeValue(forKey: oldID) ?? StoredInvoiceWorkflow(
-                vendor: metadata.vendor,
-                invoiceDate: metadata.invoiceDate,
-                invoiceNumber: metadata.invoiceNumber,
-                documentType: metadata.documentType,
+                vendor: document.metadata.vendor,
+                invoiceDate: document.metadata.invoiceDate,
+                invoiceNumber: document.metadata.invoiceNumber,
+                documentType: document.metadata.documentType,
                 isInProgress: false
             )
             workflow.isInProgress = false
@@ -73,7 +57,7 @@ struct WorkflowActionCoordinator {
             if shouldRenameOnMoveToInProgress(
                 artifact: artifact,
                 workflow: workflow,
-                fallbackMetadata: metadata,
+                fallbackMetadata: document.metadata,
                 structuredRecordForContentHash: structuredRecordForContentHash
             ) {
                 let processingArtifact = PhysicalArtifact(
@@ -101,80 +85,72 @@ struct WorkflowActionCoordinator {
             movedIDs.insert(newID)
         }
 
-        return WorkflowActionResult(
-            workflowsByID: nextWorkflows,
-            selectedArtifactIDs: movedIDs
-        )
+        return WorkflowActionResult(workflowsByID: nextWorkflows, selectedArtifactIDs: movedIDs)
     }
 
     func moveToUnprocessed(
-        ids: Set<PhysicalArtifact.ID>,
-        artifacts: [PhysicalArtifact],
-        snapshot: LibrarySnapshot,
+        documents: [Document],
+        artifactsByID: [PhysicalArtifact.ID: PhysicalArtifact],
         workflowsByID: [String: StoredInvoiceWorkflow],
         inboxRoot: URL
     ) throws -> WorkflowActionResult {
-        let eligibleIDs = Set(artifacts.filter { ids.contains($0.id) && $0.location == .processing }.map(\.id))
-        guard !eligibleIDs.isEmpty else {
-            return WorkflowActionResult(
-                workflowsByID: workflowsByID,
-                selectedArtifactIDs: []
-            )
+        guard !documents.isEmpty else {
+            return WorkflowActionResult(workflowsByID: workflowsByID, selectedArtifactIDs: [])
         }
 
         var nextWorkflows = workflowsByID
         var movedIDs: Set<PhysicalArtifact.ID> = []
 
-        for artifact in artifacts where eligibleIDs.contains(artifact.id) {
+        for document in documents {
+            guard let ref = document.artifacts.first(where: { $0.location == .processing }),
+                  let artifact = artifactsByID[ref.id] else {
+                continue
+            }
+
             let destinationURL = try InvoiceWorkspaceMover.moveToInbox(artifact, inboxRoot: inboxRoot)
             let oldID = artifact.id
             let newID = PhysicalArtifact.stableID(for: destinationURL)
-            let metadata = snapshot.metadata(for: oldID)
             let workflow = nextWorkflows.removeValue(forKey: oldID) ?? StoredInvoiceWorkflow(
-                vendor: metadata.vendor,
-                invoiceDate: metadata.invoiceDate,
-                invoiceNumber: metadata.invoiceNumber,
-                documentType: metadata.documentType,
+                vendor: document.metadata.vendor,
+                invoiceDate: document.metadata.invoiceDate,
+                invoiceNumber: document.metadata.invoiceNumber,
+                documentType: document.metadata.documentType,
                 isInProgress: false
             )
             nextWorkflows[newID] = workflow
             movedIDs.insert(newID)
         }
 
-        return WorkflowActionResult(
-            workflowsByID: nextWorkflows,
-            selectedArtifactIDs: movedIDs
-        )
+        return WorkflowActionResult(workflowsByID: nextWorkflows, selectedArtifactIDs: movedIDs)
     }
 
     func reopenToInProgress(
-        ids: Set<PhysicalArtifact.ID>,
-        artifacts: [PhysicalArtifact],
-        snapshot: LibrarySnapshot,
+        documents: [Document],
+        artifactsByID: [PhysicalArtifact.ID: PhysicalArtifact],
         workflowsByID: [String: StoredInvoiceWorkflow],
         processingRoot: URL
     ) throws -> WorkflowActionResult {
-        let eligibleArtifacts = artifacts.filter { ids.contains($0.id) && $0.canReopenToInProgress }
-        guard !eligibleArtifacts.isEmpty else {
-            return WorkflowActionResult(
-                workflowsByID: workflowsByID,
-                selectedArtifactIDs: []
-            )
+        guard !documents.isEmpty else {
+            return WorkflowActionResult(workflowsByID: workflowsByID, selectedArtifactIDs: [])
         }
 
         var nextWorkflows = workflowsByID
         var movedIDs: Set<PhysicalArtifact.ID> = []
 
-        for artifact in eligibleArtifacts {
+        for document in documents {
+            guard let ref = document.artifacts.first(where: { $0.location == .processed }),
+                  let artifact = artifactsByID[ref.id] else {
+                continue
+            }
+
             let destinationURL = try InvoiceWorkspaceMover.moveToProcessing(artifact, processingRoot: processingRoot)
             let oldID = artifact.id
             let newID = PhysicalArtifact.stableID(for: destinationURL)
-            let metadata = snapshot.metadata(for: oldID)
             var workflow = nextWorkflows.removeValue(forKey: oldID) ?? StoredInvoiceWorkflow(
-                vendor: metadata.vendor,
-                invoiceDate: metadata.invoiceDate,
-                invoiceNumber: metadata.invoiceNumber,
-                documentType: metadata.documentType,
+                vendor: document.metadata.vendor,
+                invoiceDate: document.metadata.invoiceDate,
+                invoiceNumber: document.metadata.invoiceNumber,
+                documentType: document.metadata.documentType,
                 isInProgress: false
             )
             workflow.isInProgress = true
@@ -182,32 +158,29 @@ struct WorkflowActionCoordinator {
             movedIDs.insert(newID)
         }
 
-        return WorkflowActionResult(
-            workflowsByID: nextWorkflows,
-            selectedArtifactIDs: movedIDs
-        )
+        return WorkflowActionResult(workflowsByID: nextWorkflows, selectedArtifactIDs: movedIDs)
     }
 
     func moveToProcessed(
-        ids: Set<PhysicalArtifact.ID>,
-        artifacts: [PhysicalArtifact],
-        snapshot: LibrarySnapshot,
+        documents: [Document],
+        artifactsByID: [PhysicalArtifact.ID: PhysicalArtifact],
         workflowsByID: [String: StoredInvoiceWorkflow],
         processedRoot: URL
     ) throws -> WorkflowActionResult {
-        let eligibleArtifacts = artifacts.filter { ids.contains($0.id) && $0.canMarkDone }
-        guard !eligibleArtifacts.isEmpty else {
-            return WorkflowActionResult(
-                workflowsByID: workflowsByID,
-                selectedArtifactIDs: []
-            )
+        guard !documents.isEmpty else {
+            return WorkflowActionResult(workflowsByID: workflowsByID, selectedArtifactIDs: [])
         }
 
         var nextWorkflows = workflowsByID
         var archivedIDs: Set<PhysicalArtifact.ID> = []
 
-        for artifact in eligibleArtifacts {
-            let metadata = snapshot.metadata(for: artifact.id)
+        for document in documents {
+            guard let ref = document.artifacts.first(where: { $0.location == .processing }),
+                  let artifact = artifactsByID[ref.id] else {
+                continue
+            }
+
+            let metadata = document.metadata
             let vendor = metadata.vendor?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let invoiceDate = metadata.invoiceDate ?? artifact.addedAt
             let destinationURL = try InvoiceArchiver.archive(
@@ -235,47 +208,31 @@ struct WorkflowActionCoordinator {
             archivedIDs.insert(archivedID)
         }
 
-        return WorkflowActionResult(
-            workflowsByID: nextWorkflows,
-            selectedArtifactIDs: archivedIDs
-        )
+        return WorkflowActionResult(workflowsByID: nextWorkflows, selectedArtifactIDs: archivedIDs)
     }
 
     func moveToArchive(
-        orderedIDs: [PhysicalArtifact.ID],
-        artifacts: [PhysicalArtifact],
+        documents: [Document],
+        artifactsByID: [PhysicalArtifact.ID: PhysicalArtifact],
         workflowsByID: [String: StoredInvoiceWorkflow],
         archiveRoot: URL
     ) throws -> WorkflowActionResult {
-        let artifactByID = Dictionary(uniqueKeysWithValues: artifacts.map { ($0.id, $0) })
-        var seenIDs: Set<PhysicalArtifact.ID> = []
-        var selectedArtifacts: [PhysicalArtifact] = []
-        for artifactID in orderedIDs {
-            guard seenIDs.insert(artifactID).inserted,
-                  let artifact = artifactByID[artifactID] else {
-                continue
-            }
-            selectedArtifacts.append(artifact)
-        }
-
-        guard !selectedArtifacts.isEmpty else {
-            return WorkflowActionResult(
-                workflowsByID: workflowsByID,
-                selectedArtifactIDs: []
-            )
+        guard !documents.isEmpty else {
+            return WorkflowActionResult(workflowsByID: workflowsByID, selectedArtifactIDs: [])
         }
 
         var nextWorkflows = workflowsByID
 
-        for artifact in selectedArtifacts {
-            _ = try InvoiceWorkspaceMover.moveToArchive(artifact, archiveRoot: archiveRoot)
-            nextWorkflows.removeValue(forKey: artifact.id)
+        for document in documents {
+            for ref in document.artifacts {
+                if let artifact = artifactsByID[ref.id] {
+                    _ = try InvoiceWorkspaceMover.moveToArchive(artifact, archiveRoot: archiveRoot)
+                    nextWorkflows.removeValue(forKey: artifact.id)
+                }
+            }
         }
 
-        return WorkflowActionResult(
-            workflowsByID: nextWorkflows,
-            selectedArtifactIDs: []
-        )
+        return WorkflowActionResult(workflowsByID: nextWorkflows, selectedArtifactIDs: [])
     }
 
     func applyWorkflow(
@@ -333,40 +290,6 @@ struct WorkflowActionCoordinator {
             selectedArtifactID: remappedPrimary,
             updatedArtifactID: nextID
         )
-    }
-
-    private func processingMovePlan(
-        for orderedIDs: [PhysicalArtifact.ID],
-        snapshot: LibrarySnapshot
-    ) -> (processingIDs: [PhysicalArtifact.ID], duplicateIDs: Set<PhysicalArtifact.ID>) {
-        var processingIDs: [PhysicalArtifact.ID] = []
-        var duplicateIDs: Set<PhysicalArtifact.ID> = []
-        var handledDocumentIDs: Set<Document.ID> = []
-
-        for artifactID in orderedIDs {
-            guard let document = snapshot.document(for: artifactID), document.isDuplicate else {
-                processingIDs.append(artifactID)
-                continue
-            }
-
-            if handledDocumentIDs.insert(document.id).inserted {
-                processingIDs.append(artifactID)
-                duplicateIDs.formUnion(
-                    document.artifacts.compactMap { artifact in
-                        guard artifact.location != .processed,
-                              artifact.id != artifactID else {
-                            return nil
-                        }
-
-                        return artifact.id
-                    }
-                )
-            } else {
-                duplicateIDs.insert(artifactID)
-            }
-        }
-
-        return (processingIDs, duplicateIDs)
     }
 
     private func shouldRenameOnMoveToInProgress(

@@ -107,6 +107,13 @@ struct Document: Identifiable, Equatable, Sendable {
         artifacts.first { $0.id == artifactID }
     }
 
+    var preferredArtifact: DocumentArtifactReference? {
+        artifacts
+            .filter { $0.location != .processed }
+            .sorted { $0.fileType.duplicatePriority < $1.fileType.duplicatePriority }
+            .first
+    }
+
     func bestSimilarity(
         to candidateTokens: Set<String>,
         tokensByArtifactID: [PhysicalArtifact.ID: Set<String>],

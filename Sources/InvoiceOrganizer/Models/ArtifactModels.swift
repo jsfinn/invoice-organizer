@@ -7,6 +7,14 @@ enum InvoiceFileType: String, CaseIterable, Identifiable, Sendable {
     case heic = "HEIC"
 
     var id: String { rawValue }
+
+    var duplicatePriority: Int {
+        switch self {
+        case .pdf: 0
+        case .jpeg, .image: 1
+        case .heic: 2
+        }
+    }
 }
 
 enum InvoiceLocation: String, CaseIterable, Identifiable, Codable, Sendable {

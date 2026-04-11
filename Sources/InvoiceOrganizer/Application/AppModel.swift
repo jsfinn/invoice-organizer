@@ -613,31 +613,25 @@ final class AppModel: ObservableObject {
             return
         }
 
-        var seenIDs: Set<PhysicalArtifact.ID> = []
-        var selectedArtifacts: [PhysicalArtifact] = []
-        for artifactID in ids {
-            guard seenIDs.insert(artifactID).inserted,
-                  let artifact = invoices.first(where: { $0.id == artifactID }) else {
-                continue
-            }
-            selectedArtifacts.append(artifact)
-        }
+        let documents = resolveDocuments(for: ids)
+        guard !documents.isEmpty else { return }
 
-        guard !selectedArtifacts.isEmpty else { return }
-
-        let archivedArtifactIDs = Set(selectedArtifacts.map { $0.id })
-        let archivedContentHashes = Set(selectedArtifacts.compactMap { $0.contentHash })
+        let allArtifactIDs = documents.flatMap(\.artifactIDs)
+        let archivedContentHashes = Set(allArtifactIDs.compactMap { id in
+            invoices.first { $0.id == id }?.contentHash
+        })
         let remainingContentHashes = Set(
             invoices
-                .filter { !archivedArtifactIDs.contains($0.id) }
+                .filter { !Set(allArtifactIDs).contains($0.id) }
                 .compactMap { $0.contentHash }
         )
         let orphanedContentHashes = archivedContentHashes.subtracting(remainingContentHashes)
 
         do {
+            let lookup = artifactsByID
             let result = try workflowActionCoordinator.moveToArchive(
-                orderedIDs: ids,
-                artifacts: invoices,
+                documents: documents,
+                artifactsByID: lookup,
                 workflowsByID: workflowByID,
                 archiveRoot: archiveRoot
             )
@@ -719,13 +713,8 @@ final class AppModel: ObservableObject {
     }
 
     func moveInvoicesToInProgress(ids: Set<PhysicalArtifact.ID>) {
-        moveInvoicesToInProgress(
-            ids: workflowActionCoordinator.orderedProcessingIDs(
-                requestedIDs: ids,
-                visibleArtifacts: visibleArtifacts,
-                allArtifacts: invoices
-            )
-        )
+        let ordered = orderedProcessingIDs(requestedIDs: ids)
+        moveInvoicesToInProgress(ids: ordered)
     }
 
     private func reopenProcessedToInProgress(ids: Set<PhysicalArtifact.ID>) {
@@ -734,11 +723,13 @@ final class AppModel: ObservableObject {
             return
         }
 
+        let documents = resolveDocuments(for: ids) { $0.canReopenToInProgress }
+        guard !documents.isEmpty else { return }
+
         do {
             let result = try workflowActionCoordinator.reopenToInProgress(
-                ids: ids,
-                artifacts: invoices,
-                snapshot: librarySnapshot,
+                documents: documents,
+                artifactsByID: artifactsByID,
                 workflowsByID: workflowByID,
                 processingRoot: processingRoot
             )
@@ -771,11 +762,13 @@ final class AppModel: ObservableObject {
             return
         }
 
+        let documents = resolveDocuments(for: inboxIDs) { $0.canMoveToInProgress }
+        guard !documents.isEmpty else { return }
+
         do {
             let result = try workflowActionCoordinator.moveToInProgress(
-                orderedIDs: ids,
-                artifacts: invoices,
-                snapshot: librarySnapshot,
+                documents: documents,
+                artifactsByID: artifactsByID,
                 workflowsByID: workflowByID,
                 processingRoot: processingRoot,
                 duplicatesRoot: duplicatesRoot,
@@ -800,14 +793,13 @@ final class AppModel: ObservableObject {
             return
         }
 
-        let eligibleIDs = Set(invoices.filter { ids.contains($0.id) && $0.location == .processing }.map(\.id))
-        guard !eligibleIDs.isEmpty else { return }
+        let documents = resolveDocuments(for: ids) { $0.location == .processing }
+        guard !documents.isEmpty else { return }
 
         do {
             let result = try workflowActionCoordinator.moveToUnprocessed(
-                ids: eligibleIDs,
-                artifacts: invoices,
-                snapshot: librarySnapshot,
+                documents: documents,
+                artifactsByID: artifactsByID,
                 workflowsByID: workflowByID,
                 inboxRoot: inboxRoot
             )
@@ -828,11 +820,12 @@ final class AppModel: ObservableObject {
             return
         }
 
-        let eligibleInvoices = invoices.filter { ids.contains($0.id) && $0.canMarkDone }
-        guard !eligibleInvoices.isEmpty else { return }
+        let documents = resolveDocuments(for: ids) { $0.canMarkDone }
+        guard !documents.isEmpty else { return }
 
-        guard eligibleInvoices.allSatisfy({
-            !(documentMetadata(for: $0.id).vendor?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        let allEligibleArtifactIDs = documents.flatMap(\.artifactIDs)
+        guard allEligibleArtifactIDs.allSatisfy({
+            !(documentMetadata(for: $0).vendor?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         }) else {
             settingsErrorMessage = "Set a vendor before moving invoices to Processed."
             return
@@ -840,9 +833,8 @@ final class AppModel: ObservableObject {
 
         do {
             let result = try workflowActionCoordinator.moveToProcessed(
-                ids: ids,
-                artifacts: invoices,
-                snapshot: librarySnapshot,
+                documents: documents,
+                artifactsByID: artifactsByID,
                 workflowsByID: workflowByID,
                 processedRoot: processedRoot
             )
@@ -1189,6 +1181,42 @@ final class AppModel: ObservableObject {
     private func normalizePreviewRotation(_ value: Int) -> Int {
         let normalized = value % 4
         return normalized >= 0 ? normalized : normalized + 4
+    }
+
+    private var artifactsByID: [PhysicalArtifact.ID: PhysicalArtifact] {
+        Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
+    }
+
+    private func resolveDocuments(for artifactIDs: some Collection<PhysicalArtifact.ID>) -> [Document] {
+        var seen: Set<Document.ID> = []
+        var result: [Document] = []
+        for artifactID in artifactIDs {
+            guard let document = librarySnapshot.document(for: artifactID),
+                  seen.insert(document.id).inserted else {
+                continue
+            }
+            result.append(document)
+        }
+        return result
+    }
+
+    private func resolveDocuments(
+        for artifactIDs: some Collection<PhysicalArtifact.ID>,
+        where isEligible: (PhysicalArtifact) -> Bool
+    ) -> [Document] {
+        let eligibleIDs = Set(invoices.filter { artifactIDs.contains($0.id) && isEligible($0) }.map(\.id))
+        return resolveDocuments(for: eligibleIDs)
+    }
+
+    private func orderedProcessingIDs(requestedIDs: Set<PhysicalArtifact.ID>) -> [PhysicalArtifact.ID] {
+        let visibleOrderedIDs = visibleArtifacts
+            .map(\.id)
+            .filter { requestedIDs.contains($0) }
+        let visibleOrderedSet = Set(visibleOrderedIDs)
+        let remainingIDs = invoices
+            .map(\.id)
+            .filter { requestedIDs.contains($0) && !visibleOrderedSet.contains($0) }
+        return visibleOrderedIDs + remainingIDs
     }
 
     private func persistFolderSettings() {
