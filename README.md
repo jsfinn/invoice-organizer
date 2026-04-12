@@ -61,6 +61,7 @@ This prompts for a release version and defaults to the next patch version based 
 ```
 
 The `release` script:
+- aborts if local `main` is behind `origin/main`
 - updates `MARKETING_VERSION` in `project.yml` and `InvoiceOrganizer.xcodeproj/project.pbxproj`
 - increments `CURRENT_PROJECT_VERSION`
 - creates a release commit

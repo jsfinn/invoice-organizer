@@ -22,6 +22,28 @@ ensure_xcode_project() {
   xcodegen generate --spec "${PROJECT_SPEC}" >/dev/null
 }
 
+ensure_main_not_behind_origin() {
+  if ! git show-ref --verify --quiet refs/heads/main; then
+    echo "Local main branch does not exist. Release aborted." >&2
+    exit 1
+  fi
+
+  if ! git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
+    echo "Remote origin/main does not exist. Release aborted." >&2
+    exit 1
+  fi
+
+  git fetch origin main >/dev/null 2>&1
+
+  local ahead behind
+  read -r ahead behind <<<"$(git rev-list --left-right --count main...origin/main)"
+
+  if [[ "${behind}" != "0" ]]; then
+    echo "Local main is behind origin/main by ${behind} commit(s). Pull the latest main changes before releasing." >&2
+    exit 1
+  fi
+}
+
 read_current_version() {
   python3 - "$PROJECT_SPEC" <<'PY'
 from pathlib import Path
@@ -161,6 +183,8 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "Working tree must be clean before creating a release tag." >&2
   exit 1
 fi
+
+ensure_main_not_behind_origin
 
 CURRENT_BUILD="$(read_current_build)"
 NEXT_BUILD="$(next_build_number "${CURRENT_BUILD}")"
