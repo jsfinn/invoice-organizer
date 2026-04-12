@@ -20,7 +20,7 @@ struct VendorAutocompleteFieldV2: NSViewRepresentable {
     func makeNSView(context: Context) -> CancelableComboBoxV2 {
         let comboBox = CancelableComboBoxV2()
         comboBox.usesDataSource = true
-        comboBox.completes = true
+        comboBox.completes = false
         comboBox.dataSource = context.coordinator
         comboBox.delegate = context.coordinator
         comboBox.isEditable = true
@@ -106,12 +106,6 @@ struct VendorAutocompleteFieldV2: NSViewRepresentable {
             return filteredSuggestions[index]
         }
 
-        func comboBox(_ comboBox: NSComboBox, completedString string: String) -> String? {
-            allSuggestions.first {
-                $0.commonPrefix(with: string, options: .caseInsensitive).count == string.count
-            }
-        }
-
         func comboBox(_ comboBox: NSComboBox, indexOfItemWithStringValue string: String) -> Int {
             filteredSuggestions.firstIndex { $0.caseInsensitiveCompare(string) == .orderedSame } ?? NSNotFound
         }
@@ -127,6 +121,29 @@ struct VendorAutocompleteFieldV2: NSViewRepresentable {
             guard !isUpdating else { return }
             isEditing = true
             onEditingChanged(true)
+        }
+
+        func comboBoxSelectionDidChange(_ notification: Notification) {
+            guard !isUpdating,
+                  let comboBox = notification.object as? CancelableComboBoxV2 else {
+                return
+            }
+
+            let selectedValue: String
+            if comboBox.indexOfSelectedItem >= 0,
+               let item = comboBox.itemObjectValue(at: comboBox.indexOfSelectedItem) as? String {
+                selectedValue = item
+            } else {
+                selectedValue = comboBox.stringValue
+            }
+
+            comboBox.stringValue = selectedValue
+            text.wrappedValue = selectedValue
+
+            guard selectedValue != committedText else { return }
+            committedText = selectedValue
+            comboBox.committedText = selectedValue
+            onCommit()
         }
 
         func controlTextDidEndEditing(_ notification: Notification) {
