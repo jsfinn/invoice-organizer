@@ -128,12 +128,6 @@ struct QueueSidebar: View {
                     onOpenInPreview: { orderedIDs in
                         model.openInPreview(ids: orderedIDs)
                     },
-                    onVendorChange: { invoiceID, vendor in
-                        model.updateVendor(vendor, for: invoiceID)
-                    },
-                    onInvoiceDateChange: { invoiceID, invoiceDate in
-                        model.updateInvoiceDate(invoiceDate, for: invoiceID)
-                    },
                     dragExportURL: { invoice in
                         try model.dragExportURL(for: invoice)
                     },

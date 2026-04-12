@@ -19,8 +19,6 @@ struct InvoiceBrowserView: NSViewRepresentable {
     let onRescan: () -> Void
     let onArchive: ([PhysicalArtifact.ID]) -> Void
     let onOpenInPreview: ([PhysicalArtifact.ID]) -> Void
-    let onVendorChange: (PhysicalArtifact.ID, String) -> Void
-    let onInvoiceDateChange: (PhysicalArtifact.ID, Date) -> Void
     let dragExportURL: (PhysicalArtifact) throws -> URL
     let fileIcon: (PhysicalArtifact) -> NSImage
 
@@ -205,38 +203,17 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 view.configure(text: invoice.fileType.rawValue, secondary: true)
                 return view
             case .vendor:
-                if parent.queueTab == .inProgress && rowModel.isDirectInvoiceRow {
-                    let view = tableView.makeView(withIdentifier: EditableTextCellView.reuseIdentifier, owner: nil) as? EditableTextCellView ?? EditableTextCellView()
-                    view.configure(
-                        invoiceID: invoice.id,
-                        text: metadata.vendor ?? "",
-                        placeholder: "Vendor",
-                        onCommit: parent.onVendorChange
-                    )
-                    return view
-                } else {
-                    let view = tableView.makeView(withIdentifier: TextCellView.reuseIdentifier, owner: nil) as? TextCellView ?? TextCellView()
-                    view.configure(text: metadata.vendor ?? "\u{2014}", secondary: metadata.vendor != nil, tertiary: metadata.vendor == nil)
-                    return view
-                }
+                let view = tableView.makeView(withIdentifier: TextCellView.reuseIdentifier, owner: nil) as? TextCellView ?? TextCellView()
+                view.configure(text: metadata.vendor ?? "\u{2014}", secondary: metadata.vendor != nil, tertiary: metadata.vendor == nil)
+                return view
             case .invoiceDate:
-                if parent.queueTab == .inProgress && rowModel.isDirectInvoiceRow {
-                    let view = tableView.makeView(withIdentifier: EditableDateCellView.reuseIdentifier, owner: nil) as? EditableDateCellView ?? EditableDateCellView()
-                    view.configure(
-                        invoiceID: invoice.id,
-                        date: metadata.invoiceDate ?? invoice.addedAt,
-                        onCommit: parent.onInvoiceDateChange
-                    )
-                    return view
-                } else {
-                    let view = tableView.makeView(withIdentifier: TextCellView.reuseIdentifier, owner: nil) as? TextCellView ?? TextCellView()
-                    view.configure(
-                        text: metadata.invoiceDate?.formatted(date: .abbreviated, time: .omitted) ?? "\u{2014}",
-                        secondary: metadata.invoiceDate != nil,
-                        tertiary: metadata.invoiceDate == nil
-                    )
-                    return view
-                }
+                let view = tableView.makeView(withIdentifier: TextCellView.reuseIdentifier, owner: nil) as? TextCellView ?? TextCellView()
+                view.configure(
+                    text: metadata.invoiceDate?.formatted(date: .abbreviated, time: .omitted) ?? "\u{2014}",
+                    secondary: metadata.invoiceDate != nil,
+                    tertiary: metadata.invoiceDate == nil
+                )
+                return view
             }
         }
 
@@ -1211,135 +1188,3 @@ private final class TextCellView: NSTableCellView {
     }
 }
 
-private final class EditableTextCellView: NSTableCellView, NSTextFieldDelegate {
-    static let reuseIdentifier = NSUserInterfaceItemIdentifier("EditableTextCellView")
-
-    private let textFieldView = NSTextField()
-    private var invoiceID: PhysicalArtifact.ID?
-    private var onCommit: ((PhysicalArtifact.ID, String) -> Void)?
-    private var isUpdating = false
-
-    init() {
-        super.init(frame: .zero)
-        identifier = Self.reuseIdentifier
-        textFieldView.translatesAutoresizingMaskIntoConstraints = false
-        textFieldView.isBordered = false
-        textFieldView.drawsBackground = false
-        textFieldView.focusRingType = .none
-        textFieldView.lineBreakMode = .byTruncatingTail
-        textFieldView.delegate = self
-        addSubview(textFieldView)
-
-        NSLayoutConstraint.activate([
-            textFieldView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            textFieldView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            textFieldView.centerYAnchor.constraint(equalTo: centerYAnchor)
-        ])
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-    }
-
-    func configure(
-        invoiceID: PhysicalArtifact.ID,
-        text: String,
-        placeholder: String,
-        onCommit: @escaping (PhysicalArtifact.ID, String) -> Void
-    ) {
-        self.invoiceID = invoiceID
-        self.onCommit = onCommit
-        isUpdating = true
-        textFieldView.stringValue = text
-        textFieldView.placeholderString = placeholder
-        isUpdating = false
-    }
-
-    func controlTextDidEndEditing(_ obj: Notification) {
-        guard !isUpdating,
-              let invoiceID,
-              let textField = obj.object as? NSTextField else { return }
-
-        if (obj.userInfo?["NSTextMovement"] as? Int) == NSCancelTextMovement {
-            return
-        }
-
-        onCommit?(invoiceID, textField.stringValue)
-    }
-}
-
-private final class EditableDateCellView: NSTableCellView {
-    static let reuseIdentifier = NSUserInterfaceItemIdentifier("EditableDateCellView")
-
-    private let datePicker = CommitOnBlurDatePicker()
-    private var invoiceID: PhysicalArtifact.ID?
-    private var onCommit: ((PhysicalArtifact.ID, Date) -> Void)?
-    private var isUpdating = false
-    private var committedDate: Date?
-
-    init() {
-        super.init(frame: .zero)
-        identifier = Self.reuseIdentifier
-        datePicker.translatesAutoresizingMaskIntoConstraints = false
-        datePicker.datePickerStyle = .textFieldAndStepper
-        datePicker.datePickerElements = .yearMonthDay
-        datePicker.target = self
-        datePicker.action = #selector(dateChanged)
-        datePicker.onBlur = { [weak self] in
-            self?.commitIfNeeded()
-        }
-        datePicker.onCancel = { [weak self] in
-            self?.revertToCommittedDate()
-        }
-        addSubview(datePicker)
-
-        NSLayoutConstraint.activate([
-            datePicker.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            datePicker.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -6),
-            datePicker.centerYAnchor.constraint(equalTo: centerYAnchor)
-        ])
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-    }
-
-    func configure(
-        invoiceID: PhysicalArtifact.ID,
-        date: Date,
-        onCommit: @escaping (PhysicalArtifact.ID, Date) -> Void
-    ) {
-        self.invoiceID = invoiceID
-        self.onCommit = onCommit
-        isUpdating = true
-        datePicker.dateValue = date
-        datePicker.committedDate = date
-        committedDate = date
-        isUpdating = false
-    }
-
-    @objc
-    private func dateChanged() {
-        guard !isUpdating else { return }
-    }
-
-    private func commitIfNeeded() {
-        guard !isUpdating,
-              let invoiceID,
-              committedDate != datePicker.dateValue else {
-            return
-        }
-
-        committedDate = datePicker.dateValue
-        datePicker.committedDate = datePicker.dateValue
-        onCommit?(invoiceID, datePicker.dateValue)
-    }
-
-    private func revertToCommittedDate() {
-        guard let committedDate else { return }
-        isUpdating = true
-        datePicker.dateValue = committedDate
-        datePicker.committedDate = committedDate
-        isUpdating = false
-    }
-}
