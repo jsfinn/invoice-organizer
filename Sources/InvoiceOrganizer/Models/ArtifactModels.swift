@@ -318,3 +318,34 @@ struct FolderSettings: Equatable, Sendable {
         }
     }
 }
+
+enum HEICOriginalFileHandling: String, CaseIterable, Identifiable, Codable, Sendable {
+    case delete
+    case archive
+    case leaveInUnprocessed
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .delete:
+            return "Replace"
+        case .archive:
+            return "Archive"
+        case .leaveInUnprocessed:
+            return "Leave in Unprocessed"
+        }
+    }
+}
+
+struct HEICConversionSettings: Equatable, Sendable {
+    var autoConvertEnabled: Bool
+    var originalFileHandling: HEICOriginalFileHandling
+    var hasUserConfigured: Bool
+
+    static let `default` = HEICConversionSettings(
+        autoConvertEnabled: false,
+        originalFileHandling: .delete,
+        hasUserConfigured: false
+    )
+}

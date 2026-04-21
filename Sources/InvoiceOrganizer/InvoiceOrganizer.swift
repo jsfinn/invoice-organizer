@@ -16,6 +16,7 @@ struct InvoiceOrganizerApp: App {
                         await model.persistPreviewRotation(for: request)
                     }
                     appDelegate.rotationCoordinator = rotationCoordinator
+                    model.runStartupHEICConversionCheckIfNeeded()
                 }
         }
         .defaultSize(width: 1280, height: 760)

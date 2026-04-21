@@ -7,7 +7,11 @@ struct SettingsView: View {
 
     var body: some View {
         TabView(selection: $selectedSection) {
-            GeneralSettingsSection(model: model)
+            GeneralSettingsSection(
+                model: model,
+                heicAutoConvertBinding: heicAutoConvertBinding,
+                heicOriginalHandlingBinding: heicOriginalHandlingBinding
+            )
                 .tabItem {
                     Label(SettingsSection.general.title, systemImage: SettingsSection.general.systemImage)
                 }
@@ -62,6 +66,20 @@ struct SettingsView: View {
             set: { model.updateLLMCustomInstructions($0) }
         )
     }
+
+    private var heicAutoConvertBinding: Binding<Bool> {
+        Binding(
+            get: { model.heicConversionSettings.autoConvertEnabled },
+            set: { model.updateHEICAutoConvertEnabled($0) }
+        )
+    }
+
+    private var heicOriginalHandlingBinding: Binding<HEICOriginalFileHandling> {
+        Binding(
+            get: { model.heicConversionSettings.originalFileHandling },
+            set: { model.updateHEICOriginalFileHandling($0) }
+        )
+    }
 }
 
 private enum SettingsSection: String, CaseIterable, Identifiable {
@@ -92,6 +110,8 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
 private struct GeneralSettingsSection: View {
     @ObservedObject var model: AppModel
     @AppStorage(AppStorageKey.debugMode) private var debugMode = false
+    let heicAutoConvertBinding: Binding<Bool>
+    let heicOriginalHandlingBinding: Binding<HEICOriginalFileHandling>
 
     var body: some View {
         Form {
@@ -145,6 +165,21 @@ private struct GeneralSettingsSection: View {
             Section("Preferences") {
                 Toggle("Debug Mode", isOn: $debugMode)
                 Text("Show OCR comparison and dedup diagnostics in invoice metadata.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("HEIC Conversion") {
+                Toggle("Autoconvert", isOn: heicAutoConvertBinding)
+
+                Picker("On convert, original file", selection: heicOriginalHandlingBinding) {
+                    ForEach(HEICOriginalFileHandling.allCases) { handling in
+                        Text(handling.title).tag(handling)
+                    }
+                }
+                .disabled(!heicAutoConvertBinding.wrappedValue)
+
+                Text("These defaults are also prompted the first time a HEIC file is detected.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

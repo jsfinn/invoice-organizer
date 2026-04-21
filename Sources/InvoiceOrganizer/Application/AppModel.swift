@@ -7,6 +7,7 @@ final class AppModel: ObservableObject {
     @Published var invoices: [PhysicalArtifact]
     @Published var queueScreenContext: QueueScreenContext
     @Published var folderSettings: FolderSettings
+    @Published var heicConversionSettings: HEICConversionSettings
     @Published var llmSettings: LLMSettings
     @Published var settingsErrorMessage: String?
     @Published private(set) var llmPreflightStatus: LLMPreflightStatus
@@ -19,6 +20,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var structuredFailedHashes: Set<String> = []
     @Published private(set) var textQueueDepth: Int = 0
     @Published private(set) var structuredQueueDepth: Int = 0
+    let heicConversionQueue = HEICConversionQueueModel()
 
     private let accessCoordinator = ArtifactAccessCoordinator()
     private let openInPreviewHandler: ([URL]) -> Void
@@ -48,6 +50,7 @@ final class AppModel: ObservableObject {
     private var rescannedDocumentContextsByID: [Document.ID: DocumentRescanContext] = [:]
     private var rescannedDocumentIDsByHash: [String: Set<Document.ID>] = [:]
     private var isSynchronizingSelection = false
+    private var didRunStartupHEICCheck = false
 
     init(
         folderSettings: FolderSettings? = nil,
@@ -61,10 +64,12 @@ final class AppModel: ObservableObject {
         openInPreview: (([URL]) -> Void)? = nil
     ) {
         let resolvedFolderSettings = folderSettings ?? Self.loadFolderSettings()
+        let resolvedHEICConversionSettings = Self.loadHEICConversionSettings()
         let resolvedLLMSettings = llmSettings ?? Self.loadLLMSettings()
 
         self.queueScreenContext = QueueScreenContext()
         self.folderSettings = resolvedFolderSettings
+        self.heicConversionSettings = resolvedHEICConversionSettings
         self.llmSettings = resolvedLLMSettings
         self.workflowByID = workflowByID ?? InvoiceWorkflowStore.load()
         self.openInPreviewHandler = openInPreview ?? { urls in
@@ -600,6 +605,47 @@ final class AppModel: ObservableObject {
         fileSystemReconciler.refreshNow()
     }
 
+    func runStartupHEICConversionCheckIfNeeded() {
+        guard !didRunStartupHEICCheck else { return }
+        didRunStartupHEICCheck = true
+        guard let inboxURL = folderSettings.inboxURL else { return }
+        guard let heicFiles = try? HEICConversionService.heicFiles(in: inboxURL),
+              !heicFiles.isEmpty else { return }
+
+        ensureHEICConversionSettingsConfiguredIfNeeded(heicCount: heicFiles.count)
+        guard heicConversionSettings.autoConvertEnabled else { return }
+        enqueueManualHEICConversion(heicFiles)
+    }
+
+    func revealConvertedFileInQueue(_ convertedFile: HEICConvertedFile) {
+        if selectArtifactForConvertedFile(at: convertedFile.convertedURL) {
+            return
+        }
+
+        Task {
+            await fileSystemReconciler.reconcileNow()
+            _ = selectArtifactForConvertedFile(at: convertedFile.convertedURL)
+        }
+    }
+
+    func markHEICConversionActivitySeen() {
+        heicConversionQueue.markActivitySeen()
+    }
+
+    func updateHEICAutoConvertEnabled(_ enabled: Bool) {
+        guard heicConversionSettings.autoConvertEnabled != enabled else { return }
+        heicConversionSettings.autoConvertEnabled = enabled
+        heicConversionSettings.hasUserConfigured = true
+        persistHEICConversionSettings()
+    }
+
+    func updateHEICOriginalFileHandling(_ handling: HEICOriginalFileHandling) {
+        guard heicConversionSettings.originalFileHandling != handling else { return }
+        heicConversionSettings.originalFileHandling = handling
+        heicConversionSettings.hasUserConfigured = true
+        persistHEICConversionSettings()
+    }
+
     func moveSelectedToInProgress() {
         let orderedSelectedIDs = visibleArtifacts
             .map(\.id)
@@ -1033,6 +1079,37 @@ final class AppModel: ObservableObject {
         syncComputationHashes()
         rebuildLibrarySnapshot()
         syncSelectionForVisibleInvoices()
+
+        let newlyDetectedHEICFiles = invoices
+            .filter { $0.location == .inbox && $0.fileType == .heic }
+            .map { invoice in
+                HEICAutoCandidate(
+                    fileURL: invoice.fileURL.standardizedFileURL,
+                    modifiedAt: invoice.modifiedAt
+                )
+            }
+        if !newlyDetectedHEICFiles.isEmpty {
+            ensureHEICConversionSettingsConfiguredIfNeeded(heicCount: newlyDetectedHEICFiles.count)
+        }
+        guard heicConversionSettings.autoConvertEnabled else {
+            let textRequests = textExtractionHandler.buildRequests(from: invoices)
+            await textExtractionQueue.enqueue(textRequests, excludingHashes: extractedTextHashes.union(textFailedHashes))
+            if canAttemptStructuredExtraction(with: llmSettings) {
+                await enqueueStructuredExtraction(for: invoices)
+            }
+            return
+        }
+
+        heicConversionQueue.enqueueAutomaticallyDetected(
+            newlyDetectedHEICFiles,
+            originalHandling: heicConversionSettings.originalFileHandling,
+            archiveRoot: folderSettings.duplicatesURL
+        ) { outcome in
+            if outcome.convertedCount > 0 {
+                self.refreshLibrary()
+            }
+        }
+
         let textRequests = textExtractionHandler.buildRequests(from: invoices)
         await textExtractionQueue.enqueue(textRequests, excludingHashes: extractedTextHashes.union(textFailedHashes))
         if canAttemptStructuredExtraction(with: llmSettings) {
@@ -1258,6 +1335,13 @@ final class AppModel: ObservableObject {
         defaults.set(llmSettings.customInstructions, forKey: UserDefaultsKey.llmCustomInstructions)
     }
 
+    private func persistHEICConversionSettings() {
+        let defaults = UserDefaults.standard
+        defaults.set(heicConversionSettings.autoConvertEnabled, forKey: UserDefaultsKey.heicAutoConvertEnabled)
+        defaults.set(heicConversionSettings.originalFileHandling.rawValue, forKey: UserDefaultsKey.heicOriginalFileHandling)
+        defaults.set(heicConversionSettings.hasUserConfigured, forKey: UserDefaultsKey.heicSettingsConfigured)
+    }
+
     private static func loadFolderSettings() -> FolderSettings {
         let defaults = UserDefaults.standard
         return FolderSettings(
@@ -1283,6 +1367,20 @@ final class AppModel: ObservableObject {
         )
     }
 
+    private static func loadHEICConversionSettings() -> HEICConversionSettings {
+        let defaults = UserDefaults.standard
+        let handling = defaults.string(forKey: UserDefaultsKey.heicOriginalFileHandling)
+            .flatMap(HEICOriginalFileHandling.init(rawValue:))
+            ?? HEICConversionSettings.default.originalFileHandling
+
+        return HEICConversionSettings(
+            autoConvertEnabled: defaults.object(forKey: UserDefaultsKey.heicAutoConvertEnabled) as? Bool
+                ?? HEICConversionSettings.default.autoConvertEnabled,
+            originalFileHandling: handling,
+            hasUserConfigured: defaults.bool(forKey: UserDefaultsKey.heicSettingsConfigured)
+        )
+    }
+
     private static func initialLLMPreflightStatus(for settings: LLMSettings) -> LLMPreflightStatus {
         let trimmedBaseURL = settings.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedModel = settings.modelName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1301,6 +1399,76 @@ final class AppModel: ObservableObject {
         }
 
         return LLMPreflightStatus(state: .ready, message: "\(settings.provider.rawValue) is configured. Use Check Connection to verify reachability.")
+    }
+
+    private func enqueueManualHEICConversion(_ heicFiles: [URL]) {
+        heicConversionQueue.enqueueManual(
+            heicFiles,
+            originalHandling: heicConversionSettings.originalFileHandling,
+            archiveRoot: folderSettings.duplicatesURL
+        ) { outcome in
+            if outcome.failedCount > 0 {
+                self.settingsErrorMessage = "Converted \(outcome.convertedCount) of \(outcome.convertedCount + outcome.failedCount) HEIC files. Some files could not be converted."
+            } else {
+                self.settingsErrorMessage = nil
+            }
+
+            if outcome.convertedCount > 0 {
+                self.refreshLibrary()
+            }
+        }
+    }
+
+    private func ensureHEICConversionSettingsConfiguredIfNeeded(heicCount: Int) {
+        guard !heicConversionSettings.hasUserConfigured else { return }
+        let configured = Self.presentHEICConversionSettingsPrompt(
+            count: heicCount,
+            initial: HEICConversionSettings(
+                autoConvertEnabled: false,
+                originalFileHandling: .delete,
+                hasUserConfigured: true
+            )
+        )
+        heicConversionSettings = configured
+        persistHEICConversionSettings()
+    }
+
+    private static func presentHEICConversionSettingsPrompt(
+        count: Int,
+        initial: HEICConversionSettings
+    ) -> HEICConversionSettings {
+        let alert = NSAlert()
+        alert.messageText = count == 1
+            ? "1 HEIC file found in Unprocessed"
+            : "\(count) HEIC files found in Unprocessed"
+        alert.informativeText = "Configure HEIC conversion. You can change this later in Settings."
+        alert.addButton(withTitle: "Save")
+        alert.alertStyle = .informational
+        let accessory = HEICConversionPromptAccessory(initial: initial)
+        alert.accessoryView = accessory.view
+        _ = alert.runModal()
+        return accessory.settings
+    }
+
+    @discardableResult
+    private func selectArtifactForConvertedFile(at fileURL: URL) -> Bool {
+        let standardizedURL = fileURL.standardizedFileURL
+        let artifactID = PhysicalArtifact.stableID(for: standardizedURL)
+        guard let artifact = invoices.first(where: { $0.id == artifactID }) else {
+            return false
+        }
+
+        switch artifact.location {
+        case .inbox:
+            selectedQueueTab = .unprocessed
+        case .processing:
+            selectedQueueTab = .inProgress
+        case .processed:
+            selectedQueueTab = .processed
+        }
+
+        setSelection(ids: [artifact.id], primary: artifact.id)
+        return true
     }
 
     private func canAttemptStructuredExtraction(with settings: LLMSettings) -> Bool {
@@ -1491,6 +1659,77 @@ private struct DocumentRescanContext {
     var pendingContentHashes: Set<String>
 }
 
+@MainActor
+private final class HEICConversionPromptAccessory: NSObject {
+    let view: NSView
+    private let autoConvertCheckbox: NSButton
+    private let handlingLabel: NSTextField
+    private let handlingPopup: NSPopUpButton
+
+    var settings: HEICConversionSettings {
+        let autoConvertEnabled = autoConvertCheckbox.state == .on
+        let selectedHandling = HEICOriginalFileHandling(rawValue: handlingPopup.selectedItem?.representedObject as? String ?? "")
+            ?? .delete
+        return HEICConversionSettings(
+            autoConvertEnabled: autoConvertEnabled,
+            originalFileHandling: selectedHandling,
+            hasUserConfigured: true
+        )
+    }
+
+    init(initial: HEICConversionSettings) {
+        autoConvertCheckbox = NSButton(checkboxWithTitle: "Autoconvert", target: nil, action: nil)
+        autoConvertCheckbox.state = initial.autoConvertEnabled ? .on : .off
+
+        handlingLabel = NSTextField(labelWithString: "On convert, original file")
+        handlingPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        for handling in HEICOriginalFileHandling.allCases {
+            handlingPopup.addItem(withTitle: handling.title)
+            handlingPopup.lastItem?.representedObject = handling.rawValue
+            if handling == initial.originalFileHandling {
+                handlingPopup.select(handlingPopup.lastItem)
+            }
+        }
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 72))
+        autoConvertCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        handlingLabel.translatesAutoresizingMaskIntoConstraints = false
+        handlingPopup.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(autoConvertCheckbox)
+        container.addSubview(handlingLabel)
+        container.addSubview(handlingPopup)
+
+        NSLayoutConstraint.activate([
+            autoConvertCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            autoConvertCheckbox.topAnchor.constraint(equalTo: container.topAnchor),
+
+            handlingLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            handlingLabel.topAnchor.constraint(equalTo: autoConvertCheckbox.bottomAnchor, constant: 10),
+
+            handlingPopup.leadingAnchor.constraint(equalTo: handlingLabel.trailingAnchor, constant: 10),
+            handlingPopup.firstBaselineAnchor.constraint(equalTo: handlingLabel.firstBaselineAnchor),
+            handlingPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 170),
+            handlingPopup.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
+            handlingPopup.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+
+        view = container
+        super.init()
+        autoConvertCheckbox.target = self
+        autoConvertCheckbox.action = #selector(autoConvertToggled(_:))
+        applyAutoConvertEnabled(initial.autoConvertEnabled)
+    }
+
+    @objc private func autoConvertToggled(_ sender: NSButton) {
+        applyAutoConvertEnabled(sender.state == .on)
+    }
+
+    private func applyAutoConvertEnabled(_ enabled: Bool) {
+        handlingPopup.isEnabled = enabled
+        handlingLabel.textColor = enabled ? .labelColor : .secondaryLabelColor
+    }
+}
+
 private enum UserDefaultsKey {
     static let inboxPath = "settings.inboxPath"
     static let processedPath = "settings.processedPath"
@@ -1501,4 +1740,7 @@ private enum UserDefaultsKey {
     static let llmModelName = "settings.llmModelName"
     static let llmAPIKey = "settings.llmAPIKey"
     static let llmCustomInstructions = "settings.llmCustomInstructions"
+    static let heicAutoConvertEnabled = "settings.heicAutoConvertEnabled"
+    static let heicOriginalFileHandling = "settings.heicOriginalFileHandling"
+    static let heicSettingsConfigured = "settings.heicSettingsConfigured"
 }

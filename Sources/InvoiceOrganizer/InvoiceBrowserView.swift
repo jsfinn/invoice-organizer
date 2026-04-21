@@ -458,6 +458,9 @@ struct InvoiceBrowserView: NSViewRepresentable {
 
             isSyncingSelection = true
             tableView.selectRowIndexes(rowIndexes, byExtendingSelection: false)
+            if let firstSelectedRow = rowIndexes.first {
+                tableView.scrollRowToVisible(firstSelectedRow)
+            }
             isSyncingSelection = false
         }
 

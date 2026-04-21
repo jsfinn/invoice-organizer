@@ -831,6 +831,61 @@ private final class RecordingPreviewPersistHandler {
     #expect(DragExportService.jpegExportFilename(for: "invoice") == "invoice.jpg")
 }
 
+@Test func heicConversionServiceFindsOnlyTopLevelHEICFiles() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let nestedFolder = tempRoot.appendingPathComponent("nested", isDirectory: true)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: nestedFolder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let topLevelHEIC = tempRoot.appendingPathComponent("invoice-a.HEIC")
+    let topLevelJPEG = tempRoot.appendingPathComponent("invoice-b.jpg")
+    let nestedHEIC = nestedFolder.appendingPathComponent("invoice-c.heic")
+    try writePNG(width: 4, height: 2, to: topLevelHEIC)
+    try writePNG(width: 4, height: 2, to: topLevelJPEG)
+    try writePNG(width: 4, height: 2, to: nestedHEIC)
+
+    let found = try HEICConversionService.heicFiles(in: tempRoot)
+
+    #expect(found.map(\.standardizedFileURL) == [topLevelHEIC.standardizedFileURL])
+}
+
+@Test func heicConversionServiceConvertsAndDeletesOriginalHEICFile() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let heicURL = tempRoot.appendingPathComponent("receipt.heic")
+    let jpegURL = tempRoot.appendingPathComponent("receipt.heic.jpg")
+    try writePNG(width: 5, height: 3, to: heicURL)
+
+    let result = HEICConversionService.convertReplacingOriginalFiles([heicURL])
+
+    #expect(result.convertedCount == 1)
+    #expect(result.failedConversions.isEmpty)
+    #expect(!FileManager.default.fileExists(atPath: heicURL.path))
+    #expect(FileManager.default.fileExists(atPath: jpegURL.path))
+    #expect(try imagePixelSize(at: jpegURL) == CGSize(width: 5, height: 3))
+}
+
+@Test func heicConversionServiceCreatesNumberedJPEGWhenDestinationExists() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let heicURL = tempRoot.appendingPathComponent("receipt.heic")
+    let jpegURL = tempRoot.appendingPathComponent("receipt.heic.jpg")
+    let numberedJPEGURL = tempRoot.appendingPathComponent("receipt.heic (2).jpg")
+    try writePNG(width: 5, height: 3, to: heicURL)
+    try writePNG(width: 5, height: 3, to: jpegURL)
+
+    let converted = try HEICConversionService.convertReplacingOriginalFile(at: heicURL)
+
+    #expect(converted.convertedURL.standardizedFileURL == numberedJPEGURL.standardizedFileURL)
+    #expect(FileManager.default.fileExists(atPath: jpegURL.path))
+    #expect(FileManager.default.fileExists(atPath: numberedJPEGURL.path))
+}
+
 @Test func archiveMovesInvoiceWithCanonicalFilename() async throws {
     let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
