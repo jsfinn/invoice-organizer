@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		05B8D1E302363FA4E8280775 /* FocusableMenuPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16A5D5BB9DEF7FEE49352CF /* FocusableMenuPicker.swift */; };
 		09131AB5585BD3B485DED375 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1D393E630B373F584368E1C1 /* Assets.xcassets */; };
 		0AAE579343E7D53F5B825E37 /* WorkflowActionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E391D90F06336251FDD582F2 /* WorkflowActionCoordinator.swift */; };
 		0F6634A3CFB26914E3E63CE4 /* LibrarySnapshotBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D275D6E83B86659A791D96C0 /* LibrarySnapshotBuilder.swift */; };
@@ -14,11 +15,11 @@
 		1165F9DA6EA3092C39C86D9C /* DocumentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C58E2113FCFA233787034705 /* DocumentModels.swift */; };
 		1270988C781DF49615F2340B /* PreviewSessionID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 719CEBD6BDEFA69B3F710CFF /* PreviewSessionID.swift */; };
 		1A501FA195091734AA55172B /* ArtifactModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB46C2E0604798A19A9A2153 /* ArtifactModels.swift */; };
+		25EC8181CD7B97BEE5821EE4 /* WorkflowPersister.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E32E67C5E7D6E2FDEFDE1ED /* WorkflowPersister.swift */; };
 		2C138F4999BE3D047B107710 /* InvoiceOrganizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCCE5C80EEF23F66C41BB114 /* InvoiceOrganizerTests.swift */; };
 		2E9533B2D8AF0A8D79A7EA1C /* InvoiceTextStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD98E348516723DF65B3072 /* InvoiceTextStore.swift */; };
 		3072378B8BFF577841B1F119 /* QueueSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C323274BD1CBEA57661C2128 /* QueueSidebar.swift */; };
 		376C57B76E8FB72913092367 /* PreviewAssetProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 661B9E1AD61E265CA0D271C5 /* PreviewAssetProvider.swift */; };
-		3D6A4D25115C0332D65B07FD /* VendorAutocompleteFieldV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EEB506C125D290A3405292A /* VendorAutocompleteFieldV2.swift */; };
 		450096BBC785EA5444440B1C /* PreviewRotationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAB61CD3DEBDFC60E682731 /* PreviewRotationCoordinator.swift */; };
 		45BA615069AA584B57C73103 /* DuplicateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2AC1BF353ED96C3261AE0D /* DuplicateModels.swift */; };
 		45DE59470A3570960FE04BFF /* InvoiceWorkspaceMover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D2F94DFF5AF590676A83D33 /* InvoiceWorkspaceMover.swift */; };
@@ -26,8 +27,8 @@
 		5083F31BF23A63D2CD1E6BDE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10DF2A883449B3756EB0884 /* ContentView.swift */; };
 		50DDBA9ADE86B41DF95FFB33 /* ArtifactComputationCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4C394D71B7FE207AB3901D9 /* ArtifactComputationCache.swift */; };
 		512AD01EE37BD0FB4DD60083 /* InvoiceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF26BF029CF6CC63B244CE12 /* InvoiceDetailView.swift */; };
-		52212CE521644B03E71056B5 /* CommitOnBlurTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAC66A753028AC2F98A8C20 /* CommitOnBlurTextField.swift */; };
 		52FC2731E83E4A0C378F19C2 /* InvoiceInternalDrag.swift in Sources */ = {isa = PBXBuildFile; fileRef = B35FE8B116D9A63DD99B2CD7 /* InvoiceInternalDrag.swift */; };
+		534ED6E769D4298E38C7701D /* PhysicalArtifactIdentityStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6B05263495F9A4FF2953824 /* PhysicalArtifactIdentityStore.swift */; };
 		59DBDC8510729494AF771643 /* DuplicateDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A28C5011B0C04CA094EC2609 /* DuplicateDetector.swift */; };
 		619BDB7310BD91F7B64A5AE2 /* PreviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19C3303215CD07153C549E46 /* PreviewCard.swift */; };
 		632AA60CA3CB899E01E5393D /* AppStorageKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 539E3D8463B2C036C9957727 /* AppStorageKeys.swift */; };
@@ -37,6 +38,7 @@
 		6A07946F035B7D6307032344 /* InvoiceFileRotator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30B92089CBED91EFFF2B8FBD /* InvoiceFileRotator.swift */; };
 		6A89CC3CBAFCBD7A8FAD032F /* InvoiceStructuredDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCF1D7BED0537F108CE6E745 /* InvoiceStructuredDataStore.swift */; };
 		6BBBDC0A858120A4FFA00036 /* ArchivePathBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A89232411F7BFE6110AA18 /* ArchivePathBuilder.swift */; };
+		6D6246C485A24CFA4E4FBD14 /* SelectAllOnFocus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 280B4810D31878273E9E22B0 /* SelectAllOnFocus.swift */; };
 		710CB18BC5826C5B8973D5CB /* InvoiceWorkflowStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D52179153F771CF8FB386D /* InvoiceWorkflowStore.swift */; };
 		76ACC649AB66DB4F0C6A9380 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4BEDBC9AE365973B7AFAA0C /* AppModel.swift */; };
 		82FA2918CA0BD70D45E76E0C /* SetupRequiredView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352246B9A9E5914AD01C319E /* SetupRequiredView.swift */; };
@@ -47,8 +49,8 @@
 		8CAAC07F44B525554D1049CD /* InvoiceArchiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14871783BF02D73949C3FD6B /* InvoiceArchiver.swift */; };
 		8FDA23D49EA2E77B9E33C3C3 /* InvoiceOrganizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78FD9A85C78EBE3E91D8A16B /* InvoiceOrganizer.swift */; };
 		8FE3202B65B0675F5791F0FD /* FileSystemReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71E06555631417D9EC5E3DCA /* FileSystemReconciler.swift */; };
-		991475748DA5319D779D37C8 /* DataEntryCardV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7B9E4E8C61E869F94A9A622 /* DataEntryCardV2.swift */; };
 		A2347D9B9A9CF3FA3A53A249 /* InboxFileScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A09E6698764231FA35A064B /* InboxFileScanner.swift */; };
+		A66C5448BF50F5CE76501A16 /* VendorField.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEAA5D10C6354B20E1C62723 /* VendorField.swift */; };
 		A968A5F4295E7484CDE14E37 /* MetadataCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2966DA8927843A277944D0 /* MetadataCard.swift */; };
 		AAE047B68510D3CA39C47D7B /* HEICConversionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C9F2297AAA7C5B0B246F2D /* HEICConversionService.swift */; };
 		ADE24B3B39591DDF3C2B95CB /* InvoiceBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E8D83B92318C265A64BB5A /* InvoiceBrowserView.swift */; };
@@ -56,10 +58,10 @@
 		C3458C702A574D12EA6725A6 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 62C5D55AC0D492C024EC571F /* Sparkle */; };
 		C3D71663279699EF4D274B0A /* PreviewViewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C63BE6A6AEABB8ED101E4CD1 /* PreviewViewState.swift */; };
 		C5DE422C5F2C010162EA5087 /* InvoicePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C58BFD64B2F94DFEF9D5D35A /* InvoicePreviewView.swift */; };
+		C6EBB48CF0C2DFE11D9FC290 /* FilenameReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8859CBC8FCFBFFFCD16E3550 /* FilenameReconciler.swift */; };
 		C78061C69E4D70916133E061 /* TextExtractionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = E303DDF3793A4D54315D3D7A /* TextExtractionHandler.swift */; };
-		CB0C9AAB745C730D39C7EE16 /* VendorAutocompleteField.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9E7182CC08CA312192393A4 /* VendorAutocompleteField.swift */; };
-		D2A5F0806A2229109D804A14 /* CommitOnBlurDatePickerField.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39099637111A5D33F01AB1F /* CommitOnBlurDatePickerField.swift */; };
 		D3FC7CA9540984636610BC0F /* QueueViewContexts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2029C3196E67EF6A47A3366 /* QueueViewContexts.swift */; };
+		D6BAFBDD7D71F31FF0AECDF4 /* FormField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 275E539E7266BD6630D2AA40 /* FormField.swift */; };
 		DA52C84315CFF7BB898AAC3F /* ContentHashQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA4F1B6D149E7E195DAD42A /* ContentHashQueue.swift */; };
 		DE099784CA01A55E7785B247 /* ArtifactAccessCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6796E8204ECE65BE00F76321 /* ArtifactAccessCoordinator.swift */; };
 		E2A2F8CF74CE82DD1542D6BD /* InvoiceStructuredExtractionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F85923FD6EF7364C426A589D /* InvoiceStructuredExtractionClient.swift */; };
@@ -82,15 +84,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0E32E67C5E7D6E2FDEFDE1ED /* WorkflowPersister.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowPersister.swift; sourceTree = "<group>"; };
 		14871783BF02D73949C3FD6B /* InvoiceArchiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceArchiver.swift; sourceTree = "<group>"; };
 		150C9BA921200FE9C87F83F6 /* StructuredExtractionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredExtractionHandler.swift; sourceTree = "<group>"; };
 		19C3303215CD07153C549E46 /* PreviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewCard.swift; sourceTree = "<group>"; };
 		1D2F94DFF5AF590676A83D33 /* InvoiceWorkspaceMover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceWorkspaceMover.swift; sourceTree = "<group>"; };
 		1D393E630B373F584368E1C1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1EAB61CD3DEBDFC60E682731 /* PreviewRotationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewRotationCoordinator.swift; sourceTree = "<group>"; };
-		1EEB506C125D290A3405292A /* VendorAutocompleteFieldV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VendorAutocompleteFieldV2.swift; sourceTree = "<group>"; };
 		250B0574F95522FF6E689A97 /* HEICConversionQueueModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HEICConversionQueueModel.swift; sourceTree = "<group>"; };
 		25AE75170AD6AFA7BA874908 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		275E539E7266BD6630D2AA40 /* FormField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormField.swift; sourceTree = "<group>"; };
+		280B4810D31878273E9E22B0 /* SelectAllOnFocus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectAllOnFocus.swift; sourceTree = "<group>"; };
 		2A09E6698764231FA35A064B /* InboxFileScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxFileScanner.swift; sourceTree = "<group>"; };
 		30B92089CBED91EFFF2B8FBD /* InvoiceFileRotator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceFileRotator.swift; sourceTree = "<group>"; };
 		352246B9A9E5914AD01C319E /* SetupRequiredView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupRequiredView.swift; sourceTree = "<group>"; };
@@ -103,7 +107,6 @@
 		539E3D8463B2C036C9957727 /* AppStorageKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStorageKeys.swift; sourceTree = "<group>"; };
 		54CB09A3CB7ADCEEC97939DA /* ActivePreviewContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivePreviewContext.swift; sourceTree = "<group>"; };
 		5C2B0EF7678E0C79BC24E477 /* DragExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragExportService.swift; sourceTree = "<group>"; };
-		5EAC66A753028AC2F98A8C20 /* CommitOnBlurTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitOnBlurTextField.swift; sourceTree = "<group>"; };
 		661B9E1AD61E265CA0D271C5 /* PreviewAssetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewAssetProvider.swift; sourceTree = "<group>"; };
 		6796E8204ECE65BE00F76321 /* ArtifactAccessCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactAccessCoordinator.swift; sourceTree = "<group>"; };
 		6F970815666CD666FD723E03 /* MetadataCommitRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataCommitRequest.swift; sourceTree = "<group>"; };
@@ -113,9 +116,11 @@
 		7AB0FA9279C3AF73F4A32F11 /* DocumentTextExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTextExtractor.swift; sourceTree = "<group>"; };
 		7F6D5AC17B04AE12587BC23B /* FileHasher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileHasher.swift; sourceTree = "<group>"; };
 		84B72E2F14F2484DF372353A /* FolderPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPicker.swift; sourceTree = "<group>"; };
+		8859CBC8FCFBFFFCD16E3550 /* FilenameReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilenameReconciler.swift; sourceTree = "<group>"; };
 		890624B54CA6140BDBEF5B82 /* ReplacementPreviewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplacementPreviewRenderer.swift; sourceTree = "<group>"; };
 		8954A8C3B26AEE2DDE97AD98 /* InvoiceOrganizerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InvoiceOrganizerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10DF2A883449B3756EB0884 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A16A5D5BB9DEF7FEE49352CF /* FocusableMenuPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusableMenuPicker.swift; sourceTree = "<group>"; };
 		A28C5011B0C04CA094EC2609 /* DuplicateDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateDetector.swift; sourceTree = "<group>"; };
 		A4BEDBC9AE365973B7AFAA0C /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A587DF34889CF4FA79C18976 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -123,9 +128,9 @@
 		AD2966DA8927843A277944D0 /* MetadataCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataCard.swift; sourceTree = "<group>"; };
 		AF26BF029CF6CC63B244CE12 /* InvoiceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceDetailView.swift; sourceTree = "<group>"; };
 		B35FE8B116D9A63DD99B2CD7 /* InvoiceInternalDrag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceInternalDrag.swift; sourceTree = "<group>"; };
-		B9E7182CC08CA312192393A4 /* VendorAutocompleteField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VendorAutocompleteField.swift; sourceTree = "<group>"; };
 		BB2AC1BF353ED96C3261AE0D /* DuplicateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateModels.swift; sourceTree = "<group>"; };
 		BB46C2E0604798A19A9A2153 /* ArtifactModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactModels.swift; sourceTree = "<group>"; };
+		BEAA5D10C6354B20E1C62723 /* VendorField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VendorField.swift; sourceTree = "<group>"; };
 		C06D890521617C46A0B30DDB /* ArtifactHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactHandle.swift; sourceTree = "<group>"; };
 		C323274BD1CBEA57661C2128 /* QueueSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueSidebar.swift; sourceTree = "<group>"; };
 		C58BFD64B2F94DFEF9D5D35A /* InvoicePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoicePreviewView.swift; sourceTree = "<group>"; };
@@ -135,15 +140,14 @@
 		CCF1D7BED0537F108CE6E745 /* InvoiceStructuredDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceStructuredDataStore.swift; sourceTree = "<group>"; };
 		D0A89232411F7BFE6110AA18 /* ArchivePathBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivePathBuilder.swift; sourceTree = "<group>"; };
 		D275D6E83B86659A791D96C0 /* LibrarySnapshotBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySnapshotBuilder.swift; sourceTree = "<group>"; };
-		D7B9E4E8C61E869F94A9A622 /* DataEntryCardV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataEntryCardV2.swift; sourceTree = "<group>"; };
 		E1E8D83B92318C265A64BB5A /* InvoiceBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceBrowserView.swift; sourceTree = "<group>"; };
 		E268A82D45D710A14642278A /* FileSystemWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSystemWatcher.swift; sourceTree = "<group>"; };
 		E303DDF3793A4D54315D3D7A /* TextExtractionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextExtractionHandler.swift; sourceTree = "<group>"; };
-		E39099637111A5D33F01AB1F /* CommitOnBlurDatePickerField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitOnBlurDatePickerField.swift; sourceTree = "<group>"; };
 		E391D90F06336251FDD582F2 /* WorkflowActionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowActionCoordinator.swift; sourceTree = "<group>"; };
 		EAD98E348516723DF65B3072 /* InvoiceTextStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceTextStore.swift; sourceTree = "<group>"; };
 		F2029C3196E67EF6A47A3366 /* QueueViewContexts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueViewContexts.swift; sourceTree = "<group>"; };
 		F4C394D71B7FE207AB3901D9 /* ArtifactComputationCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactComputationCache.swift; sourceTree = "<group>"; };
+		F6B05263495F9A4FF2953824 /* PhysicalArtifactIdentityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhysicalArtifactIdentityStore.swift; sourceTree = "<group>"; };
 		F85923FD6EF7364C426A589D /* InvoiceStructuredExtractionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceStructuredExtractionClient.swift; sourceTree = "<group>"; };
 		FCCE5C80EEF23F66C41BB114 /* InvoiceOrganizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceOrganizerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -257,9 +261,10 @@
 			isa = PBXGroup;
 			children = (
 				3B234C551E2440907921BBB2 /* CheckForUpdatesView.swift */,
-				E39099637111A5D33F01AB1F /* CommitOnBlurDatePickerField.swift */,
-				5EAC66A753028AC2F98A8C20 /* CommitOnBlurTextField.swift */,
-				1EEB506C125D290A3405292A /* VendorAutocompleteFieldV2.swift */,
+				A16A5D5BB9DEF7FEE49352CF /* FocusableMenuPicker.swift */,
+				275E539E7266BD6630D2AA40 /* FormField.swift */,
+				280B4810D31878273E9E22B0 /* SelectAllOnFocus.swift */,
+				BEAA5D10C6354B20E1C62723 /* VendorField.swift */,
 			);
 			path = Controls;
 			sourceTree = "<group>";
@@ -310,6 +315,7 @@
 				CCF1D7BED0537F108CE6E745 /* InvoiceStructuredDataStore.swift */,
 				EAD98E348516723DF65B3072 /* InvoiceTextStore.swift */,
 				43D52179153F771CF8FB386D /* InvoiceWorkflowStore.swift */,
+				F6B05263495F9A4FF2953824 /* PhysicalArtifactIdentityStore.swift */,
 			);
 			path = Persistence;
 			sourceTree = "<group>";
@@ -326,7 +332,6 @@
 			isa = PBXGroup;
 			children = (
 				466579A9DB3D8829B3512351 /* DataEntryCard.swift */,
-				D7B9E4E8C61E869F94A9A622 /* DataEntryCardV2.swift */,
 				AF26BF029CF6CC63B244CE12 /* InvoiceDetailView.swift */,
 				AD2966DA8927843A277944D0 /* MetadataCard.swift */,
 				19C3303215CD07153C549E46 /* PreviewCard.swift */,
@@ -346,7 +351,6 @@
 				78FD9A85C78EBE3E91D8A16B /* InvoiceOrganizer.swift */,
 				C58BFD64B2F94DFEF9D5D35A /* InvoicePreviewView.swift */,
 				A587DF34889CF4FA79C18976 /* SettingsView.swift */,
-				B9E7182CC08CA312192393A4 /* VendorAutocompleteField.swift */,
 				B7F0B9372ABB442F5650096D /* Application */,
 				7EE99C97CA00A4F020ACE9DF /* Domain */,
 				E22D0D246B853184B017D3AF /* Extraction */,
@@ -399,7 +403,9 @@
 		C964CD8739289D49FBDF61E2 /* Workflows */ = {
 			isa = PBXGroup;
 			children = (
+				8859CBC8FCFBFFFCD16E3550 /* FilenameReconciler.swift */,
 				E391D90F06336251FDD582F2 /* WorkflowActionCoordinator.swift */,
+				0E32E67C5E7D6E2FDEFDE1ED /* WorkflowPersister.swift */,
 			);
 			path = Workflows;
 			sourceTree = "<group>";
@@ -440,7 +446,7 @@
 			path = State;
 			sourceTree = "<group>";
 		};
-		"TEMP_518094E9-F27D-48F4-A563-8E4EDFC81BAA" /* Resources */ = {
+		"TEMP_3374F991-5FC5-4085-9BB2-860AF8DF9BBD" /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -547,12 +553,9 @@
 				102A18CBCC8452DA3501602F /* ArtifactHandle.swift in Sources */,
 				1A501FA195091734AA55172B /* ArtifactModels.swift in Sources */,
 				F302FA072F9A49B5BBFF102D /* CheckForUpdatesView.swift in Sources */,
-				D2A5F0806A2229109D804A14 /* CommitOnBlurDatePickerField.swift in Sources */,
-				52212CE521644B03E71056B5 /* CommitOnBlurTextField.swift in Sources */,
 				DA52C84315CFF7BB898AAC3F /* ContentHashQueue.swift in Sources */,
 				5083F31BF23A63D2CD1E6BDE /* ContentView.swift in Sources */,
 				83ECCB9A5900200E7F2BA87A /* DataEntryCard.swift in Sources */,
-				991475748DA5319D779D37C8 /* DataEntryCardV2.swift in Sources */,
 				1165F9DA6EA3092C39C86D9C /* DocumentModels.swift in Sources */,
 				4B5085087E7A30C4E56FF281 /* DocumentTextExtractor.swift in Sources */,
 				674515D41F153EC079AB144F /* DragExportService.swift in Sources */,
@@ -561,7 +564,10 @@
 				FCB15CFC8FB3A1C3DCB67942 /* FileHasher.swift in Sources */,
 				8FE3202B65B0675F5791F0FD /* FileSystemReconciler.swift in Sources */,
 				BC83E30BB70637C9DE4A9D2F /* FileSystemWatcher.swift in Sources */,
+				C6EBB48CF0C2DFE11D9FC290 /* FilenameReconciler.swift in Sources */,
+				05B8D1E302363FA4E8280775 /* FocusableMenuPicker.swift in Sources */,
 				87E0FD30EEFE88B1174BD6C4 /* FolderPicker.swift in Sources */,
+				D6BAFBDD7D71F31FF0AECDF4 /* FormField.swift in Sources */,
 				F9A181E26A96C1A3679F9663 /* HEICConversionQueueModel.swift in Sources */,
 				AAE047B68510D3CA39C47D7B /* HEICConversionService.swift in Sources */,
 				A2347D9B9A9CF3FA3A53A249 /* InboxFileScanner.swift in Sources */,
@@ -580,6 +586,7 @@
 				0F6634A3CFB26914E3E63CE4 /* LibrarySnapshotBuilder.swift in Sources */,
 				A968A5F4295E7484CDE14E37 /* MetadataCard.swift in Sources */,
 				EC27B68333CFF2ABCB357807 /* MetadataCommitRequest.swift in Sources */,
+				534ED6E769D4298E38C7701D /* PhysicalArtifactIdentityStore.swift in Sources */,
 				376C57B76E8FB72913092367 /* PreviewAssetProvider.swift in Sources */,
 				619BDB7310BD91F7B64A5AE2 /* PreviewCard.swift in Sources */,
 				690DBE2327AFFDD86FCAB2A3 /* PreviewCommitRequest.swift in Sources */,
@@ -590,13 +597,14 @@
 				E65919A51DC8A1835F5CC1B4 /* QueueStatusCard.swift in Sources */,
 				D3FC7CA9540984636610BC0F /* QueueViewContexts.swift in Sources */,
 				831B14D18FD8EED458D3CDA2 /* ReplacementPreviewRenderer.swift in Sources */,
+				6D6246C485A24CFA4E4FBD14 /* SelectAllOnFocus.swift in Sources */,
 				69D8B620E43207AF67A772B6 /* SettingsView.swift in Sources */,
 				82FA2918CA0BD70D45E76E0C /* SetupRequiredView.swift in Sources */,
 				F1DD263D8142276399819C2A /* StructuredExtractionHandler.swift in Sources */,
 				C78061C69E4D70916133E061 /* TextExtractionHandler.swift in Sources */,
-				CB0C9AAB745C730D39C7EE16 /* VendorAutocompleteField.swift in Sources */,
-				3D6A4D25115C0332D65B07FD /* VendorAutocompleteFieldV2.swift in Sources */,
+				A66C5448BF50F5CE76501A16 /* VendorField.swift in Sources */,
 				0AAE579343E7D53F5B825E37 /* WorkflowActionCoordinator.swift in Sources */,
+				25EC8181CD7B97BEE5821EE4 /* WorkflowPersister.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

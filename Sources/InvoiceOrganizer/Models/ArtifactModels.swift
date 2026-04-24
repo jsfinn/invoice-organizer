@@ -67,6 +67,7 @@ struct PhysicalArtifact: Identifiable, Hashable, Sendable {
     var duplicateReason: String?
 
     init(
+        id: ID,
         name: String,
         fileURL: URL,
         location: InvoiceLocation,
@@ -83,8 +84,8 @@ struct PhysicalArtifact: Identifiable, Hashable, Sendable {
         duplicateOfPath: String? = nil,
         duplicateReason: String? = nil
     ) {
-        self.id = Self.stableID(for: fileURL)
-        self.documentID = Self.stableID(for: fileURL)
+        self.id = id
+        self.documentID = id
         self.name = name
         self.fileURL = fileURL
         self.location = location
@@ -131,7 +132,7 @@ struct PhysicalArtifact: Identifiable, Hashable, Sendable {
     }
 
     static func stableID(for fileURL: URL) -> ID {
-        fileURL.standardizedFileURL.path
+        PhysicalArtifactIdentityStore.shared.id(for: fileURL)
     }
 }
 

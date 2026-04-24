@@ -23,7 +23,7 @@ struct InvoiceDetailView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         PreviewCard(previewState: previewState, invoice: invoice)
-                        DataEntryCardV2(model: model, previewState: previewState, invoice: invoice)
+                        DataEntryCard(model: model, previewState: previewState, invoice: invoice)
                         MetadataCard(model: model, invoice: invoice)
                     }
                     .padding(24)

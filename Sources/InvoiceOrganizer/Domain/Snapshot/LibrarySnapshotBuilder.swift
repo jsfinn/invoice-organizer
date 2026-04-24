@@ -417,6 +417,7 @@ private func normalizedField(_ value: String?) -> String? {
 private extension PhysicalArtifact {
     init(reference: DocumentArtifactReference) {
         self.init(
+            id: reference.id,
             name: reference.fileURL.lastPathComponent,
             fileURL: reference.fileURL,
             location: reference.location,

@@ -103,6 +103,7 @@ enum InboxFileScanner {
         }
 
         return PhysicalArtifact(
+            id: file.id,
             name: file.name,
             fileURL: file.fileURL,
             location: file.location,
@@ -122,6 +123,7 @@ enum InboxFileScanner {
 
     static func makeProcessedArtifact(from file: ScannedInvoiceFile, workflow: StoredInvoiceWorkflow?) -> PhysicalArtifact {
         PhysicalArtifact(
+            id: file.id,
             name: file.name,
             fileURL: file.fileURL,
             location: .processed,

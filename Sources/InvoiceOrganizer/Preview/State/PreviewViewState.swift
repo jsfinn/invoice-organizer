@@ -12,8 +12,6 @@ final class PreviewViewState: ObservableObject {
     private let rotationCoordinator: PreviewRotationCoordinator
     private var metadataFlushTask: Task<Void, Never>?
 
-    private static let metadataFlushDelay: Duration = .milliseconds(150)
-
     init(
         assetProvider: any PreviewAssetProviding,
         rotationCoordinator: PreviewRotationCoordinator
@@ -105,22 +103,22 @@ final class PreviewViewState: ObservableObject {
 
     func updatePendingVendor(_ vendor: String?) {
         updateActiveContext { $0.pendingMetadata.vendor = vendor }
-        scheduleMetadataFlush()
+        flushMetadataImmediately()
     }
 
     func updatePendingInvoiceDate(_ date: Date?) {
         updateActiveContext { $0.pendingMetadata.invoiceDate = date }
-        scheduleMetadataFlush()
+        flushMetadataImmediately()
     }
 
     func updatePendingInvoiceNumber(_ invoiceNumber: String?) {
         updateActiveContext { $0.pendingMetadata.invoiceNumber = invoiceNumber }
-        scheduleMetadataFlush()
+        flushMetadataImmediately()
     }
 
     func updatePendingDocumentType(_ documentType: DocumentType?) {
         updateActiveContext { $0.pendingMetadata.documentType = documentType }
-        scheduleMetadataFlush()
+        flushMetadataImmediately()
     }
 
     /// Updates the artifact reference when the underlying file was renamed
@@ -170,12 +168,7 @@ final class PreviewViewState: ObservableObject {
     // MARK: - Private
 
     private func scheduleMetadataFlush() {
-        metadataFlushTask?.cancel()
-        metadataFlushTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.metadataFlushDelay)
-            guard !Task.isCancelled else { return }
-            self?.flushMetadataImmediately()
-        }
+        flushMetadataImmediately()
     }
 
     private func handoffActiveContextIfNeeded(for nextInvoice: PhysicalArtifact) {

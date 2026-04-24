@@ -175,6 +175,11 @@ final class FileSystemReconciler {
                 }
             )
 
+            let allFiles = inboxFiles + processingFiles + processedFiles
+            let identityStore = PhysicalArtifactIdentityStore.shared
+            identityStore.prune(keepingPaths: Set(allFiles.map { $0.fileURL.standardizedFileURL.path }))
+            identityStore.save()
+
             return FileSystemReconciliationSnapshot(
                 artifacts: (activeArtifacts + processedArtifacts).sorted { $0.addedAt > $1.addedAt },
                 documentMetadataHintsByArtifactID: metadataHints

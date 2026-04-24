@@ -34,6 +34,9 @@ final class AppModel: ObservableObject {
     private let structuredExtractionHandler: StructuredExtractionHandler
     private let structuredExtractionQueue: ContentHashQueue<StructuredExtractionHandler>
     private let workflowActionCoordinator = WorkflowActionCoordinator()
+    private let filenameReconciler = FilenameReconciler()
+    private var workflowPersister: WorkflowPersister!
+    private var filenameReconcilerTask: Task<Void, Never>?
     private lazy var fileSystemReconciler = FileSystemReconciler(
         folderSettings: folderSettings,
         workflowProvider: { [weak self] in
@@ -71,7 +74,7 @@ final class AppModel: ObservableObject {
         self.folderSettings = resolvedFolderSettings
         self.heicConversionSettings = resolvedHEICConversionSettings
         self.llmSettings = resolvedLLMSettings
-        self.workflowByID = workflowByID ?? InvoiceWorkflowStore.load()
+        self.workflowByID = Self.migrateWorkflowKeysIfNeeded(workflowByID ?? InvoiceWorkflowStore.load())
         self.openInPreviewHandler = openInPreview ?? { urls in
             AppModel.systemOpenInPreview(urls)
         }
@@ -133,6 +136,15 @@ final class AppModel: ObservableObject {
             }
             await structuredExtractionQueue.setOnQueueDepthChanged { depth in
                 self.structuredQueueDepth = depth
+            }
+        }
+        self.workflowPersister = WorkflowPersister { [weak self] in
+            guard let self else { return }
+            InvoiceWorkflowStore.save(self.workflowByID)
+        }
+        filenameReconcilerTask = Task { [weak self, filenameReconciler] in
+            for await result in filenameReconciler.results {
+                self?.applyFilenameRenameResult(result)
             }
         }
         fileSystemReconciler.updateConfiguration(folderSettings: resolvedFolderSettings, autoRefresh: autoRefresh)
@@ -904,21 +916,54 @@ final class AppModel: ObservableObject {
     /// Set by the view layer (InvoiceDetailView) to drain the editing context.
     var metadataFlushGuard: (() -> Void)?
 
+    func drainPendingRenames() async {
+        await filenameReconciler.drain()
+        workflowPersister.flush()
+    }
+
     func applyBufferedMetadata(_ metadata: DocumentMetadata, for artifactID: PhysicalArtifact.ID) {
-        guard let invoice = invoices.first(where: { $0.id == artifactID }),
-              invoice.location == .processing else {
-            return
-        }
         guard let document = librarySnapshot.document(for: artifactID),
               document.metadata != metadata else {
             return
         }
-        setDocumentMetadata(metadata, for: document.id, renameProcessingFiles: true)
+        updateWorkflowMetadata(metadata, for: document.id)
+    }
+
+    func updateWorkflowMetadata(_ metadata: DocumentMetadata, for documentID: Document.ID) {
+        guard let document = librarySnapshot.documentsByID[documentID] else { return }
+        let artifacts = invoices.filter { document.artifactIDs.contains($0.id) }
+
+        for artifact in artifacts {
+            let existingWorkflow = workflowByID[artifact.id]
+            workflowByID[artifact.id] = StoredInvoiceWorkflow(
+                vendor: metadata.vendor,
+                invoiceDate: metadata.invoiceDate,
+                invoiceNumber: metadata.invoiceNumber,
+                documentType: metadata.documentType,
+                isInProgress: existingWorkflow?.isInProgress ?? false,
+                metadataScope: metadata.isEmpty ? nil : .document
+            )
+
+            if artifact.location == .processing {
+                Task { [filenameReconciler] in
+                    await filenameReconciler.schedule(FilenameIntent(
+                        artifactID: artifact.id,
+                        currentURL: artifact.fileURL,
+                        vendor: metadata.vendor,
+                        invoiceDate: metadata.invoiceDate,
+                        invoiceNumber: metadata.invoiceNumber,
+                        fileType: artifact.fileType
+                    ))
+                }
+            }
+        }
+
+        workflowPersister.scheduleSave()
+        rebuildLibrarySnapshot()
     }
 
     func updateVendor(_ vendor: String, for artifactID: PhysicalArtifact.ID) {
-        guard let invoice = invoices.first(where: { $0.id == artifactID }),
-              invoice.location == .processing else {
+        guard invoices.first(where: { $0.id == artifactID })?.location == .processing else {
             return
         }
 
@@ -931,7 +976,7 @@ final class AppModel: ObservableObject {
 
         var metadata = document.metadata
         metadata.vendor = normalizedVendor
-        setDocumentMetadata(metadata, for: document.id, renameProcessingFiles: true)
+        updateWorkflowMetadata(metadata, for: document.id)
     }
 
     func updateInvoiceDate(_ invoiceDate: Date, for artifactID: PhysicalArtifact.ID) {
@@ -951,7 +996,7 @@ final class AppModel: ObservableObject {
 
         var metadata = document.metadata
         metadata.invoiceDate = invoiceDate
-        setDocumentMetadata(metadata, for: document.id, renameProcessingFiles: true)
+        updateWorkflowMetadata(metadata, for: document.id)
     }
 
     func updateInvoiceNumber(_ invoiceNumber: String, for artifactID: PhysicalArtifact.ID) {
@@ -968,7 +1013,11 @@ final class AppModel: ObservableObject {
 
         var metadata = document.metadata
         metadata.invoiceNumber = normalizedInvoiceNumber
-        setDocumentMetadata(metadata, for: document.id, renameProcessingFiles: invoice.location == .processing)
+        if invoice.location == .processing {
+            updateWorkflowMetadata(metadata, for: document.id)
+        } else {
+            setDocumentMetadata(metadata, for: document.id)
+        }
     }
 
     func updateDocumentType(_ documentType: DocumentType?, for artifactID: PhysicalArtifact.ID) {
@@ -984,7 +1033,20 @@ final class AppModel: ObservableObject {
 
         var metadata = document.metadata
         metadata.documentType = documentType
-        setDocumentMetadata(metadata, for: document.id, renameProcessingFiles: false)
+        if invoice.location == .processing {
+            updateWorkflowMetadata(metadata, for: document.id)
+        } else {
+            setDocumentMetadata(metadata, for: document.id)
+        }
+    }
+
+    private func applyFilenameRenameResult(_ result: FilenameRenameResult) {
+        guard let index = invoices.firstIndex(where: { $0.id == result.artifactID }) else {
+            return
+        }
+        invoices[index].fileURL = result.newURL
+        invoices[index].name = result.newName
+        fileSystemReconciler.suppressWatcherRefresh(for: 1.0)
     }
 
     func persistPreviewRotation(for artifactID: PhysicalArtifact.ID, quarterTurns: Int) async -> PreviewRotationSaveResult? {
@@ -1131,6 +1193,22 @@ final class AppModel: ObservableObject {
         InvoiceWorkflowStore.save(workflowByID)
     }
 
+    private static func migrateWorkflowKeysIfNeeded(_ workflows: [String: StoredInvoiceWorkflow]) -> [String: StoredInvoiceWorkflow] {
+        guard !workflows.isEmpty else { return workflows }
+        let needsMigration = workflows.keys.contains(where: PhysicalArtifactIdentityStore.isLegacyPathKey)
+        guard needsMigration else { return workflows }
+
+        let store = PhysicalArtifactIdentityStore.shared
+        var migrated: [String: StoredInvoiceWorkflow] = [:]
+        for (key, workflow) in workflows {
+            let uuid = PhysicalArtifactIdentityStore.isLegacyPathKey(key) ? store.id(forPath: key) : key
+            migrated[uuid] = workflow
+        }
+        store.save()
+        InvoiceWorkflowStore.save(migrated)
+        return migrated
+    }
+
     private var activeQueueTabContext: QueueTabContext {
         queueScreenContext.activeTabContext
     }
@@ -1265,7 +1343,7 @@ final class AppModel: ObservableObject {
             persistWorkflow()
             setSelection(ids: result.selectedArtifactIDs, primary: result.selectedArtifactID)
             rebuildLibrarySnapshot()
-            return result.updatedArtifactID
+            return invoiceID
         } catch {
             settingsErrorMessage = error.localizedDescription
             return nil
@@ -1453,8 +1531,7 @@ final class AppModel: ObservableObject {
     @discardableResult
     private func selectArtifactForConvertedFile(at fileURL: URL) -> Bool {
         let standardizedURL = fileURL.standardizedFileURL
-        let artifactID = PhysicalArtifact.stableID(for: standardizedURL)
-        guard let artifact = invoices.first(where: { $0.id == artifactID }) else {
+        guard let artifact = invoices.first(where: { $0.fileURL.standardizedFileURL == standardizedURL }) else {
             return false
         }
 
@@ -1548,31 +1625,20 @@ final class AppModel: ObservableObject {
             }
 
             guard candidateMetadata != document.metadata else { continue }
-            setDocumentMetadata(candidateMetadata, for: document.id, renameProcessingFiles: false)
+            setDocumentMetadata(candidateMetadata, for: document.id)
         }
     }
 
     private func setDocumentMetadata(
         _ metadata: DocumentMetadata,
-        for documentID: Document.ID,
-        renameProcessingFiles: Bool
+        for documentID: Document.ID
     ) {
         guard let document = librarySnapshot.documentsByID[documentID] else { return }
-        applyDocumentMetadata(metadata, toArtifactIDs: document.artifactIDs, renameProcessingFiles: renameProcessingFiles)
-    }
-
-    private func applyDocumentMetadata(
-        _ metadata: DocumentMetadata,
-        toArtifactIDs artifactIDs: Set<PhysicalArtifact.ID>,
-        renameProcessingFiles: Bool
-    ) {
-        let artifacts = invoices.filter { artifactIDs.contains($0.id) }
-
-        var requiresPersist = false
+        let artifacts = invoices.filter { document.artifactIDs.contains($0.id) }
 
         for artifact in artifacts {
             let existingWorkflow = workflowByID[artifact.id]
-            let nextWorkflow = StoredInvoiceWorkflow(
+            workflowByID[artifact.id] = StoredInvoiceWorkflow(
                 vendor: metadata.vendor,
                 invoiceDate: metadata.invoiceDate,
                 invoiceNumber: metadata.invoiceNumber,
@@ -1580,19 +1646,9 @@ final class AppModel: ObservableObject {
                 isInProgress: existingWorkflow?.isInProgress ?? false,
                 metadataScope: metadata.isEmpty ? nil : .document
             )
-
-            if renameProcessingFiles && artifact.location == .processing {
-                _ = applyWorkflow(nextWorkflow, to: artifact.id)
-            } else {
-                workflowByID[artifact.id] = nextWorkflow
-                requiresPersist = true
-            }
         }
 
-        if requiresPersist {
-            persistWorkflow()
-        }
-
+        persistWorkflow()
         rebuildLibrarySnapshot()
     }
 
@@ -1635,7 +1691,22 @@ final class AppModel: ObservableObject {
 
     private func finalizeRescannedDocument(_ context: DocumentRescanContext) {
         let metadata = mergedDocumentMetadata(for: context.artifactIDs)
-        applyDocumentMetadata(metadata, toArtifactIDs: context.artifactIDs, renameProcessingFiles: false)
+        let artifacts = invoices.filter { context.artifactIDs.contains($0.id) }
+
+        for artifact in artifacts {
+            let existingWorkflow = workflowByID[artifact.id]
+            workflowByID[artifact.id] = StoredInvoiceWorkflow(
+                vendor: metadata.vendor,
+                invoiceDate: metadata.invoiceDate,
+                invoiceNumber: metadata.invoiceNumber,
+                documentType: metadata.documentType,
+                isInProgress: existingWorkflow?.isInProgress ?? false,
+                metadataScope: metadata.isEmpty ? nil : .document
+            )
+        }
+
+        persistWorkflow()
+        rebuildLibrarySnapshot()
     }
 
     private func mergedDocumentMetadata(for artifactIDs: Set<PhysicalArtifact.ID>) -> DocumentMetadata {

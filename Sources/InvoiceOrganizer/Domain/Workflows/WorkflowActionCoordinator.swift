@@ -10,10 +10,10 @@ struct WorkflowRenameResult {
     var workflowsByID: [String: StoredInvoiceWorkflow]
     var selectedArtifactIDs: Set<PhysicalArtifact.ID>
     var selectedArtifactID: PhysicalArtifact.ID?
-    var updatedArtifactID: PhysicalArtifact.ID
 }
 
 struct WorkflowActionCoordinator {
+    var identityStore: PhysicalArtifactIdentityStore = .shared
 
     func moveToInProgress(
         documents: [Document],
@@ -38,14 +38,17 @@ struct WorkflowActionCoordinator {
 
             for duplicate in document.artifacts where duplicate.id != preferred.id && duplicate.location != .processed {
                 if let duplicateArtifact = artifactsByID[duplicate.id] {
-                    _ = try InvoiceWorkspaceMover.moveToDuplicates(duplicateArtifact, duplicatesRoot: duplicatesRoot)
+                    let destURL = try InvoiceWorkspaceMover.moveToDuplicates(duplicateArtifact, duplicatesRoot: duplicatesRoot)
+                    identityStore.updateURL(from: duplicateArtifact.fileURL, to: destURL)
                 }
             }
 
             let destinationURL = try InvoiceWorkspaceMover.moveToProcessing(artifact, processingRoot: processingRoot)
-            let oldID = artifact.id
+            identityStore.updateURL(from: artifact.fileURL, to: destinationURL)
+
+            let artifactID = artifact.id
             var finalURL = destinationURL
-            var workflow = nextWorkflows.removeValue(forKey: oldID) ?? StoredInvoiceWorkflow(
+            var workflow = nextWorkflows[artifactID] ?? StoredInvoiceWorkflow(
                 vendor: document.metadata.vendor,
                 invoiceDate: document.metadata.invoiceDate,
                 invoiceNumber: document.metadata.invoiceNumber,
@@ -61,6 +64,7 @@ struct WorkflowActionCoordinator {
                 structuredRecordForContentHash: structuredRecordForContentHash
             ) {
                 let processingArtifact = PhysicalArtifact(
+                    id: artifactID,
                     name: finalURL.lastPathComponent,
                     fileURL: finalURL,
                     location: .processing,
@@ -72,19 +76,21 @@ struct WorkflowActionCoordinator {
                     duplicateOfPath: artifact.duplicateOfPath,
                     duplicateReason: artifact.duplicateReason
                 )
-                finalURL = try InvoiceWorkspaceMover.renameInProcessing(
+                let renamedURL = try InvoiceWorkspaceMover.renameInProcessing(
                     processingArtifact,
                     vendor: workflow.vendor,
                     invoiceDate: workflow.invoiceDate,
                     invoiceNumber: workflow.invoiceNumber
                 )
+                identityStore.updateURL(from: finalURL, to: renamedURL)
+                finalURL = renamedURL
             }
 
-            let newID = PhysicalArtifact.stableID(for: finalURL)
-            nextWorkflows[newID] = workflow
-            movedIDs.insert(newID)
+            nextWorkflows[artifactID] = workflow
+            movedIDs.insert(artifactID)
         }
 
+        identityStore.save()
         return WorkflowActionResult(workflowsByID: nextWorkflows, selectedArtifactIDs: movedIDs)
     }
 
@@ -108,19 +114,21 @@ struct WorkflowActionCoordinator {
             }
 
             let destinationURL = try InvoiceWorkspaceMover.moveToInbox(artifact, inboxRoot: inboxRoot)
-            let oldID = artifact.id
-            let newID = PhysicalArtifact.stableID(for: destinationURL)
-            let workflow = nextWorkflows.removeValue(forKey: oldID) ?? StoredInvoiceWorkflow(
+            identityStore.updateURL(from: artifact.fileURL, to: destinationURL)
+
+            let artifactID = artifact.id
+            let workflow = nextWorkflows[artifactID] ?? StoredInvoiceWorkflow(
                 vendor: document.metadata.vendor,
                 invoiceDate: document.metadata.invoiceDate,
                 invoiceNumber: document.metadata.invoiceNumber,
                 documentType: document.metadata.documentType,
                 isInProgress: false
             )
-            nextWorkflows[newID] = workflow
-            movedIDs.insert(newID)
+            nextWorkflows[artifactID] = workflow
+            movedIDs.insert(artifactID)
         }
 
+        identityStore.save()
         return WorkflowActionResult(workflowsByID: nextWorkflows, selectedArtifactIDs: movedIDs)
     }
 
@@ -144,9 +152,10 @@ struct WorkflowActionCoordinator {
             }
 
             let destinationURL = try InvoiceWorkspaceMover.moveToProcessing(artifact, processingRoot: processingRoot)
-            let oldID = artifact.id
-            let newID = PhysicalArtifact.stableID(for: destinationURL)
-            var workflow = nextWorkflows.removeValue(forKey: oldID) ?? StoredInvoiceWorkflow(
+            identityStore.updateURL(from: artifact.fileURL, to: destinationURL)
+
+            let artifactID = artifact.id
+            var workflow = nextWorkflows[artifactID] ?? StoredInvoiceWorkflow(
                 vendor: document.metadata.vendor,
                 invoiceDate: document.metadata.invoiceDate,
                 invoiceNumber: document.metadata.invoiceNumber,
@@ -154,10 +163,11 @@ struct WorkflowActionCoordinator {
                 isInProgress: false
             )
             workflow.isInProgress = true
-            nextWorkflows[newID] = workflow
-            movedIDs.insert(newID)
+            nextWorkflows[artifactID] = workflow
+            movedIDs.insert(artifactID)
         }
 
+        identityStore.save()
         return WorkflowActionResult(workflowsByID: nextWorkflows, selectedArtifactIDs: movedIDs)
     }
 
@@ -190,9 +200,10 @@ struct WorkflowActionCoordinator {
                 invoiceDate: invoiceDate,
                 invoiceNumber: metadata.invoiceNumber
             )
+            identityStore.updateURL(from: artifact.fileURL, to: destinationURL)
 
-            let archivedID = PhysicalArtifact.stableID(for: destinationURL)
-            var workflow = nextWorkflows.removeValue(forKey: artifact.id) ?? StoredInvoiceWorkflow(
+            let artifactID = artifact.id
+            var workflow = nextWorkflows[artifactID] ?? StoredInvoiceWorkflow(
                 vendor: metadata.vendor,
                 invoiceDate: metadata.invoiceDate,
                 invoiceNumber: metadata.invoiceNumber,
@@ -204,10 +215,11 @@ struct WorkflowActionCoordinator {
             workflow.invoiceNumber = normalizedInvoiceNumber(from: metadata.invoiceNumber ?? "")
             workflow.documentType = metadata.documentType
             workflow.isInProgress = false
-            nextWorkflows[archivedID] = workflow
-            archivedIDs.insert(archivedID)
+            nextWorkflows[artifactID] = workflow
+            archivedIDs.insert(artifactID)
         }
 
+        identityStore.save()
         return WorkflowActionResult(workflowsByID: nextWorkflows, selectedArtifactIDs: archivedIDs)
     }
 
@@ -226,12 +238,14 @@ struct WorkflowActionCoordinator {
         for document in documents {
             for ref in document.artifacts {
                 if let artifact = artifactsByID[ref.id] {
-                    _ = try InvoiceWorkspaceMover.moveToArchive(artifact, archiveRoot: archiveRoot)
+                    let destURL = try InvoiceWorkspaceMover.moveToArchive(artifact, archiveRoot: archiveRoot)
+                    identityStore.updateURL(from: artifact.fileURL, to: destURL)
                     nextWorkflows.removeValue(forKey: artifact.id)
                 }
             }
         }
 
+        identityStore.save()
         return WorkflowActionResult(workflowsByID: nextWorkflows, selectedArtifactIDs: [])
     }
 
@@ -251,7 +265,6 @@ struct WorkflowActionCoordinator {
         var nextWorkflows = workflowsByID
         let artifact = artifacts[index]
         var targetArtifact = artifact
-        var nextID = artifactID
 
         if artifact.location == .processing {
             let renamedURL = try InvoiceWorkspaceMover.renameInProcessing(
@@ -260,7 +273,10 @@ struct WorkflowActionCoordinator {
                 invoiceDate: workflow.invoiceDate,
                 invoiceNumber: workflow.invoiceNumber
             )
+            identityStore.updateURL(from: artifact.fileURL, to: renamedURL)
+
             targetArtifact = PhysicalArtifact(
+                id: artifactID,
                 name: renamedURL.lastPathComponent,
                 fileURL: renamedURL,
                 location: artifact.location,
@@ -273,22 +289,17 @@ struct WorkflowActionCoordinator {
                 duplicateOfPath: artifact.duplicateOfPath,
                 duplicateReason: artifact.duplicateReason
             )
-            nextID = targetArtifact.id
         }
 
-        nextWorkflows.removeValue(forKey: artifactID)
-        nextWorkflows[nextID] = workflow
+        nextWorkflows[artifactID] = workflow
         nextArtifacts[index] = targetArtifact
 
-        let remappedSelection = Set(selectedArtifactIDs.map { $0 == artifactID ? nextID : $0 })
-        let remappedPrimary = selectedArtifactID == artifactID ? nextID : selectedArtifactID
-
+        identityStore.save()
         return WorkflowRenameResult(
             artifacts: nextArtifacts,
             workflowsByID: nextWorkflows,
-            selectedArtifactIDs: remappedSelection,
-            selectedArtifactID: remappedPrimary,
-            updatedArtifactID: nextID
+            selectedArtifactIDs: selectedArtifactIDs,
+            selectedArtifactID: selectedArtifactID
         )
     }
 
