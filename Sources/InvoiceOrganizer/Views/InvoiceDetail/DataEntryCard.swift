@@ -122,7 +122,6 @@ struct DataEntryCard: View {
             }
 
             HStack {
-                Spacer()
                 Button("Save") { saveAll() }
                     .keyboardShortcut("s", modifiers: .command)
                     .focusable()
@@ -133,6 +132,11 @@ struct DataEntryCard: View {
                     .focusable()
                     .focused($focus, equals: .saveAndNextButton)
                     .onKeyPress(.return) { saveAndNext(); return .handled }
+                Spacer()
+                Button("Save and Move to Processed") { saveAndMoveToProcessed() }
+                    .focusable()
+                    .focused($focus, equals: .moveToProcessedButton)
+                    .onKeyPress(.return) { saveAndMoveToProcessed(); return .handled }
             }
             .padding(.top, 4)
         }
@@ -192,6 +196,11 @@ struct DataEntryCard: View {
     private func saveAndNext() {
         saveAll()
         model.selectNextArtifact()
+    }
+
+    private func saveAndMoveToProcessed() {
+        saveAll()
+        model.moveInvoicesToProcessed(ids: [invoice.id])
     }
 
     // MARK: - Helpers

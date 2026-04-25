@@ -7,6 +7,7 @@ enum DataEntryField: Hashable {
     case invoiceNumber
     case saveButton
     case saveAndNextButton
+    case moveToProcessedButton
 }
 
 struct FormField<Content: View>: View {
