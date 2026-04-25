@@ -254,6 +254,7 @@ private final class RecordingPreviewPersistHandler {
     try Data("inbox".utf8).write(to: inboxInvoiceURL)
 
     let invoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "incoming.pdf",
         fileURL: inboxInvoiceURL,
         location: .inbox,
@@ -279,6 +280,7 @@ private final class RecordingPreviewPersistHandler {
     try Data("inbox".utf8).write(to: processingInvoiceURL)
 
     let invoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "incoming.pdf",
         fileURL: processingInvoiceURL,
         location: .processing,
@@ -310,6 +312,7 @@ private final class RecordingPreviewPersistHandler {
     try Data("inbox".utf8).write(to: processingInvoiceURL)
 
     let invoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: processingInvoiceURL.lastPathComponent,
         fileURL: processingInvoiceURL,
         location: .processing,
@@ -555,6 +558,7 @@ private final class RecordingPreviewPersistHandler {
     let state = PreviewViewState(assetProvider: provider, rotationCoordinator: coordinator)
 
     let firstInvoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "first.png",
         fileURL: firstURL,
         location: .inbox,
@@ -564,6 +568,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "first"
     )
     let secondInvoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "second.png",
         fileURL: secondURL,
         location: .inbox,
@@ -604,6 +609,7 @@ private final class RecordingPreviewPersistHandler {
     let state = PreviewViewState(assetProvider: provider, rotationCoordinator: coordinator)
 
     let firstInvoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "first.png",
         fileURL: firstURL,
         location: .inbox,
@@ -613,6 +619,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "first"
     )
     let secondInvoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "second.png",
         fileURL: secondURL,
         location: .inbox,
@@ -653,6 +660,7 @@ private final class RecordingPreviewPersistHandler {
     let state = PreviewViewState(assetProvider: provider, rotationCoordinator: coordinator)
 
     let firstInvoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "first.png",
         fileURL: firstURL,
         location: .inbox,
@@ -662,6 +670,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "first"
     )
     let secondInvoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "second.png",
         fileURL: secondURL,
         location: .inbox,
@@ -758,6 +767,7 @@ private final class RecordingPreviewPersistHandler {
     coordinator.persistHandler = recorder.persist
 
     let invoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "draft.png",
         fileURL: URL(fileURLWithPath: "/tmp/draft.png"),
         location: .inbox,
@@ -897,6 +907,7 @@ private final class RecordingPreviewPersistHandler {
     let invoiceDate = utcDate(year: 2024, month: 1, day: 5)
 
     let invoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice.pdf",
         fileURL: inboxURL,
         location: .inbox,
@@ -1442,6 +1453,7 @@ private final class RecordingPreviewPersistHandler {
 
 @Test func browserRowsCollapseAndExpandDuplicateGroups() async throws {
     let first = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice.pdf"),
         location: .inbox,
@@ -1450,6 +1462,7 @@ private final class RecordingPreviewPersistHandler {
         status: .unprocessed
     )
     let duplicateA = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice-copy-1.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-1.pdf"),
         location: .inbox,
@@ -1460,6 +1473,7 @@ private final class RecordingPreviewPersistHandler {
         duplicateReason: "Duplicate extracted text matches invoice.pdf"
     )
     let duplicateB = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice-copy-2.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-2.pdf"),
         location: .inbox,
@@ -1494,6 +1508,7 @@ private final class RecordingPreviewPersistHandler {
 
 @Test func disclosureNavigationExpandsAndCollapsesGroupHeaders() async throws {
     let canonical = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice.pdf"),
         location: .inbox,
@@ -1523,6 +1538,7 @@ private final class RecordingPreviewPersistHandler {
 
 @Test func disclosureNavigationMovesChildSelectionToParent() async throws {
     let canonical = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice.pdf"),
         location: .inbox,
@@ -1531,6 +1547,7 @@ private final class RecordingPreviewPersistHandler {
         status: .unprocessed
     )
     let duplicate = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice-copy.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy.pdf"),
         location: .inbox,
@@ -1555,6 +1572,7 @@ private final class RecordingPreviewPersistHandler {
 
 @Test func browserRowsLeaveSingleOrphanDuplicateUngroupedWhenCanonicalHidden() async throws {
     let orphanDuplicate = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice-copy.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy.pdf"),
         location: .inbox,
@@ -1592,6 +1610,7 @@ private final class RecordingPreviewPersistHandler {
 
 @Test func browserRowsGroupVisibleDuplicatesWhenCanonicalIsHidden() async throws {
     let duplicateA = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice-copy-a.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-a.pdf"),
         location: .inbox,
@@ -1602,6 +1621,7 @@ private final class RecordingPreviewPersistHandler {
         duplicateReason: "Duplicate extracted text matches invoice.pdf"
     )
     let duplicateB = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice-copy-b.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-b.pdf"),
         location: .inbox,
@@ -1644,6 +1664,7 @@ private final class RecordingPreviewPersistHandler {
 
 @Test func duplicateGroupHeaderBadgeTitleShowsProcessedStateInUnprocessedQueue() async throws {
     let duplicateA = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice-copy-a.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-a.pdf"),
         location: .inbox,
@@ -1652,6 +1673,7 @@ private final class RecordingPreviewPersistHandler {
         status: .blockedDuplicate
     )
     let duplicateB = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice-copy-b.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-copy-b.pdf"),
         location: .inbox,
@@ -1771,6 +1793,7 @@ private final class RecordingPreviewPersistHandler {
 
 @Test func librarySnapshotBuilderHandlesRepeatedContentHashesWithoutCrashing() async throws {
     let first = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice-a.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-a.pdf"),
         location: .inbox,
@@ -1780,6 +1803,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "shared-hash"
     )
     let second = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice-b.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-b.pdf"),
         location: .inbox,
@@ -1816,6 +1840,7 @@ private final class RecordingPreviewPersistHandler {
 
 @Test func librarySnapshotBuilderExposesPossibleSameInvoiceMatchesForInvoices() async throws {
     let first = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice-a.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-a.pdf"),
         location: .inbox,
@@ -1825,6 +1850,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "invoice-a"
     )
     let second = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "invoice-b.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/invoice-b.pdf"),
         location: .processing,
@@ -1872,6 +1898,7 @@ private final class RecordingPreviewPersistHandler {
 
 @Test func librarySnapshotBuilderExposesPossibleSameInvoiceMatchesForReceiptsWithoutInvoiceNumber() async throws {
     let first = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "receipt-a.heic",
         fileURL: URL(fileURLWithPath: "/Inbox/receipt-a.heic"),
         location: .inbox,
@@ -1881,6 +1908,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "receipt-a"
     )
     let second = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "receipt-b.jpeg",
         fileURL: URL(fileURLWithPath: "/Processed/receipt-b.jpeg"),
         location: .processed,
@@ -1922,6 +1950,7 @@ private final class RecordingPreviewPersistHandler {
 
 @Test func librarySnapshotBuilderDoesNotExposePossibleSameInvoiceMatchesWithinDuplicateDocument() async throws {
     let first = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "duplicate-a.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/duplicate-a.pdf"),
         location: .inbox,
@@ -1931,6 +1960,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "duplicate-a"
     )
     let second = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "duplicate-b.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/duplicate-b.pdf"),
         location: .inbox,
@@ -2327,6 +2357,7 @@ private final class RecordingPreviewPersistHandler {
 @Test func appModelRetainsPerTabSearchAndSelectionContext() async throws {
     let model = AppModel(autoRefresh: false)
     let inboxInvoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "alpha.pdf",
         fileURL: URL(fileURLWithPath: "/Inbox/alpha.pdf"),
         location: .inbox,
@@ -2335,6 +2366,7 @@ private final class RecordingPreviewPersistHandler {
         status: .unprocessed
     )
     let processingInvoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "beta.pdf",
         fileURL: URL(fileURLWithPath: "/Processing/beta.pdf"),
         location: .processing,
@@ -2411,6 +2443,7 @@ private final class RecordingPreviewPersistHandler {
     try Data("second".utf8).write(to: secondURL)
 
     let first = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "first.pdf",
         fileURL: firstURL,
         location: .inbox,
@@ -2419,6 +2452,7 @@ private final class RecordingPreviewPersistHandler {
         status: .unprocessed
     )
     let second = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "second.pdf",
         fileURL: secondURL,
         location: .inbox,
@@ -2427,6 +2461,7 @@ private final class RecordingPreviewPersistHandler {
         status: .unprocessed
     )
     let missing = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "missing.pdf",
         fileURL: missingURL,
         location: .inbox,
@@ -2560,6 +2595,7 @@ private final class RecordingPreviewPersistHandler {
 @Test func invoiceTextExtractionQueueProcessesQueuedInvoices() async throws {
     let invoiceURL = URL(fileURLWithPath: "/tmp/incoming.pdf")
     let invoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "incoming.pdf",
         fileURL: invoiceURL,
         location: .inbox,
@@ -3358,6 +3394,7 @@ private final class RecordingPreviewPersistHandler {
     )
     let queue = ContentHashQueue(handler: handler)
     let invoice = PhysicalArtifact(
+        id: UUID().uuidString,
         name: "incoming.pdf",
         fileURL: URL(fileURLWithPath: "/tmp/incoming.pdf"),
         location: .inbox,
@@ -3948,4 +3985,51 @@ private actor MockStructuredExtractionClient: InvoiceStructuredExtractionClient 
     func totalCallCount() -> Int {
         callCount
     }
+}
+
+// MARK: - Atomic Context Save Tests
+
+@MainActor
+@Test func updatePendingMetadataFlushesAllFieldsAtomically() async throws {
+    let url = URL(fileURLWithPath: "/tmp/atomic-save-test.png")
+    let image = NSImage(size: NSSize(width: 10, height: 10))
+    let provider = TestPreviewAssetProvider(
+        responses: [url: .success(asset: .image(image), delay: .zero)]
+    )
+    let coordinator = PreviewRotationCoordinator()
+    let state = PreviewViewState(assetProvider: provider, rotationCoordinator: coordinator)
+
+    var flushedMetadata: [DocumentMetadata] = []
+    state.metadataFlushHandler = { _, metadata in
+        flushedMetadata.append(metadata)
+    }
+
+    let invoice = PhysicalArtifact(
+        id: "atomic-test-1",
+        name: "test.png",
+        fileURL: url,
+        location: .inbox,
+        addedAt: .now,
+        fileType: .image,
+        status: .unprocessed,
+        contentHash: "hash1"
+    )
+    await state.loadPreview(for: invoice, metadata: .empty)
+
+    let targetDate = utcDate(year: 2025, month: 6, day: 15)
+    let fullMetadata = DocumentMetadata(
+        vendor: "Acme Corp",
+        invoiceDate: targetDate,
+        invoiceNumber: "INV-001",
+        documentType: .invoice
+    )
+
+    state.updatePendingMetadata(fullMetadata)
+
+    #expect(flushedMetadata.count == 1, "Expected exactly one flush for atomic save, got \(flushedMetadata.count)")
+    let flushed = try #require(flushedMetadata.first)
+    #expect(flushed.vendor == "Acme Corp")
+    #expect(flushed.invoiceDate == targetDate)
+    #expect(flushed.invoiceNumber == "INV-001")
+    #expect(flushed.documentType == .invoice)
 }

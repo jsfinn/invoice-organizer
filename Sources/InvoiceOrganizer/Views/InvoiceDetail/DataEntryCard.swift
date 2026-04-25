@@ -187,10 +187,12 @@ struct DataEntryCard: View {
         let invoiceNumber = normalizedOptional(invoiceNumberDraft)
         invoiceNumberDraft = invoiceNumber ?? ""
 
-        if vendorIsDirty { previewState.updatePendingVendor(vendor) }
-        if invoiceDateIsDirty { previewState.updatePendingInvoiceDate(invoiceDateDraft) }
-        if documentTypeIsDirty { previewState.updatePendingDocumentType(documentTypeDraft) }
-        if invoiceNumberIsDirty { previewState.updatePendingInvoiceNumber(invoiceNumber) }
+        var metadata = pendingMetadata
+        metadata.vendor = vendor
+        metadata.invoiceDate = invoiceDateDraft
+        metadata.documentType = documentTypeDraft
+        metadata.invoiceNumber = invoiceNumber
+        previewState.updatePendingMetadata(metadata)
     }
 
     private func saveAndNext() {

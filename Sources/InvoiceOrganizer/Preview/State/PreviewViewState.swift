@@ -121,6 +121,11 @@ final class PreviewViewState: ObservableObject {
         flushMetadataImmediately()
     }
 
+    func updatePendingMetadata(_ metadata: DocumentMetadata) {
+        updateActiveContext { $0.pendingMetadata = metadata }
+        flushMetadataImmediately()
+    }
+
     /// Updates the artifact reference when the underlying file was renamed
     /// but the content stayed the same (same session).
     func syncArtifactReference(_ invoice: PhysicalArtifact, metadata: DocumentMetadata) {
