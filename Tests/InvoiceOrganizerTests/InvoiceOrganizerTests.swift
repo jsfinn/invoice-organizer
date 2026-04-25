@@ -4013,6 +4013,26 @@ private actor MockStructuredExtractionClient: InvoiceStructuredExtractionClient 
             "\(missingCount)/\(iterations) updates lost — save() is not atomic with mutations")
 }
 
+// MARK: - HEIC Identity Preservation Tests
+
+@Test func heicConversionPreservesArtifactIdentity() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let heicURL = tempRoot.appendingPathComponent("receipt.heic")
+    try writePNG(width: 5, height: 3, to: heicURL)
+
+    let store = PhysicalArtifactIdentityStore.shared
+    let originalID = store.id(for: heicURL)
+
+    let converted = try HEICConversionService.convertReplacingOriginalFile(at: heicURL)
+
+    let jpegID = store.existingID(for: converted.convertedURL)
+    #expect(jpegID == originalID,
+            "JPEG should inherit the HEIC's UUID, got \(jpegID ?? "nil") instead of \(originalID)")
+}
+
 // MARK: - Atomic Context Save Tests
 
 @MainActor

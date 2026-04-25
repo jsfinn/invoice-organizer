@@ -102,6 +102,10 @@ enum HEICConversionService {
 
         try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
         try handleOriginalHEIC(at: fileURL, handling: originalHandling, archiveRoot: archiveRoot)
+
+        PhysicalArtifactIdentityStore.shared.updateURL(from: fileURL, to: destinationURL)
+        PhysicalArtifactIdentityStore.shared.save()
+
         return HEICConvertedFile(
             originalURL: fileURL,
             convertedURL: destinationURL,
