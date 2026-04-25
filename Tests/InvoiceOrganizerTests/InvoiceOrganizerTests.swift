@@ -3987,6 +3987,32 @@ private actor MockStructuredExtractionClient: InvoiceStructuredExtractionClient 
     }
 }
 
+// MARK: - Identity Store Save Atomicity Tests
+
+@Test func identityStoreSaveCapturesAllConcurrentUpdates() {
+    let iterations = 200
+    var initial: [String: String] = [:]
+    for i in 0..<iterations {
+        initial["/path/\(i)"] = "UUID-\(i)"
+    }
+    let store = PhysicalArtifactIdentityStore(pathToID: initial)
+
+    DispatchQueue.concurrentPerform(iterations: iterations) { i in
+        store.updatePath(from: "/path/\(i)", to: "/renamed/\(i)")
+        store.save()
+    }
+
+    let reloaded = PhysicalArtifactIdentityStore()
+    var missingCount = 0
+    for i in 0..<iterations {
+        if reloaded.existingID(forPath: "/renamed/\(i)") != "UUID-\(i)" {
+            missingCount += 1
+        }
+    }
+    #expect(missingCount == 0,
+            "\(missingCount)/\(iterations) updates lost — save() is not atomic with mutations")
+}
+
 // MARK: - Atomic Context Save Tests
 
 @MainActor

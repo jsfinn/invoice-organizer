@@ -59,9 +59,10 @@ final class PhysicalArtifactIdentityStore: @unchecked Sendable {
     }
 
     func save() {
-        let snapshot = lock.withLock { pathToID }
-        let data = try? JSONEncoder().encode(snapshot)
-        UserDefaults.standard.set(data, forKey: Self.defaultsKey)
+        lock.withLock {
+            let data = try? JSONEncoder().encode(pathToID)
+            UserDefaults.standard.set(data, forKey: Self.defaultsKey)
+        }
     }
 
     private static func load() -> [String: String] {
