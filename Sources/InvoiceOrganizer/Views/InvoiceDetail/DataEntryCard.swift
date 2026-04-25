@@ -8,6 +8,7 @@ struct DataEntryCard: View {
     @State private var vendorDraft = ""
     @State private var invoiceNumberDraft = ""
     @State private var invoiceDateDraft = Date.now
+    @State private var documentTypeDraft: DocumentType?
     @FocusState private var focus: DataEntryField?
 
     private var pendingMetadata: DocumentMetadata {
@@ -22,6 +23,7 @@ struct DataEntryCard: View {
     private var committedVendor: String { pendingMetadata.vendor ?? "" }
     private var committedInvoiceNumber: String { pendingMetadata.invoiceNumber ?? "" }
     private var committedInvoiceDate: Date { pendingMetadata.invoiceDate ?? invoice.addedAt }
+    private var committedDocumentType: DocumentType? { pendingMetadata.documentType }
 
     private var vendorIsDirty: Bool {
         normalizedOptional(vendorDraft) != normalizedOptional(committedVendor)
@@ -35,14 +37,12 @@ struct DataEntryCard: View {
         invoiceDateDraft != committedInvoiceDate
     }
 
-    private var documentTypeBinding: Binding<DocumentType?> {
-        Binding(
-            get: { pendingMetadata.documentType },
-            set: { newValue in
-                guard pendingMetadata.documentType != newValue else { return }
-                previewState.updatePendingDocumentType(newValue)
-            }
-        )
+    private var documentTypeIsDirty: Bool {
+        documentTypeDraft != committedDocumentType
+    }
+
+    private var isDirty: Bool {
+        vendorIsDirty || invoiceDateIsDirty || documentTypeIsDirty || invoiceNumberIsDirty
     }
 
     var body: some View {
@@ -65,10 +65,6 @@ struct DataEntryCard: View {
         .onAppear { syncDrafts(force: true) }
         .onChange(of: invoice.id) { _, _ in syncDrafts(force: true) }
         .onChange(of: pendingMetadata) { _, _ in syncDrafts() }
-        .onChange(of: focus) { oldValue, newValue in
-            guard oldValue != newValue else { return }
-            if let old = oldValue { commit(old) }
-        }
     }
 
     @ViewBuilder
@@ -82,8 +78,7 @@ struct DataEntryCard: View {
                 VendorField(
                     text: $vendorDraft,
                     suggestions: model.knownVendors,
-                    focus: $focus,
-                    onCommit: { _ in commitVendor() }
+                    focus: $focus
                 )
                 .selectAllOnFocus(focus: $focus, whenFocused: .vendor)
             }
@@ -99,9 +94,9 @@ struct DataEntryCard: View {
                 .focused($focus, equals: .invoiceDate)
             }
 
-            FormField("Document Type", field: .documentType, focus: $focus) {
+            FormField("Document Type", field: .documentType, focus: $focus, isDirty: documentTypeIsDirty) {
                 let allTypes: [DocumentType?] = [nil, .invoice, .receipt]
-                Picker("", selection: documentTypeBinding) {
+                Picker("", selection: $documentTypeDraft) {
                     Text("Unknown").tag(nil as DocumentType?)
                     Text("Invoice").tag(DocumentType.invoice as DocumentType?)
                     Text("Receipt").tag(DocumentType.receipt as DocumentType?)
@@ -122,9 +117,24 @@ struct DataEntryCard: View {
                 TextField("Invoice Number", text: $invoiceNumberDraft)
                     .textFieldStyle(.plain)
                     .focused($focus, equals: .invoiceNumber)
-                    .onSubmit { commitInvoiceNumber(); focus = nextField(after: .invoiceNumber) }
+                    .onSubmit { saveAll() }
                     .selectAllOnFocus(focus: $focus, whenFocused: .invoiceNumber)
             }
+
+            HStack {
+                Spacer()
+                Button("Save") { saveAll() }
+                    .keyboardShortcut("s", modifiers: .command)
+                    .focusable()
+                    .focused($focus, equals: .saveButton)
+                    .onKeyPress(.return) { saveAll(); return .handled }
+                Button("Save and Next") { saveAndNext() }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .focusable()
+                    .focused($focus, equals: .saveAndNextButton)
+                    .onKeyPress(.return) { saveAndNext(); return .handled }
+            }
+            .padding(.top, 4)
         }
     }
 
@@ -158,36 +168,30 @@ struct DataEntryCard: View {
         if force || focus != .invoiceDate {
             invoiceDateDraft = committedInvoiceDate
         }
-    }
-
-    // MARK: - Commit
-
-    private func commit(_ field: DataEntryField) {
-        switch field {
-        case .vendor: commitVendor()
-        case .invoiceDate: commitInvoiceDate()
-        case .invoiceNumber: commitInvoiceNumber()
-        case .documentType: break
+        if force || focus != .documentType {
+            documentTypeDraft = committedDocumentType
         }
     }
 
-    private func commitVendor() {
-        let normalized = normalizedOptional(vendorDraft)
-        vendorDraft = normalized ?? ""
-        guard normalized != normalizedOptional(committedVendor) else { return }
-        previewState.updatePendingVendor(normalized)
+    // MARK: - Save
+
+    private func saveAll() {
+        guard isDirty else { return }
+
+        let vendor = normalizedOptional(vendorDraft)
+        vendorDraft = vendor ?? ""
+        let invoiceNumber = normalizedOptional(invoiceNumberDraft)
+        invoiceNumberDraft = invoiceNumber ?? ""
+
+        if vendorIsDirty { previewState.updatePendingVendor(vendor) }
+        if invoiceDateIsDirty { previewState.updatePendingInvoiceDate(invoiceDateDraft) }
+        if documentTypeIsDirty { previewState.updatePendingDocumentType(documentTypeDraft) }
+        if invoiceNumberIsDirty { previewState.updatePendingInvoiceNumber(invoiceNumber) }
     }
 
-    private func commitInvoiceNumber() {
-        let normalized = normalizedOptional(invoiceNumberDraft)
-        invoiceNumberDraft = normalized ?? ""
-        guard normalized != normalizedOptional(committedInvoiceNumber) else { return }
-        previewState.updatePendingInvoiceNumber(normalized)
-    }
-
-    private func commitInvoiceDate() {
-        guard invoiceDateDraft != committedInvoiceDate else { return }
-        previewState.updatePendingInvoiceDate(invoiceDateDraft)
+    private func saveAndNext() {
+        saveAll()
+        model.selectNextArtifact()
     }
 
     // MARK: - Helpers
@@ -198,20 +202,11 @@ struct DataEntryCard: View {
     }
 
     private func cycleDocumentType(_ allTypes: [DocumentType?], delta: Int) -> KeyPress.Result {
-        let current = pendingMetadata.documentType
-        let idx = allTypes.firstIndex(where: { $0 == current }) ?? 0
+        let idx = allTypes.firstIndex(where: { $0 == documentTypeDraft }) ?? 0
         let next = idx + delta
         guard allTypes.indices.contains(next) else { return .ignored }
-        documentTypeBinding.wrappedValue = allTypes[next]
+        documentTypeDraft = allTypes[next]
         return .handled
     }
 
-    private func nextField(after field: DataEntryField) -> DataEntryField? {
-        switch field {
-        case .vendor: return .invoiceDate
-        case .invoiceDate: return .documentType
-        case .documentType: return .invoiceNumber
-        case .invoiceNumber: return nil
-        }
-    }
 }

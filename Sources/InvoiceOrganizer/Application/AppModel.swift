@@ -492,6 +492,97 @@ final class AppModel: ObservableObject {
         updateActiveQueueTabContext { $0.selectedArtifactID = id }
     }
 
+    func selectNextArtifact() {
+        let list = sortedVisibleArtifacts
+        guard let currentID = selectedArtifactID,
+              let idx = list.firstIndex(where: { $0.id == currentID }),
+              idx + 1 < list.count else { return }
+        let nextID = list[idx + 1].id
+        setSelectedArtifactIDs([nextID])
+    }
+
+    private var sortedVisibleArtifacts: [PhysicalArtifact] {
+        let descriptors = activeBrowserContext.sortDescriptors
+        let ocrStates = ocrStatesByArtifactID
+        let readStates = readStatesByArtifactID
+        let metadata = documentMetadataByArtifactID
+
+        return visibleArtifacts.sorted { lhs, rhs in
+            for descriptor in descriptors {
+                let result = compareBrowserColumn(
+                    lhs, rhs,
+                    columnID: descriptor.columnID,
+                    ocrStates: ocrStates,
+                    readStates: readStates,
+                    metadata: metadata
+                )
+                if result != .orderedSame {
+                    return descriptor.ascending
+                        ? result == .orderedAscending
+                        : result == .orderedDescending
+                }
+            }
+            return lhs.addedAt > rhs.addedAt
+        }
+    }
+
+    private func compareBrowserColumn(
+        _ lhs: PhysicalArtifact,
+        _ rhs: PhysicalArtifact,
+        columnID: InvoiceBrowserColumnID,
+        ocrStates: [PhysicalArtifact.ID: InvoiceOCRState],
+        readStates: [PhysicalArtifact.ID: InvoiceReadState],
+        metadata: [PhysicalArtifact.ID: DocumentMetadata]
+    ) -> ComparisonResult {
+        switch columnID {
+        case .name:
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+        case .addedAt:
+            if lhs.addedAt == rhs.addedAt { return .orderedSame }
+            return lhs.addedAt < rhs.addedAt ? .orderedAscending : .orderedDescending
+        case .modifiedAt:
+            if lhs.modifiedAt == rhs.modifiedAt { return .orderedSame }
+            return lhs.modifiedAt < rhs.modifiedAt ? .orderedAscending : .orderedDescending
+        case .fileType:
+            return lhs.fileType.rawValue.localizedCaseInsensitiveCompare(rhs.fileType.rawValue)
+        case .vendor:
+            return (metadata[lhs.id]?.vendor ?? "")
+                .localizedCaseInsensitiveCompare(metadata[rhs.id]?.vendor ?? "")
+        case .invoiceDate:
+            let lhsDate = metadata[lhs.id]?.invoiceDate ?? lhs.addedAt
+            let rhsDate = metadata[rhs.id]?.invoiceDate ?? rhs.addedAt
+            if lhsDate == rhsDate { return .orderedSame }
+            return lhsDate < rhsDate ? .orderedAscending : .orderedDescending
+        case .ocr:
+            let lhsRank = ocrRank(ocrStates[lhs.id])
+            let rhsRank = ocrRank(ocrStates[rhs.id])
+            if lhsRank == rhsRank { return .orderedSame }
+            return lhsRank < rhsRank ? .orderedAscending : .orderedDescending
+        case .read:
+            let lhsRank = readRank(readStates[lhs.id])
+            let rhsRank = readRank(readStates[rhs.id])
+            if lhsRank == rhsRank { return .orderedSame }
+            return lhsRank < rhsRank ? .orderedAscending : .orderedDescending
+        }
+    }
+
+    private func ocrRank(_ state: InvoiceOCRState?) -> Int {
+        switch state ?? .waiting {
+        case .success: return 0
+        case .waiting: return 1
+        case .failed: return 2
+        }
+    }
+
+    private func readRank(_ state: InvoiceReadState?) -> Int {
+        switch state ?? .waiting {
+        case .success: return 0
+        case .review: return 1
+        case .waiting: return 2
+        case .failed: return 3
+        }
+    }
+
     func setActiveBrowserSortDescriptors(_ descriptors: [InvoiceBrowserSortDescriptor]) {
         let resolvedDescriptors = resolvedInvoiceBrowserSortDescriptors(descriptors, for: selectedQueueTab)
         guard !invoiceBrowserSortDescriptorsMatch(activeBrowserContext.sortDescriptors, resolvedDescriptors) else {

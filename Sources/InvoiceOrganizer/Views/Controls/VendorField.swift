@@ -4,7 +4,6 @@ struct VendorField: View {
     @Binding var text: String
     let suggestions: [String]
     @FocusState.Binding var focus: DataEntryField?
-    let onCommit: (String) -> Void
 
     @State private var highlightedIndex: Int?
     @State private var isPopoverOpen = false
@@ -71,7 +70,6 @@ struct VendorField: View {
                     text = suggestion
                     isPopoverOpen = false
                     highlightedIndex = nil
-                    onCommit(suggestion)
                 } label: {
                     Text(suggestion)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -93,6 +91,5 @@ struct VendorField: View {
         }
         isPopoverOpen = false
         highlightedIndex = nil
-        onCommit(text)
     }
 }
