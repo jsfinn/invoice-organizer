@@ -50,18 +50,9 @@ struct ActivePreviewContext {
         pendingMetadata != committedMetadata
     }
 
-    var isDirty: Bool {
-        isRotationDirty || isMetadataDirty
-    }
-
     var rotationCommitRequest: PreviewCommitRequest? {
         guard isRotationDirty else { return nil }
         return PreviewCommitRequest(invoice: invoice, quarterTurns: rotationQuarterTurns)
-    }
-
-    var metadataCommitRequest: MetadataCommitRequest? {
-        guard isMetadataDirty else { return nil }
-        return MetadataCommitRequest(artifactID: invoice.id, metadata: pendingMetadata)
     }
 
     mutating func rotate(by quarterTurnsDelta: Int) -> Bool {

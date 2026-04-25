@@ -10,7 +10,6 @@ final class PreviewViewState: ObservableObject {
 
     private let assetProvider: any PreviewAssetProviding
     private let rotationCoordinator: PreviewRotationCoordinator
-    private var metadataFlushTask: Task<Void, Never>?
 
     init(
         assetProvider: any PreviewAssetProviding,
@@ -157,9 +156,6 @@ final class PreviewViewState: ObservableObject {
     }
 
     func flushMetadataImmediately() {
-        metadataFlushTask?.cancel()
-        metadataFlushTask = nil
-
         guard let context = activeContext, context.isMetadataDirty else {
             return
         }
@@ -171,10 +167,6 @@ final class PreviewViewState: ObservableObject {
     }
 
     // MARK: - Private
-
-    private func scheduleMetadataFlush() {
-        flushMetadataImmediately()
-    }
 
     private func handoffActiveContextIfNeeded(for nextInvoice: PhysicalArtifact) {
         guard let activeContext,

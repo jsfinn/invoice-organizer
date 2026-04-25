@@ -65,7 +65,6 @@
 		DE099784CA01A55E7785B247 /* ArtifactAccessCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6796E8204ECE65BE00F76321 /* ArtifactAccessCoordinator.swift */; };
 		E2A2F8CF74CE82DD1542D6BD /* InvoiceStructuredExtractionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F85923FD6EF7364C426A589D /* InvoiceStructuredExtractionClient.swift */; };
 		E65919A51DC8A1835F5CC1B4 /* QueueStatusCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F148EE8CC3F868A3314FE06 /* QueueStatusCard.swift */; };
-		EC27B68333CFF2ABCB357807 /* MetadataCommitRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F970815666CD666FD723E03 /* MetadataCommitRequest.swift */; };
 		F1DD263D8142276399819C2A /* StructuredExtractionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 150C9BA921200FE9C87F83F6 /* StructuredExtractionHandler.swift */; };
 		F302FA072F9A49B5BBFF102D /* CheckForUpdatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B234C551E2440907921BBB2 /* CheckForUpdatesView.swift */; };
 		F9A181E26A96C1A3679F9663 /* HEICConversionQueueModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 250B0574F95522FF6E689A97 /* HEICConversionQueueModel.swift */; };
@@ -108,7 +107,6 @@
 		5C2B0EF7678E0C79BC24E477 /* DragExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragExportService.swift; sourceTree = "<group>"; };
 		661B9E1AD61E265CA0D271C5 /* PreviewAssetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewAssetProvider.swift; sourceTree = "<group>"; };
 		6796E8204ECE65BE00F76321 /* ArtifactAccessCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactAccessCoordinator.swift; sourceTree = "<group>"; };
-		6F970815666CD666FD723E03 /* MetadataCommitRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataCommitRequest.swift; sourceTree = "<group>"; };
 		719CEBD6BDEFA69B3F710CFF /* PreviewSessionID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSessionID.swift; sourceTree = "<group>"; };
 		71E06555631417D9EC5E3DCA /* FileSystemReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSystemReconciler.swift; sourceTree = "<group>"; };
 		78FD9A85C78EBE3E91D8A16B /* InvoiceOrganizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceOrganizer.swift; sourceTree = "<group>"; };
@@ -435,7 +433,6 @@
 			isa = PBXGroup;
 			children = (
 				54CB09A3CB7ADCEEC97939DA /* ActivePreviewContext.swift */,
-				6F970815666CD666FD723E03 /* MetadataCommitRequest.swift */,
 				39F70B699EF2BE473851EF93 /* PreviewCommitRequest.swift */,
 				719CEBD6BDEFA69B3F710CFF /* PreviewSessionID.swift */,
 				C63BE6A6AEABB8ED101E4CD1 /* PreviewViewState.swift */,
@@ -443,7 +440,7 @@
 			path = State;
 			sourceTree = "<group>";
 		};
-		"TEMP_784E9E20-B752-41B1-AC00-5DCF9504E15D" /* Resources */ = {
+		"TEMP_6C23C2EA-A97C-44CD-B343-82B61EA5D27D" /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -581,7 +578,6 @@
 				45DE59470A3570960FE04BFF /* InvoiceWorkspaceMover.swift in Sources */,
 				0F6634A3CFB26914E3E63CE4 /* LibrarySnapshotBuilder.swift in Sources */,
 				A968A5F4295E7484CDE14E37 /* MetadataCard.swift in Sources */,
-				EC27B68333CFF2ABCB357807 /* MetadataCommitRequest.swift in Sources */,
 				534ED6E769D4298E38C7701D /* PhysicalArtifactIdentityStore.swift in Sources */,
 				376C57B76E8FB72913092367 /* PreviewAssetProvider.swift in Sources */,
 				619BDB7310BD91F7B64A5AE2 /* PreviewCard.swift in Sources */,
