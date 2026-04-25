@@ -99,6 +99,7 @@ final class PreviewRotationCoordinator: ObservableObject {
                 self.commitTasksByInvoiceID.removeValue(forKey: invoiceID)
                 guard let currentEntry = self.entriesByInvoiceID[invoiceID],
                       currentEntry.request == request else {
+                    self.scheduleCommitIfNeeded(for: invoiceID)
                     return
                 }
 
