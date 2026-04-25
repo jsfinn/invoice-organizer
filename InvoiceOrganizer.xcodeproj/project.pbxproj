@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		05B8D1E302363FA4E8280775 /* FocusableMenuPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16A5D5BB9DEF7FEE49352CF /* FocusableMenuPicker.swift */; };
 		09131AB5585BD3B485DED375 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1D393E630B373F584368E1C1 /* Assets.xcassets */; };
 		0AAE579343E7D53F5B825E37 /* WorkflowActionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E391D90F06336251FDD582F2 /* WorkflowActionCoordinator.swift */; };
 		0F6634A3CFB26914E3E63CE4 /* LibrarySnapshotBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D275D6E83B86659A791D96C0 /* LibrarySnapshotBuilder.swift */; };
@@ -120,7 +119,6 @@
 		890624B54CA6140BDBEF5B82 /* ReplacementPreviewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplacementPreviewRenderer.swift; sourceTree = "<group>"; };
 		8954A8C3B26AEE2DDE97AD98 /* InvoiceOrganizerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InvoiceOrganizerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10DF2A883449B3756EB0884 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		A16A5D5BB9DEF7FEE49352CF /* FocusableMenuPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusableMenuPicker.swift; sourceTree = "<group>"; };
 		A28C5011B0C04CA094EC2609 /* DuplicateDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateDetector.swift; sourceTree = "<group>"; };
 		A4BEDBC9AE365973B7AFAA0C /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A587DF34889CF4FA79C18976 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -261,7 +259,6 @@
 			isa = PBXGroup;
 			children = (
 				3B234C551E2440907921BBB2 /* CheckForUpdatesView.swift */,
-				A16A5D5BB9DEF7FEE49352CF /* FocusableMenuPicker.swift */,
 				275E539E7266BD6630D2AA40 /* FormField.swift */,
 				280B4810D31878273E9E22B0 /* SelectAllOnFocus.swift */,
 				BEAA5D10C6354B20E1C62723 /* VendorField.swift */,
@@ -446,7 +443,7 @@
 			path = State;
 			sourceTree = "<group>";
 		};
-		"TEMP_3374F991-5FC5-4085-9BB2-860AF8DF9BBD" /* Resources */ = {
+		"TEMP_4F20395B-3370-488F-B220-5E808761CEF8" /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -565,7 +562,6 @@
 				8FE3202B65B0675F5791F0FD /* FileSystemReconciler.swift in Sources */,
 				BC83E30BB70637C9DE4A9D2F /* FileSystemWatcher.swift in Sources */,
 				C6EBB48CF0C2DFE11D9FC290 /* FilenameReconciler.swift in Sources */,
-				05B8D1E302363FA4E8280775 /* FocusableMenuPicker.swift in Sources */,
 				87E0FD30EEFE88B1174BD6C4 /* FolderPicker.swift in Sources */,
 				D6BAFBDD7D71F31FF0AECDF4 /* FormField.swift in Sources */,
 				F9A181E26A96C1A3679F9663 /* HEICConversionQueueModel.swift in Sources */,
@@ -732,14 +728,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 28;
+				CURRENT_PROJECT_VERSION = 29;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/InvoiceOrganizer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.6.1;
+				MARKETING_VERSION = 0.6.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pkm.invoiceorganizer;
 				PRODUCT_MODULE_NAME = InvoiceOrganizer;
 				PRODUCT_NAME = "Invoice Organizer";
@@ -753,14 +749,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 28;
+				CURRENT_PROJECT_VERSION = 29;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/InvoiceOrganizer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.6.1;
+				MARKETING_VERSION = 0.6.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pkm.invoiceorganizer;
 				PRODUCT_MODULE_NAME = InvoiceOrganizer;
 				PRODUCT_NAME = "Invoice Organizer";
