@@ -440,7 +440,7 @@
 			path = State;
 			sourceTree = "<group>";
 		};
-		"TEMP_6C23C2EA-A97C-44CD-B343-82B61EA5D27D" /* Resources */ = {
+		"TEMP_0833A717-82D8-4E66-880D-63067392196E" /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -724,14 +724,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/InvoiceOrganizer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.6.3;
+				MARKETING_VERSION = 0.6.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pkm.invoiceorganizer;
 				PRODUCT_MODULE_NAME = InvoiceOrganizer;
 				PRODUCT_NAME = "Invoice Organizer";
@@ -745,14 +745,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/InvoiceOrganizer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.6.3;
+				MARKETING_VERSION = 0.6.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pkm.invoiceorganizer;
 				PRODUCT_MODULE_NAME = InvoiceOrganizer;
 				PRODUCT_NAME = "Invoice Organizer";
