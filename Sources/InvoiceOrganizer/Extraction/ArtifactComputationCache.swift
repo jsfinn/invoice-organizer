@@ -7,8 +7,8 @@ final class ArtifactComputationCache {
 
     private(set) var textRecordsByHash: [String: InvoiceTextRecord] = [:]
     private(set) var structuredRecordsByHash: [String: InvoiceStructuredDataRecord] = [:]
-    private(set) var duplicateTokensByHash: [String: Set<String>] = [:]
-    private(set) var firstPageDuplicateTokensByHash: [String: Set<String>] = [:]
+    private(set) var duplicateTermFrequenciesByHash: [String: [String: Int]] = [:]
+    private(set) var firstPageDuplicateTermFrequenciesByHash: [String: [String: Int]] = [:]
 
     init(
         textStore: any InvoiceTextStoring,
@@ -29,8 +29,8 @@ final class ArtifactComputationCache {
     func reset() {
         textRecordsByHash = [:]
         structuredRecordsByHash = [:]
-        duplicateTokensByHash = [:]
-        firstPageDuplicateTokensByHash = [:]
+        duplicateTermFrequenciesByHash = [:]
+        firstPageDuplicateTermFrequenciesByHash = [:]
     }
 
     func loadAll() async {
@@ -38,8 +38,8 @@ final class ArtifactComputationCache {
         let structuredRecords = await structuredDataStore.cachedRecords()
         textRecordsByHash = textRecords
         structuredRecordsByHash = structuredRecords
-        duplicateTokensByHash = DuplicateDetector.normalizedTokenSets(from: textRecords)
-        firstPageDuplicateTokensByHash = DuplicateDetector.normalizedFirstPageTokenSets(from: textRecords)
+        duplicateTermFrequenciesByHash = DuplicateDetector.termFrequenciesFromRecords(textRecords)
+        firstPageDuplicateTermFrequenciesByHash = DuplicateDetector.firstPageTermFrequenciesFromRecords(textRecords)
     }
 
     @discardableResult
@@ -73,19 +73,19 @@ final class ArtifactComputationCache {
         structuredRecordsByHash[contentHash]
     }
 
-    func duplicateTokens(forContentHash contentHash: String) -> Set<String>? {
-        duplicateTokensByHash[contentHash]
+    func duplicateTermFrequencies(forContentHash contentHash: String) -> [String: Int]? {
+        duplicateTermFrequenciesByHash[contentHash]
     }
 
     func syncExtractedText(forContentHash contentHash: String) async {
         if let record = await textStore.cachedText(forContentHash: contentHash) {
             textRecordsByHash[contentHash] = record
-            duplicateTokensByHash[contentHash] = DuplicateDetector.normalizedTokenSet(for: record.text)
-            firstPageDuplicateTokensByHash[contentHash] = DuplicateDetector.normalizedTokenSet(for: record.firstPageText)
+            duplicateTermFrequenciesByHash[contentHash] = DuplicateDetector.normalizedTermFrequencies(for: record.text)
+            firstPageDuplicateTermFrequenciesByHash[contentHash] = DuplicateDetector.normalizedTermFrequencies(for: record.firstPageText)
         } else {
             textRecordsByHash.removeValue(forKey: contentHash)
-            duplicateTokensByHash.removeValue(forKey: contentHash)
-            firstPageDuplicateTokensByHash.removeValue(forKey: contentHash)
+            duplicateTermFrequenciesByHash.removeValue(forKey: contentHash)
+            firstPageDuplicateTermFrequenciesByHash.removeValue(forKey: contentHash)
         }
     }
 
@@ -99,8 +99,8 @@ final class ArtifactComputationCache {
             await structuredDataStore.removeCachedData(forContentHash: contentHash)
             textRecordsByHash.removeValue(forKey: contentHash)
             structuredRecordsByHash.removeValue(forKey: contentHash)
-            duplicateTokensByHash.removeValue(forKey: contentHash)
-            firstPageDuplicateTokensByHash.removeValue(forKey: contentHash)
+            duplicateTermFrequenciesByHash.removeValue(forKey: contentHash)
+            firstPageDuplicateTermFrequenciesByHash.removeValue(forKey: contentHash)
         }
     }
 
@@ -110,10 +110,10 @@ final class ArtifactComputationCache {
             await textStore.removeCachedText(forContentHash: previousContentHash)
             textRecordsByHash.removeValue(forKey: previousContentHash)
             textRecordsByHash[updatedContentHash] = cachedText
-            duplicateTokensByHash.removeValue(forKey: previousContentHash)
-            duplicateTokensByHash[updatedContentHash] = DuplicateDetector.normalizedTokenSet(for: cachedText.text)
-            firstPageDuplicateTokensByHash.removeValue(forKey: previousContentHash)
-            firstPageDuplicateTokensByHash[updatedContentHash] = DuplicateDetector.normalizedTokenSet(for: cachedText.firstPageText)
+            duplicateTermFrequenciesByHash.removeValue(forKey: previousContentHash)
+            duplicateTermFrequenciesByHash[updatedContentHash] = DuplicateDetector.normalizedTermFrequencies(for: cachedText.text)
+            firstPageDuplicateTermFrequenciesByHash.removeValue(forKey: previousContentHash)
+            firstPageDuplicateTermFrequenciesByHash[updatedContentHash] = DuplicateDetector.normalizedTermFrequencies(for: cachedText.firstPageText)
         }
 
         if let cachedStructuredData = await structuredDataStore.cachedData(forContentHash: previousContentHash) {

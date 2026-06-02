@@ -115,20 +115,25 @@ struct Document: Identifiable, Equatable, Sendable {
     }
 
     func bestSimilarity(
-        to candidateTokens: Set<String>,
-        tokensByArtifactID: [PhysicalArtifact.ID: Set<String>],
+        to candidateTerms: [String: Int],
+        termFrequenciesByArtifactID: [PhysicalArtifact.ID: [String: Int]],
+        documentFrequencies: [String: Int],
+        documentCount: Int,
         threshold: Double
     ) -> DuplicateSimilarity? {
         let scoredArtifacts = artifacts.compactMap { artifact -> (DocumentArtifactReference, Double)? in
-            guard let artifactTokens = tokensByArtifactID[artifact.id] else { return nil }
-            return (artifact, DuplicateDetector.jaccardSimilarity(candidateTokens, artifactTokens))
+            guard let artifactTerms = termFrequenciesByArtifactID[artifact.id] else { return nil }
+            let score = DuplicateDetector.cosineSimilarity(
+                lhs: candidateTerms, rhs: artifactTerms,
+                documentFrequencies: documentFrequencies, documentCount: documentCount
+            )
+            return (artifact, score)
         }
 
         guard let bestMatch = scoredArtifacts.max(by: { lhs, rhs in
             if lhs.1 != rhs.1 {
                 return lhs.1 < rhs.1
             }
-
             return lhs.0.id > rhs.0.id
         }) else {
             return nil
@@ -141,8 +146,22 @@ struct Document: Identifiable, Equatable, Sendable {
             matchedLocation: bestMatch.0.location,
             artifactCount: artifacts.count,
             score: bestMatch.1,
-            meetsThreshold: DuplicateDetector.meetsRoundedThreshold(bestMatch.1, threshold: threshold)
+            meetsThreshold: bestMatch.1 >= threshold
         )
+    }
+
+    func matchKind(forArtifactID artifactID: PhysicalArtifact.ID) -> DuplicateMatchKind? {
+        guard isDuplicate else { return nil }
+        guard let artifact = self.artifact(for: artifactID),
+              let reference = referenceArtifact(for: artifactID) else {
+            return nil
+        }
+        if let hash = artifact.contentHash,
+           let refHash = reference.contentHash,
+           hash == refHash {
+            return .identicalFile
+        }
+        return .sameDocument
     }
 
     func isSoftBlocked(artifactID: PhysicalArtifact.ID) -> Bool {
@@ -175,28 +194,43 @@ struct Document: Identifiable, Equatable, Sendable {
 
         return DuplicateInfo(
             duplicateOfPath: referenceArtifact.fileURL.path,
-            reason: duplicateReason(for: referenceArtifact)
+            reason: duplicateReason(for: referenceArtifact, artifactID: artifactID)
         )
     }
 
     func badgeTitle(forArtifactID artifactID: PhysicalArtifact.ID) -> String? {
         guard isSoftBlocked(artifactID: artifactID) else { return nil }
 
-        if hasProcessedMember || hasInProgressMember {
-            return "Duplicate Processed"
+        switch matchKind(forArtifactID: artifactID) {
+        case .identicalFile:
+            return "Identical Copy"
+        case .sameDocument, nil:
+            if hasProcessedMember || hasInProgressMember {
+                return "Duplicate Processed"
+            }
+            return "Duplicate"
         }
-
-        return "Duplicate"
     }
 
-    private func duplicateReason(for referenceArtifact: DocumentArtifactReference) -> String {
-        switch referenceArtifact.location {
-        case .processed:
-            return "Similar extracted text matches processed file \(referenceArtifact.fileURL.lastPathComponent)"
-        case .processing:
-            return "Similar extracted text matches in-progress file \(referenceArtifact.fileURL.lastPathComponent)"
-        case .inbox:
-            return "Similar extracted text matches \(referenceArtifact.fileURL.lastPathComponent)"
+    private func duplicateReason(
+        for referenceArtifact: DocumentArtifactReference,
+        artifactID: PhysicalArtifact.ID
+    ) -> String {
+        let fileName = referenceArtifact.fileURL.lastPathComponent
+        let kind = matchKind(forArtifactID: artifactID)
+
+        switch kind {
+        case .identicalFile:
+            return "Identical copy of \(fileName)"
+        case .sameDocument, nil:
+            switch referenceArtifact.location {
+            case .processed:
+                return "Similar extracted text matches processed file \(fileName)"
+            case .processing:
+                return "Similar extracted text matches in-progress file \(fileName)"
+            case .inbox:
+                return "Similar extracted text matches \(fileName)"
+            }
         }
     }
 }

@@ -1,34 +1,28 @@
 import Foundation
 
 enum DuplicateDetector {
-    private static let similarityThreshold = 0.9
-    private static let structuredMatchSimilarityThreshold = 0.8
+    static let textSimilarityThreshold: Double = 0.85
 
-    static var duplicateSimilarityThreshold: Double {
-        similarityThreshold
-    }
+    // MARK: - Convenience entry points (ScannedInvoiceFile)
 
-    static var structuredBackedDuplicateSimilarityThreshold: Double {
-        structuredMatchSimilarityThreshold
-    }
-
-    static func extractedTextDuplicateGroups(
+    static func duplicateGroups(
         for files: [ScannedInvoiceFile],
         textRecordsByContentHash: [String: InvoiceTextRecord]
     ) -> [ArtifactDuplicateCluster] {
-        extractedTextDuplicateGroups(
+        duplicateGroups(
             for: files,
-            tokenSetsByContentHash: normalizedTokenSets(from: textRecordsByContentHash),
-            firstPageTokenSetsByContentHash: normalizedFirstPageTokenSets(from: textRecordsByContentHash)
+            termFrequenciesByContentHash: termFrequenciesFromRecords(textRecordsByContentHash),
+            firstPageTermFrequenciesByContentHash: firstPageTermFrequenciesFromRecords(textRecordsByContentHash)
         )
     }
 
-    static func extractedTextDuplicateGroups(
+    static func duplicateGroups(
         for files: [ScannedInvoiceFile],
-        tokenSetsByContentHash: [String: Set<String>],
-        firstPageTokenSetsByContentHash: [String: Set<String>] = [:]
+        termFrequenciesByContentHash: [String: [String: Int]],
+        firstPageTermFrequenciesByContentHash: [String: [String: Int]] = [:],
+        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord] = [:]
     ) -> [ArtifactDuplicateCluster] {
-        duplicateClusters(
+        buildClusters(
             candidates: files.map {
                 DuplicateCandidate(
                     id: $0.id,
@@ -39,52 +33,32 @@ enum DuplicateDetector {
                     contentHash: $0.contentHash
                 )
             },
-            tokenSetsByContentHash: tokenSetsByContentHash,
-            firstPageTokenSetsByContentHash: firstPageTokenSetsByContentHash,
-            structuredSignaturesByContentHash: [:]
+            termFrequenciesByContentHash: termFrequenciesByContentHash,
+            firstPageTermFrequenciesByContentHash: firstPageTermFrequenciesByContentHash,
+            structuredRecordsByContentHash: structuredRecordsByContentHash
         )
     }
 
-    static func extractedTextDuplicateGroups(
-        for files: [ScannedInvoiceFile],
-        tokenSetsByContentHash: [String: Set<String>],
-        firstPageTokenSetsByContentHash: [String: Set<String>] = [:],
-        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord]
-    ) -> [ArtifactDuplicateCluster] {
-        duplicateClusters(
-            candidates: files.map {
-                DuplicateCandidate(
-                    id: $0.id,
-                    fileURL: $0.fileURL,
-                    location: $0.location,
-                    addedAt: $0.addedAt,
-                    fileType: $0.fileType,
-                    contentHash: $0.contentHash
-                )
-            },
-            tokenSetsByContentHash: tokenSetsByContentHash,
-            firstPageTokenSetsByContentHash: firstPageTokenSetsByContentHash,
-            structuredSignaturesByContentHash: structuredDuplicateSignatures(from: structuredRecordsByContentHash)
-        )
-    }
+    // MARK: - Convenience entry points (PhysicalArtifact)
 
-    static func extractedTextDuplicateGroups(
+    static func duplicateGroups(
         for invoices: [PhysicalArtifact],
         textRecordsByContentHash: [String: InvoiceTextRecord]
     ) -> [ArtifactDuplicateCluster] {
-        extractedTextDuplicateGroups(
+        duplicateGroups(
             for: invoices,
-            tokenSetsByContentHash: normalizedTokenSets(from: textRecordsByContentHash),
-            firstPageTokenSetsByContentHash: normalizedFirstPageTokenSets(from: textRecordsByContentHash)
+            termFrequenciesByContentHash: termFrequenciesFromRecords(textRecordsByContentHash),
+            firstPageTermFrequenciesByContentHash: firstPageTermFrequenciesFromRecords(textRecordsByContentHash)
         )
     }
 
-    static func extractedTextDuplicateGroups(
+    static func duplicateGroups(
         for invoices: [PhysicalArtifact],
-        tokenSetsByContentHash: [String: Set<String>],
-        firstPageTokenSetsByContentHash: [String: Set<String>] = [:]
+        termFrequenciesByContentHash: [String: [String: Int]],
+        firstPageTermFrequenciesByContentHash: [String: [String: Int]] = [:],
+        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord] = [:]
     ) -> [ArtifactDuplicateCluster] {
-        duplicateClusters(
+        buildClusters(
             candidates: invoices.map {
                 DuplicateCandidate(
                     id: $0.id,
@@ -95,149 +69,15 @@ enum DuplicateDetector {
                     contentHash: $0.contentHash
                 )
             },
-            tokenSetsByContentHash: tokenSetsByContentHash,
-            firstPageTokenSetsByContentHash: firstPageTokenSetsByContentHash,
-            structuredSignaturesByContentHash: [:]
+            termFrequenciesByContentHash: termFrequenciesByContentHash,
+            firstPageTermFrequenciesByContentHash: firstPageTermFrequenciesByContentHash,
+            structuredRecordsByContentHash: structuredRecordsByContentHash
         )
     }
 
-    static func extractedTextDuplicateGroups(
-        for invoices: [PhysicalArtifact],
-        tokenSetsByContentHash: [String: Set<String>],
-        firstPageTokenSetsByContentHash: [String: Set<String>] = [:],
-        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord]
-    ) -> [ArtifactDuplicateCluster] {
-        duplicateClusters(
-            candidates: invoices.map {
-                DuplicateCandidate(
-                    id: $0.id,
-                    fileURL: $0.fileURL,
-                    location: $0.location,
-                    addedAt: $0.addedAt,
-                    fileType: $0.fileType,
-                    contentHash: $0.contentHash
-                )
-            },
-            tokenSetsByContentHash: tokenSetsByContentHash,
-            firstPageTokenSetsByContentHash: firstPageTokenSetsByContentHash,
-            structuredSignaturesByContentHash: structuredDuplicateSignatures(from: structuredRecordsByContentHash)
-        )
-    }
+    // MARK: - Text Processing
 
-    private static func duplicateClusters(
-        candidates: [DuplicateCandidate],
-        tokenSetsByContentHash: [String: Set<String>],
-        firstPageTokenSetsByContentHash: [String: Set<String>],
-        structuredSignaturesByContentHash: [String: StructuredDuplicateSignature]
-    ) -> [ArtifactDuplicateCluster] {
-        let candidatesWithTokens = candidates.compactMap { candidate -> CandidateTextSignature? in
-            guard let contentHash = candidate.contentHash,
-                  let tokens = tokenSetsByContentHash[contentHash],
-                  !tokens.isEmpty else {
-                return nil
-            }
-            return CandidateTextSignature(
-                candidate: candidate,
-                tokens: tokens,
-                firstPageTokens: firstPageTokenSetsByContentHash[contentHash],
-                structuredSignature: structuredSignaturesByContentHash[contentHash]
-            )
-        }
-
-        return buildSimilarityGroups(from: candidatesWithTokens)
-            .filter { $0.count > 1 }
-            .map { group in
-                ArtifactDuplicateCluster(
-                    artifactIDs: group.map(\.candidate.id)
-                )
-            }
-    }
-
-    private static func buildSimilarityGroups(from candidates: [CandidateTextSignature]) -> [[CandidateTextSignature]] {
-        let sortedCandidates = candidates.sorted { duplicatePriority(lhs: $0.candidate, rhs: $1.candidate) }
-        var groups: [[CandidateTextSignature]] = []
-
-        for candidate in sortedCandidates {
-            if let matchIndex = bestMatchingGroupIndex(for: candidate, in: groups) {
-                groups[matchIndex].append(candidate)
-            } else {
-                groups.append([candidate])
-            }
-        }
-
-        return groups
-    }
-
-    static func normalizedTokenSets(from textRecordsByContentHash: [String: InvoiceTextRecord]) -> [String: Set<String>] {
-        Dictionary(
-            uniqueKeysWithValues: textRecordsByContentHash.compactMap { contentHash, record in
-                guard let tokens = normalizedTokenSet(for: record.text), !tokens.isEmpty else {
-                    return nil
-                }
-
-                return (contentHash, tokens)
-            }
-        )
-    }
-
-    static func normalizedFirstPageTokenSets(from textRecordsByContentHash: [String: InvoiceTextRecord]) -> [String: Set<String>] {
-        Dictionary(
-            uniqueKeysWithValues: textRecordsByContentHash.compactMap { contentHash, record in
-                guard let tokens = normalizedTokenSet(for: record.firstPageText), !tokens.isEmpty else {
-                    return nil
-                }
-
-                return (contentHash, tokens)
-            }
-        )
-    }
-
-    private static func bestMatchingGroupIndex(
-        for candidate: CandidateTextSignature,
-        in groups: [[CandidateTextSignature]]
-    ) -> Int? {
-        var bestIndex: Int?
-        var bestScore = 0.0
-
-        for (index, group) in groups.enumerated() {
-            if group.contains(where: { hasConflictingStructuredIdentity(candidate, $0) }) {
-                continue
-            }
-
-            let groupBestScore = group.reduce(0.0) { currentBest, member in
-                let hasStructuredMatch = candidate.structuredSignature != nil &&
-                    candidate.structuredSignature == member.structuredSignature
-                let score = jaccardSimilarity(candidate.tokens, member.tokens)
-
-                if meetsRoundedThreshold(score, threshold: similarityThreshold) ||
-                    (hasStructuredMatch && meetsRoundedThreshold(score, threshold: structuredMatchSimilarityThreshold)) {
-                    return max(currentBest, score)
-                }
-
-                if hasStructuredMatch,
-                   let candidateFirstPageTokens = candidate.firstPageTokens,
-                   let memberFirstPageTokens = member.firstPageTokens {
-                    let firstPageScore = jaccardSimilarity(candidateFirstPageTokens, memberFirstPageTokens)
-                    if meetsRoundedThreshold(firstPageScore, threshold: similarityThreshold) {
-                        return max(currentBest, firstPageScore)
-                    }
-                }
-
-                return currentBest
-            }
-
-            guard groupBestScore > 0 else { continue }
-
-            if groupBestScore > bestScore {
-                bestScore = groupBestScore
-                bestIndex = index
-            }
-        }
-
-        return bestIndex
-    }
-
-    static func normalizedTokenSet(for text: String?) -> Set<String>? {
+    static func normalizedTermFrequencies(for text: String?) -> [String: Int]? {
         guard let normalizedText = DocumentTextExtractor.normalizeText(text) else { return nil }
 
         let lowercased = normalizedText.lowercased()
@@ -246,136 +86,307 @@ enum DuplicateDetector {
             with: " ",
             options: .regularExpression
         )
-        let tokens = Set(cleaned.split(whereSeparator: \.isWhitespace).map(String.init))
-        return tokens.isEmpty ? nil : tokens
+        var frequencies: [String: Int] = [:]
+        for token in cleaned.split(whereSeparator: \.isWhitespace) {
+            frequencies[String(token), default: 0] += 1
+        }
+        return frequencies.isEmpty ? nil : frequencies
     }
 
-    static func jaccardSimilarity(_ lhs: Set<String>, _ rhs: Set<String>) -> Double {
-        let union = lhs.union(rhs)
-        guard !union.isEmpty else { return 1.0 }
-        let intersection = lhs.intersection(rhs)
-        return Double(intersection.count) / Double(union.count)
+    static func termFrequenciesFromRecords(
+        _ textRecordsByContentHash: [String: InvoiceTextRecord]
+    ) -> [String: [String: Int]] {
+        Dictionary(
+            uniqueKeysWithValues: textRecordsByContentHash.compactMap { contentHash, record in
+                guard let freqs = normalizedTermFrequencies(for: record.text), !freqs.isEmpty else {
+                    return nil
+                }
+                return (contentHash, freqs)
+            }
+        )
     }
 
-    static func meetsRoundedThreshold(_ score: Double, threshold: Double) -> Bool {
-        roundedPercent(score) >= roundedPercent(threshold)
+    static func firstPageTermFrequenciesFromRecords(
+        _ textRecordsByContentHash: [String: InvoiceTextRecord]
+    ) -> [String: [String: Int]] {
+        Dictionary(
+            uniqueKeysWithValues: textRecordsByContentHash.compactMap { contentHash, record in
+                guard let freqs = normalizedTermFrequencies(for: record.firstPageText), !freqs.isEmpty else {
+                    return nil
+                }
+                return (contentHash, freqs)
+            }
+        )
     }
 
-    private static func roundedPercent(_ value: Double) -> Int {
-        Int((value * 100).rounded())
+    // MARK: - TF-IDF Cosine Similarity
+
+    static func computeDocumentFrequencies(
+        from allTermFrequencies: [[String: Int]]
+    ) -> (frequencies: [String: Int], documentCount: Int) {
+        var df: [String: Int] = [:]
+        for docFreqs in allTermFrequencies {
+            for term in docFreqs.keys {
+                df[term, default: 0] += 1
+            }
+        }
+        return (df, allTermFrequencies.count)
     }
 
-    /// Two candidates that both carry structured signatures but disagree on an intrinsic
-    /// identifier (invoice number or invoice date) describe distinct documents. These
-    /// extracted fields are far more reliable discriminators than near-boundary text
-    /// similarity, so a conflict vetoes grouping regardless of how close the Jaccard
-    /// score lands to the threshold. The veto only applies when both sides have a
-    /// structured signature, so files that have not yet been extracted are unaffected.
-    private static func hasConflictingStructuredIdentity(
-        _ lhs: CandidateTextSignature,
-        _ rhs: CandidateTextSignature
-    ) -> Bool {
-        guard let lhsSignature = lhs.structuredSignature,
-              let rhsSignature = rhs.structuredSignature else {
-            return false
+    static func cosineSimilarity(
+        lhs: [String: Int],
+        rhs: [String: Int],
+        documentFrequencies: [String: Int],
+        documentCount: Int
+    ) -> Double {
+        guard !lhs.isEmpty, !rhs.isEmpty else { return 0.0 }
+
+        func idf(for term: String) -> Double {
+            let df = Double(documentFrequencies[term] ?? 0)
+            let n = Double(documentCount)
+            return log((n + 1.0) / (df + 1.0)) + 1.0
         }
 
-        // A document's invoice date is intrinsic: the same document always carries the
-        // same date, so different dates mean different documents. This is the only
-        // identity signal available for receipts, which lack invoice numbers.
-        if lhsSignature.invoiceDate != rhsSignature.invoiceDate {
-            return true
+        let allTerms = Set(lhs.keys).union(rhs.keys)
+        var dotProduct = 0.0
+        var lhsMagnitudeSq = 0.0
+        var rhsMagnitudeSq = 0.0
+
+        for term in allTerms {
+            let w = idf(for: term)
+            let lhsWeight = Double(lhs[term] ?? 0) * w
+            let rhsWeight = Double(rhs[term] ?? 0) * w
+            dotProduct += lhsWeight * rhsWeight
+            lhsMagnitudeSq += lhsWeight * lhsWeight
+            rhsMagnitudeSq += rhsWeight * rhsWeight
         }
 
-        if let lhsNumber = lhsSignature.invoiceNumber,
-           let rhsNumber = rhsSignature.invoiceNumber,
-           normalizedInvoiceNumber(lhsNumber) != normalizedInvoiceNumber(rhsNumber) {
-            return true
-        }
-
-        return false
+        let magnitude = (lhsMagnitudeSq * rhsMagnitudeSq).squareRoot()
+        guard magnitude > 0 else { return 0.0 }
+        return dotProduct / magnitude
     }
 
-    /// Human-readable explanation of why two extracted records would be vetoed from
-    /// grouping, or `nil` when no structured conflict applies. Mirrors
-    /// `hasConflictingStructuredIdentity` so the debug surface matches real behavior.
+    // MARK: - Veto / Debug
+
     static func structuredVetoReason(
         between lhs: InvoiceStructuredDataRecord?,
         and rhs: InvoiceStructuredDataRecord?
     ) -> String? {
-        guard let lhs,
-              let rhs,
-              let lhsSignature = StructuredDuplicateSignature(record: lhs),
-              let rhsSignature = StructuredDuplicateSignature(record: rhs) else {
+        guard let lhs, let rhs,
+              let lhsIdentity = DocumentIdentity(record: lhs),
+              let rhsIdentity = DocumentIdentity(record: rhs) else {
             return nil
         }
+        return lhsIdentity.conflictReason(with: rhsIdentity)
+    }
 
-        if lhsSignature.invoiceDate != rhsSignature.invoiceDate {
-            return "Vetoed: invoice dates differ (\(vetoDateString(lhsSignature.invoiceDate)) vs \(vetoDateString(rhsSignature.invoiceDate)))"
+    static func structuredPendingReason(
+        lhsRecord: InvoiceStructuredDataRecord?,
+        rhsRecord: InvoiceStructuredDataRecord?
+    ) -> String? {
+        let lhsHas = lhsRecord != nil
+        let rhsHas = rhsRecord != nil
+        if lhsHas != rhsHas {
+            return "Structured comparison pending (one file not yet extracted)"
         }
-
-        if let lhsNumber = lhsSignature.invoiceNumber,
-           let rhsNumber = rhsSignature.invoiceNumber,
-           normalizedInvoiceNumber(lhsNumber) != normalizedInvoiceNumber(rhsNumber) {
-            return "Vetoed: invoice numbers differ (\(lhsNumber) vs \(rhsNumber))"
-        }
-
         return nil
     }
 
-    private static func vetoDateString(_ date: Date) -> String {
-        let components = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: date)
-        guard let year = components.year,
-              let month = components.month,
-              let day = components.day else {
-            return "unknown"
-        }
+    // MARK: - Constrained Union-Find Clustering
 
-        return String(format: "%04d-%02d-%02d", year, month, day)
-    }
-
-    private static func normalizedInvoiceNumber(_ value: String) -> String {
-        value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-    }
-
-    private static func structuredDuplicateSignatures(
-        from recordsByContentHash: [String: InvoiceStructuredDataRecord]
-    ) -> [String: StructuredDuplicateSignature] {
-        Dictionary(
-            uniqueKeysWithValues: recordsByContentHash.compactMap { contentHash, record in
-                guard let signature = StructuredDuplicateSignature(record: record) else {
-                    return nil
-                }
-
-                return (contentHash, signature)
+    private static func buildClusters(
+        candidates: [DuplicateCandidate],
+        termFrequenciesByContentHash: [String: [String: Int]],
+        firstPageTermFrequenciesByContentHash: [String: [String: Int]],
+        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord]
+    ) -> [ArtifactDuplicateCluster] {
+        let identitiesByContentHash: [String: DocumentIdentity] = Dictionary(
+            uniqueKeysWithValues: structuredRecordsByContentHash.compactMap { hash, record in
+                guard let identity = DocumentIdentity(record: record) else { return nil }
+                return (hash, identity)
             }
         )
+
+        struct EnrichedCandidate {
+            let candidate: DuplicateCandidate
+            let termFrequencies: [String: Int]?
+            let firstPageTermFrequencies: [String: Int]?
+            let identity: DocumentIdentity?
+        }
+
+        let enriched = candidates.map { c in
+            let hash = c.contentHash
+            return EnrichedCandidate(
+                candidate: c,
+                termFrequencies: hash.flatMap { termFrequenciesByContentHash[$0] },
+                firstPageTermFrequencies: hash.flatMap { firstPageTermFrequenciesByContentHash[$0] },
+                identity: hash.flatMap { identitiesByContentHash[$0] }
+            )
+        }
+
+        let uf = UnionFind()
+        for e in enriched { uf.makeSet(e.candidate.id) }
+
+        var identitiesByRoot: [String: [DocumentIdentity]] = [:]
+        for e in enriched {
+            if let identity = e.identity {
+                identitiesByRoot[e.candidate.id, default: []].append(identity)
+            }
+        }
+
+        func canMerge(_ a: String, _ b: String) -> Bool {
+            let rootA = uf.find(a)
+            let rootB = uf.find(b)
+            guard rootA != rootB else { return true }
+            let idsA = identitiesByRoot[rootA] ?? []
+            let idsB = identitiesByRoot[rootB] ?? []
+            for idA in idsA {
+                for idB in idsB {
+                    if idA.conflicts(with: idB) { return false }
+                }
+            }
+            return true
+        }
+
+        func doUnion(_ a: String, _ b: String) {
+            let rootA = uf.find(a)
+            let rootB = uf.find(b)
+            guard rootA != rootB else { return }
+            let idsA = identitiesByRoot.removeValue(forKey: rootA) ?? []
+            let idsB = identitiesByRoot.removeValue(forKey: rootB) ?? []
+            uf.union(a, b)
+            let newRoot = uf.find(a)
+            identitiesByRoot[newRoot] = idsA + idsB
+        }
+
+        // Step 1: Union identical files (same contentHash)
+        var byHash: [String: [EnrichedCandidate]] = [:]
+        for e in enriched {
+            guard let hash = e.candidate.contentHash else { continue }
+            byHash[hash, default: []].append(e)
+        }
+        for (_, group) in byHash where group.count > 1 {
+            let firstID = group[0].candidate.id
+            for e in group.dropFirst() {
+                doUnion(firstID, e.candidate.id)
+            }
+        }
+
+        // Step 2: Union structurally-matched pairs (isPositiveMatch)
+        let withIdentity = enriched.filter { $0.identity != nil }
+        for i in withIdentity.indices {
+            for j in (i + 1)..<withIdentity.count {
+                if withIdentity[i].identity!.isPositiveMatch(withIdentity[j].identity!) {
+                    if canMerge(withIdentity[i].candidate.id, withIdentity[j].candidate.id) {
+                        doUnion(withIdentity[i].candidate.id, withIdentity[j].candidate.id)
+                    }
+                }
+            }
+        }
+
+        // Step 3: Compute text similarity and union above threshold (respecting conflicts)
+        let withText = enriched.filter { $0.termFrequencies != nil }
+        guard withText.count >= 2 else {
+            return clustersFromUnionFind(uf, candidates: enriched.map(\.candidate))
+        }
+
+        let allDocFreqs = withText.compactMap(\.termFrequencies)
+        let (documentFrequencies, documentCount) = computeDocumentFrequencies(from: allDocFreqs)
+
+        let firstPageFreqs = withText.compactMap(\.firstPageTermFrequencies)
+        let fpDF: [String: Int]
+        let fpDC: Int
+        if !firstPageFreqs.isEmpty {
+            let result = computeDocumentFrequencies(from: firstPageFreqs)
+            fpDF = result.frequencies
+            fpDC = result.documentCount
+        } else {
+            fpDF = [:]
+            fpDC = 0
+        }
+
+        struct ScoredEdge: Comparable {
+            let i: Int
+            let j: Int
+            let score: Double
+            static func < (lhs: ScoredEdge, rhs: ScoredEdge) -> Bool { lhs.score > rhs.score }
+        }
+
+        var edges: [ScoredEdge] = []
+        for i in withText.indices {
+            for j in (i + 1)..<withText.count {
+                let lhsTerms = withText[i].termFrequencies!
+                let rhsTerms = withText[j].termFrequencies!
+                var score = cosineSimilarity(
+                    lhs: lhsTerms, rhs: rhsTerms,
+                    documentFrequencies: documentFrequencies, documentCount: documentCount
+                )
+
+                // First-page fallback: if both have first-page data and have a matching
+                // identity, use the higher of whole-doc and first-page scores
+                if let lhsFP = withText[i].firstPageTermFrequencies,
+                   let rhsFP = withText[j].firstPageTermFrequencies,
+                   withText[i].identity != nil,
+                   withText[j].identity != nil,
+                   !withText[i].identity!.conflicts(with: withText[j].identity!) {
+                    let fpScore = cosineSimilarity(
+                        lhs: lhsFP, rhs: rhsFP,
+                        documentFrequencies: fpDF, documentCount: fpDC
+                    )
+                    score = max(score, fpScore)
+                }
+
+                if score >= textSimilarityThreshold {
+                    edges.append(ScoredEdge(i: i, j: j, score: score))
+                }
+            }
+        }
+        edges.sort()
+
+        for edge in edges {
+            let idA = withText[edge.i].candidate.id
+            let idB = withText[edge.j].candidate.id
+            if canMerge(idA, idB) {
+                doUnion(idA, idB)
+            }
+        }
+
+        return clustersFromUnionFind(uf, candidates: enriched.map(\.candidate))
+    }
+
+    private static func clustersFromUnionFind(
+        _ uf: UnionFind,
+        candidates: [DuplicateCandidate]
+    ) -> [ArtifactDuplicateCluster] {
+        var groups: [String: [DuplicateCandidate]] = [:]
+        for candidate in candidates {
+            let root = uf.find(candidate.id)
+            groups[root, default: []].append(candidate)
+        }
+
+        return groups.values
+            .filter { $0.count > 1 }
+            .map { group in
+                let sorted = group.sorted(by: duplicatePriority)
+                return ArtifactDuplicateCluster(artifactIDs: sorted.map(\.id))
+            }
     }
 
     private static func duplicatePriority(lhs: DuplicateCandidate, rhs: DuplicateCandidate) -> Bool {
         let lhsPriority = lhs.location == .processed ? 0 : 1
         let rhsPriority = rhs.location == .processed ? 0 : 1
-
-        if lhsPriority != rhsPriority {
-            return lhsPriority < rhsPriority
-        }
+        if lhsPriority != rhsPriority { return lhsPriority < rhsPriority }
 
         let lhsJPEGPriority = lhs.fileType == .jpeg ? 0 : 1
         let rhsJPEGPriority = rhs.fileType == .jpeg ? 0 : 1
+        if lhsJPEGPriority != rhsJPEGPriority { return lhsJPEGPriority < rhsJPEGPriority }
 
-        if lhsJPEGPriority != rhsJPEGPriority {
-            return lhsJPEGPriority < rhsJPEGPriority
-        }
-
-        if lhs.addedAt != rhs.addedAt {
-            return lhs.addedAt < rhs.addedAt
-        }
-
+        if lhs.addedAt != rhs.addedAt { return lhs.addedAt < rhs.addedAt }
         return lhs.id < rhs.id
     }
 }
+
+// MARK: - Internal Types
 
 private struct DuplicateCandidate: Sendable {
     let id: String
@@ -386,46 +397,38 @@ private struct DuplicateCandidate: Sendable {
     let contentHash: String?
 }
 
-private struct CandidateTextSignature: Sendable {
-    let candidate: DuplicateCandidate
-    let tokens: Set<String>
-    let firstPageTokens: Set<String>?
-    let structuredSignature: StructuredDuplicateSignature?
-}
+private final class UnionFind {
+    private var parent: [String: String] = [:]
+    private var rank: [String: Int] = [:]
 
-private struct StructuredDuplicateSignature: Equatable, Sendable {
-    let vendor: String
-    let invoiceDate: Date
-    let documentType: DocumentType
-    let invoiceNumber: String?
-
-    init?(record: InvoiceStructuredDataRecord) {
-        guard let vendor = Self.normalizedField(record.companyName),
-              let invoiceDate = record.invoiceDate,
-              let documentType = record.documentType else {
-            return nil
-        }
-
-        let invoiceNumber = Self.normalizedField(record.invoiceNumber)
-        switch documentType {
-        case .invoice:
-            guard invoiceNumber != nil else { return nil }
-        case .receipt:
-            break
-        }
-
-        self.vendor = vendor
-        self.invoiceDate = invoiceDate
-        self.documentType = documentType
-        self.invoiceNumber = invoiceNumber
+    func makeSet(_ x: String) {
+        guard parent[x] == nil else { return }
+        parent[x] = x
+        rank[x] = 0
     }
 
-    private static func normalizedField(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else {
-            return nil
+    func find(_ x: String) -> String {
+        guard let p = parent[x] else { return x }
+        if p != x {
+            parent[x] = find(p)
         }
+        return parent[x]!
+    }
 
-        return trimmed
+    func union(_ x: String, _ y: String) {
+        let rootX = find(x)
+        let rootY = find(y)
+        guard rootX != rootY else { return }
+
+        let rankX = rank[rootX] ?? 0
+        let rankY = rank[rootY] ?? 0
+        if rankX < rankY {
+            parent[rootX] = rootY
+        } else if rankX > rankY {
+            parent[rootY] = rootX
+        } else {
+            parent[rootY] = rootX
+            rank[rootX] = rankX + 1
+        }
     }
 }

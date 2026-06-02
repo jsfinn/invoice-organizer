@@ -6,7 +6,7 @@ struct LibrarySnapshot {
     let documentsByID: [Document.ID: Document]
     let documentsByArtifactID: [PhysicalArtifact.ID: Document]
     let documentMetadataByArtifactID: [PhysicalArtifact.ID: DocumentMetadata]
-    let duplicateTokenSetsByArtifactID: [PhysicalArtifact.ID: Set<String>]
+    let duplicateTermFrequenciesByArtifactID: [PhysicalArtifact.ID: [String: Int]]
     let possibleSameInvoiceMatchesByArtifactID: [PhysicalArtifact.ID: [PossibleSameInvoiceMatch]]
 
     static let empty = LibrarySnapshot(
@@ -15,7 +15,7 @@ struct LibrarySnapshot {
         documentsByID: [:],
         documentsByArtifactID: [:],
         documentMetadataByArtifactID: [:],
-        duplicateTokenSetsByArtifactID: [:],
+        duplicateTermFrequenciesByArtifactID: [:],
         possibleSameInvoiceMatchesByArtifactID: [:]
     )
 
@@ -35,8 +35,8 @@ struct LibrarySnapshotBuilder {
         from artifacts: [PhysicalArtifact],
         workflowsByArtifactID: [PhysicalArtifact.ID: StoredInvoiceWorkflow],
         documentMetadataHintsByArtifactID: [PhysicalArtifact.ID: DocumentMetadata],
-        duplicateTokensByHash: [String: Set<String>],
-        duplicateFirstPageTokensByHash: [String: Set<String>]
+        duplicateTermFrequenciesByHash: [String: [String: Int]],
+        duplicateFirstPageTermFrequenciesByHash: [String: [String: Int]]
     ) -> LibrarySnapshot {
         let structuredRecordsByHash: [String: InvoiceStructuredDataRecord] = artifacts.reduce(into: [:]) { recordsByHash, artifact in
             guard let contentHash = artifact.contentHash,
@@ -47,10 +47,10 @@ struct LibrarySnapshotBuilder {
 
             recordsByHash[contentHash] = record
         }
-        let duplicateClusters = DuplicateDetector.extractedTextDuplicateGroups(
+        let duplicateClusters = DuplicateDetector.duplicateGroups(
             for: artifacts,
-            tokenSetsByContentHash: duplicateTokensByHash,
-            firstPageTokenSetsByContentHash: duplicateFirstPageTokensByHash,
+            termFrequenciesByContentHash: duplicateTermFrequenciesByHash,
+            firstPageTermFrequenciesByContentHash: duplicateFirstPageTermFrequenciesByHash,
             structuredRecordsByContentHash: structuredRecordsByHash
         )
         let documents = buildDocuments(
@@ -86,14 +86,13 @@ struct LibrarySnapshotBuilder {
             }
         }
 
-        let duplicateTokenSetsByArtifactID: [PhysicalArtifact.ID: Set<String>] = Dictionary(
+        let duplicateTermFrequenciesByArtifactID: [PhysicalArtifact.ID: [String: Int]] = Dictionary(
             uniqueKeysWithValues: projectedArtifacts.compactMap { artifact in
                 guard let contentHash = artifact.contentHash,
-                      let tokens = duplicateTokensByHash[contentHash] else {
+                      let freqs = duplicateTermFrequenciesByHash[contentHash] else {
                     return nil
                 }
-
-                return (artifact.id, tokens)
+                return (artifact.id, freqs)
             }
         )
 
@@ -103,7 +102,7 @@ struct LibrarySnapshotBuilder {
             documentsByID: documentsByID,
             documentsByArtifactID: documentsByArtifactID,
             documentMetadataByArtifactID: metadataByArtifactID,
-            duplicateTokenSetsByArtifactID: duplicateTokenSetsByArtifactID,
+            duplicateTermFrequenciesByArtifactID: duplicateTermFrequenciesByArtifactID,
             possibleSameInvoiceMatchesByArtifactID: possibleSameInvoiceMatchesByArtifactID
         )
     }
@@ -288,13 +287,13 @@ struct LibrarySnapshotBuilder {
     private func buildPossibleSameInvoiceMatches(
         from documents: [Document]
     ) -> [PhysicalArtifact.ID: [PossibleSameInvoiceMatch]] {
-        let candidateDocuments = documents.compactMap { document -> (Document, DocumentMetadata, SameInvoiceSignature)? in
+        let candidateDocuments = documents.compactMap { document -> (Document, DocumentMetadata, SameInvoiceKey)? in
             let effectiveMetadata = sameInvoiceMetadata(for: document)
-            guard let signature = SameInvoiceSignature(metadata: effectiveMetadata) else {
+            guard let identity = DocumentIdentity(metadata: effectiveMetadata),
+                  let key = identity.sameInvoiceKey else {
                 return nil
             }
-
-            return (document, effectiveMetadata, signature)
+            return (document, effectiveMetadata, key)
         }
         let documentsBySignature = Dictionary(grouping: candidateDocuments, by: \.2)
 
@@ -375,43 +374,6 @@ private func possibleSameInvoiceLocationPriority(_ location: InvoiceLocation) ->
     case .inbox:
         return 2
     }
-}
-
-private struct SameInvoiceSignature: Hashable {
-    let vendor: String
-    let invoiceDate: Date
-    let documentType: DocumentType
-    let invoiceNumber: String?
-
-    init?(metadata: DocumentMetadata) {
-        guard let vendor = normalizedField(metadata.vendor),
-              let invoiceDate = metadata.invoiceDate,
-              let documentType = metadata.documentType else {
-            return nil
-        }
-
-        let invoiceNumber = normalizedField(metadata.invoiceNumber)
-        switch documentType {
-        case .invoice:
-            guard invoiceNumber != nil else { return nil }
-        case .receipt:
-            break
-        }
-
-        self.vendor = vendor
-        self.invoiceDate = invoiceDate
-        self.documentType = documentType
-        self.invoiceNumber = invoiceNumber
-    }
-}
-
-private func normalizedField(_ value: String?) -> String? {
-    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !trimmed.isEmpty else {
-        return nil
-    }
-
-    return trimmed
 }
 
 private extension PhysicalArtifact {

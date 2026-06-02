@@ -6,7 +6,7 @@ struct MetadataCard: View {
     @AppStorage(AppStorageKey.debugMode) private var debugMode = false
     @State private var isPossibleSameInvoiceExpanded = true
     @State private var isOCRInformationExpanded = false
-    @State private var isDedupScoresExpanded = false
+    @State private var isDedupSummaryExpanded = false
 
     private var document: Document? {
         model.document(for: invoice.id)
@@ -14,6 +14,10 @@ struct MetadataCard: View {
 
     private var documentMetadata: DocumentMetadata {
         model.documentMetadata(for: invoice.id)
+    }
+
+    private var dedupSummary: DedupSummary {
+        model.dedupSummary(for: invoice.id)
     }
 
     private var duplicateSimilarities: [DuplicateSimilarity] {
@@ -141,50 +145,8 @@ struct MetadataCard: View {
             }
 
             if debugMode && invoice.location != .processed {
-                collapsibleSection("Dedup Scores", isExpanded: $isDedupScoresExpanded) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Threshold: \(model.duplicateSimilarityThreshold.formatted(.percent.precision(.fractionLength(0))))")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-
-                        if !model.extractedTextArtifactIDs.contains(invoice.id) {
-                            Text("Score unavailable until OCR/extracted text finishes.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        } else if duplicateSimilarities.isEmpty {
-                            Text("No comparable extracted-text matches found yet.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(duplicateSimilarities) { similarity in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack(alignment: .firstTextBaseline) {
-                                        Text(similarity.matchedFileURL.lastPathComponent)
-                                            .lineLimit(1)
-
-                                        Spacer()
-
-                                        Text(similarity.score.formatted(.percent.precision(.fractionLength(0))))
-                                            .foregroundStyle(similarity.meetsThreshold ? .primary : .secondary)
-                                    }
-
-                                    Text(similarity.artifactCount == 1
-                                         ? "Best match in 1-file document"
-                                         : "Best match in \(similarity.artifactCount)-file document")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-
-                                    if let vetoReason = similarity.vetoReason {
-                                        Text(vetoReason)
-                                            .font(.caption)
-                                            .foregroundStyle(.orange)
-                                    }
-                                }
-                                .font(.footnote)
-                            }
-                        }
-                    }
-                    .padding(.top, 6)
+                collapsibleSection("Dedup Summary", isExpanded: $isDedupSummaryExpanded) {
+                    dedupSummaryContent
                 }
             }
         }
@@ -253,6 +215,151 @@ struct MetadataCard: View {
         }
 
         return labels
+    }
+
+    @ViewBuilder
+    private var dedupSummaryContent: some View {
+        let summary = dedupSummary
+        VStack(alignment: .leading, spacing: 8) {
+            dedupGroupingRow(summary.groupingStatus)
+
+            if let desc = summary.identityDescription {
+                LabeledContent("Identity", value: desc)
+                    .font(.footnote)
+            } else {
+                LabeledContent("Identity", value: extractionStateLabel(summary.extractionState))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            LabeledContent("Text Threshold", value: model.duplicateSimilarityThreshold.formatted(.percent.precision(.fractionLength(0))))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            if summary.comparisons.isEmpty {
+                Text("No comparable documents found.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Divider()
+                Text("Comparisons")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                ForEach(summary.comparisons) { comparison in
+                    dedupComparisonRow(comparison)
+                }
+            }
+        }
+        .padding(.top, 6)
+    }
+
+    @ViewBuilder
+    private func dedupGroupingRow(_ status: DedupSummary.GroupingStatus) -> some View {
+        switch status {
+        case .singleton:
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle")
+                    .foregroundStyle(.green)
+                Text("Not grouped — unique document")
+            }
+            .font(.footnote)
+        case .identicalCopy(let ref):
+            HStack(spacing: 4) {
+                Image(systemName: "doc.on.doc.fill")
+                    .foregroundStyle(.orange)
+                Text("Identical copy of \(ref)")
+                    .lineLimit(2)
+            }
+            .font(.footnote)
+        case .duplicateGrouped(let ref, let reason):
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.triangle.merge")
+                        .foregroundStyle(.orange)
+                    Text("Grouped with \(ref)")
+                        .lineLimit(2)
+                }
+                Text(reason)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .font(.footnote)
+        }
+    }
+
+    @ViewBuilder
+    private func dedupComparisonRow(_ comparison: DedupComparison) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(comparison.fileName)
+                    .lineLimit(1)
+                Spacer()
+                Text(comparison.location.rawValue)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                if let score = comparison.textScore {
+                    Text("Text: \(score.formatted(.percent.precision(.fractionLength(0))))")
+                        .foregroundStyle(score >= model.duplicateSimilarityThreshold ? .primary : .secondary)
+                }
+                if let relation = comparison.identityRelation {
+                    Text(identityRelationLabel(relation))
+                        .foregroundStyle(identityRelationColor(relation))
+                }
+            }
+            .font(.caption)
+
+            Text(decisionLabel(comparison.decision))
+                .font(.caption)
+                .foregroundStyle(decisionColor(comparison.decision))
+        }
+        .font(.footnote)
+        .padding(.vertical, 2)
+    }
+
+    private func extractionStateLabel(_ state: DedupSummary.ExtractionState) -> String {
+        switch state {
+        case .notStarted: return "Not yet extracted"
+        case .textOnly: return "Text only (structured pending)"
+        case .complete: return "Extraction complete — no identity resolved"
+        }
+    }
+
+    private func identityRelationLabel(_ relation: DedupComparison.IdentityRelation) -> String {
+        switch relation {
+        case .positiveMatch: return "Identity: match"
+        case .conflict(let reason): return reason
+        case .noIdentity: return "Identity: partial"
+        }
+    }
+
+    private func identityRelationColor(_ relation: DedupComparison.IdentityRelation) -> Color {
+        switch relation {
+        case .positiveMatch: return .green
+        case .conflict: return .orange
+        case .noIdentity: return .yellow
+        }
+    }
+
+    private func decisionLabel(_ decision: DedupComparison.Decision) -> String {
+        switch decision {
+        case .grouped: return "→ Grouped"
+        case .vetoed(let reason): return "→ Vetoed: \(reason)"
+        case .belowThreshold: return "→ Below threshold"
+        case .pending(let reason): return "→ Pending: \(reason)"
+        }
+    }
+
+    private func decisionColor(_ decision: DedupComparison.Decision) -> Color {
+        switch decision {
+        case .grouped: return .green
+        case .vetoed: return .orange
+        case .belowThreshold: return .secondary
+        case .pending: return .yellow
+        }
     }
 
     private func normalized(_ value: String?) -> String? {

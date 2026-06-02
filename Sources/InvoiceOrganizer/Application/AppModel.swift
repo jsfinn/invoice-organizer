@@ -203,10 +203,153 @@ final class AppModel: ObservableObject {
         librarySnapshot.documentMetadataByArtifactID
     }
 
+    func dedupSummary(for artifactID: PhysicalArtifact.ID) -> DedupSummary {
+        guard let artifact = invoices.first(where: { $0.id == artifactID }) else {
+            return DedupSummary(groupingStatus: .singleton, identityDescription: nil, extractionState: .notStarted, comparisons: [])
+        }
+
+        let contentHash = artifact.contentHash
+        let hasText = contentHash.map { extractedTextArtifactIDs.contains(artifactID) || computationCache.duplicateTermFrequencies(forContentHash: $0) != nil } ?? false
+        let record = contentHash.flatMap { computationCache.structuredRecord(forContentHash: $0) }
+        let identity = record.flatMap { DocumentIdentity(record: $0) }
+
+        let extractionState: DedupSummary.ExtractionState
+        if identity != nil { extractionState = .complete }
+        else if hasText { extractionState = .textOnly }
+        else { extractionState = .notStarted }
+
+        let identityDescription: String?
+        if let identity {
+            let dateFmt = identity.invoiceDate.formatted(date: .abbreviated, time: .omitted)
+            if let num = identity.invoiceNumber {
+                identityDescription = "\(identity.vendor) / \(num) / \(dateFmt) (\(identity.documentType.rawValue.lowercased()))"
+            } else {
+                identityDescription = "\(identity.vendor) / \(dateFmt) (\(identity.documentType.rawValue.lowercased()))"
+            }
+        } else {
+            identityDescription = nil
+        }
+
+        let document = librarySnapshot.document(for: artifactID)
+        let groupingStatus: DedupSummary.GroupingStatus
+        if let document, document.isDuplicate, let ref = document.referenceArtifact(for: artifactID) {
+            let refName = ref.fileURL.lastPathComponent
+            switch document.matchKind(forArtifactID: artifactID) {
+            case .identicalFile:
+                groupingStatus = .identicalCopy(referenceFile: refName)
+            case .sameDocument, nil:
+                if identity != nil {
+                    groupingStatus = .duplicateGrouped(referenceFile: refName, reason: "Matched by structured identity")
+                } else {
+                    groupingStatus = .duplicateGrouped(referenceFile: refName, reason: "Matched by text similarity")
+                }
+            }
+        } else {
+            groupingStatus = .singleton
+        }
+
+        let contentHashByArtifactID = Dictionary(
+            librarySnapshot.artifacts.compactMap { a -> (PhysicalArtifact.ID, String)? in
+                guard let h = a.contentHash else { return nil }
+                return (a.id, h)
+            },
+            uniquingKeysWith: { existing, _ in existing }
+        )
+
+        let candidateTerms = contentHash.flatMap { computationCache.duplicateTermFrequencies(forContentHash: $0) }
+        let allFreqs = Array(librarySnapshot.duplicateTermFrequenciesByArtifactID.values)
+        let (documentFrequencies, documentCount) = DuplicateDetector.computeDocumentFrequencies(from: allFreqs)
+
+        let comparisons: [DedupComparison] = librarySnapshot.documents
+            .filter { !$0.contains(artifactID: artifactID) }
+            .compactMap { otherDoc -> DedupComparison? in
+                guard let bestArtifact = otherDoc.artifacts.first else { return nil }
+                let otherHash = contentHashByArtifactID[bestArtifact.id]
+                let otherRecord = otherHash.flatMap { computationCache.structuredRecord(forContentHash: $0) }
+                let otherIdentity = otherRecord.flatMap { DocumentIdentity(record: $0) }
+
+                var textScore: Double? = nil
+                if let candidateTerms, let otherTerms = librarySnapshot.duplicateTermFrequenciesByArtifactID[bestArtifact.id] {
+                    textScore = DuplicateDetector.cosineSimilarity(
+                        lhs: candidateTerms, rhs: otherTerms,
+                        documentFrequencies: documentFrequencies, documentCount: documentCount
+                    )
+                }
+
+                let identityRelation: DedupComparison.IdentityRelation?
+                if let identity, let otherIdentity {
+                    if identity.isPositiveMatch(otherIdentity) {
+                        identityRelation = .positiveMatch
+                    } else if let reason = identity.conflictReason(with: otherIdentity) {
+                        identityRelation = .conflict(reason: reason)
+                    } else {
+                        identityRelation = nil
+                    }
+                } else if identity != nil || otherIdentity != nil {
+                    identityRelation = .noIdentity
+                } else {
+                    identityRelation = nil
+                }
+
+                let decision: DedupComparison.Decision
+                if let identityRelation {
+                    switch identityRelation {
+                    case .positiveMatch:
+                        decision = .grouped
+                    case .conflict(let reason):
+                        decision = .vetoed(reason: reason)
+                    case .noIdentity:
+                        if let textScore, textScore >= duplicateSimilarityThreshold {
+                            decision = .pending(reason: "Grouped by text, extraction pending on one side")
+                        } else if let textScore, textScore > 0 {
+                            decision = .belowThreshold
+                        } else {
+                            decision = .pending(reason: "Waiting for text extraction")
+                        }
+                    }
+                } else if contentHash != nil, otherHash != nil, contentHash == otherHash {
+                    decision = .grouped
+                } else if let textScore, textScore >= duplicateSimilarityThreshold {
+                    decision = .grouped
+                } else {
+                    decision = .belowThreshold
+                }
+
+                guard textScore != nil || identityRelation != nil || (contentHash != nil && contentHash == otherHash) else {
+                    return nil
+                }
+
+                return DedupComparison(
+                    documentID: otherDoc.id,
+                    fileName: bestArtifact.fileURL.lastPathComponent,
+                    location: bestArtifact.location,
+                    artifactCount: otherDoc.artifacts.count,
+                    decision: decision,
+                    textScore: textScore,
+                    identityRelation: identityRelation
+                )
+            }
+            .sorted { lhs, rhs in
+                let lhsPriority = lhs.decision.sortPriority
+                let rhsPriority = rhs.decision.sortPriority
+                if lhsPriority != rhsPriority { return lhsPriority < rhsPriority }
+                return (lhs.textScore ?? 0) > (rhs.textScore ?? 0)
+            }
+            .prefix(8)
+            .map { $0 }
+
+        return DedupSummary(
+            groupingStatus: groupingStatus,
+            identityDescription: identityDescription,
+            extractionState: extractionState,
+            comparisons: comparisons
+        )
+    }
+
     func duplicateSimilarities(for artifactID: PhysicalArtifact.ID, limit: Int = 5) -> [DuplicateSimilarity] {
         guard let artifact = invoices.first(where: { $0.id == artifactID }),
               let contentHash = artifact.contentHash,
-              let artifactTokens = computationCache.duplicateTokens(forContentHash: contentHash) else {
+              let artifactTerms = computationCache.duplicateTermFrequencies(forContentHash: contentHash) else {
             return []
         }
 
@@ -219,12 +362,17 @@ final class AppModel: ObservableObject {
             uniquingKeysWith: { existing, _ in existing }
         )
 
+        let allFreqs = Array(librarySnapshot.duplicateTermFrequenciesByArtifactID.values)
+        let (documentFrequencies, documentCount) = DuplicateDetector.computeDocumentFrequencies(from: allFreqs)
+
         return librarySnapshot.documents
             .filter { !$0.contains(artifactID: artifactID) }
             .compactMap { document -> DuplicateSimilarity? in
                 guard var similarity = document.bestSimilarity(
-                    to: artifactTokens,
-                    tokensByArtifactID: librarySnapshot.duplicateTokenSetsByArtifactID,
+                    to: artifactTerms,
+                    termFrequenciesByArtifactID: librarySnapshot.duplicateTermFrequenciesByArtifactID,
+                    documentFrequencies: documentFrequencies,
+                    documentCount: documentCount,
                     threshold: duplicateSimilarityThreshold
                 ) else {
                     return nil
@@ -236,6 +384,16 @@ final class AppModel: ObservableObject {
                     between: candidateRecord,
                     and: matchedRecord
                 )
+                similarity.pendingReason = DuplicateDetector.structuredPendingReason(
+                    lhsRecord: candidateRecord,
+                    rhsRecord: matchedRecord
+                )
+                if let matchedHash = contentHashByArtifactID[similarity.matchedArtifactID],
+                   matchedHash == contentHash {
+                    similarity.matchKind = .identicalFile
+                } else {
+                    similarity.matchKind = .sameDocument
+                }
                 return similarity
             }
             .sorted { lhs, rhs in
@@ -416,7 +574,7 @@ final class AppModel: ObservableObject {
     }
 
     var duplicateSimilarityThreshold: Double {
-        DuplicateDetector.duplicateSimilarityThreshold
+        DuplicateDetector.textSimilarityThreshold
     }
 
     private func syncComputationHashes() {
@@ -1347,8 +1505,8 @@ final class AppModel: ObservableObject {
             from: invoices,
             workflowsByArtifactID: workflowByID,
             documentMetadataHintsByArtifactID: documentMetadataHintsByArtifactID,
-            duplicateTokensByHash: computationCache.duplicateTokensByHash,
-            duplicateFirstPageTokensByHash: computationCache.firstPageDuplicateTokensByHash
+            duplicateTermFrequenciesByHash: computationCache.duplicateTermFrequenciesByHash,
+            duplicateFirstPageTermFrequenciesByHash: computationCache.firstPageDuplicateTermFrequenciesByHash
         )
         invoices = librarySnapshot.artifacts
         documents = librarySnapshot.documents
@@ -1702,6 +1860,7 @@ final class AppModel: ObservableObject {
         computationCache.setStructuredRecord(record, forContentHash: contentHash)
         syncComputationHashes()
         handleRescannedDocumentContentHashCompleted(contentHash)
+        rebuildLibrarySnapshot()
         applyStructuredDataIfNeeded(contentHash: contentHash, record: record)
     }
 

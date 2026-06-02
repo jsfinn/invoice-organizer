@@ -27,6 +27,10 @@ private func localDateComponents(_ date: Date) -> DateComponents {
     return calendar.dateComponents([.year, .month, .day], from: date)
 }
 
+private func termFreqs(_ tokens: Set<String>) -> [String: Int] {
+    Dictionary(uniqueKeysWithValues: tokens.map { ($0, 1) })
+}
+
 private func documentArtifact(from invoice: PhysicalArtifact) -> DocumentArtifactReference {
     DocumentArtifactReference(
         id: invoice.id,
@@ -956,7 +960,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "inbox-hash"
     )
 
-    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.duplicateGroups(
         for: [processedFile, inboxFile],
         textRecordsByContentHash: [
             "processed-hash": InvoiceTextRecord(text: "Amazon\nInvoice INV-42", source: .pdfText),
@@ -1003,7 +1007,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "hash-456"
     )
 
-    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.duplicateGroups(
         for: [firstInbox, secondInbox],
         textRecordsByContentHash: [
             "hash-123": InvoiceTextRecord(text: "Vendor: Acme\nInvoice: INV-42", source: .pdfText),
@@ -1049,7 +1053,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "hash-b"
     )
 
-    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.duplicateGroups(
         for: [firstInbox, secondInbox],
         textRecordsByContentHash: [
             "hash-a": InvoiceTextRecord(
@@ -1104,7 +1108,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "hash-c"
     )
 
-    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.duplicateGroups(
         for: [firstInbox, secondInbox, thirdInbox],
         textRecordsByContentHash: [
             "hash-a": InvoiceTextRecord(
@@ -1153,7 +1157,7 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "hash-jpeg"
     )
 
-    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.duplicateGroups(
         for: [heicInbox, jpegInbox],
         textRecordsByContentHash: [
             "hash-heic": InvoiceTextRecord(text: "Amazon invoice INV-42 date 2024-01-05 total 123.45", source: .ocr),
@@ -1198,11 +1202,11 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "structured-b"
     )
 
-    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.duplicateGroups(
         for: [firstInbox, secondInbox],
-        tokenSetsByContentHash: [
-            "structured-a": Set((1...10).map { "token\($0)" }),
-            "structured-b": Set((1...9).map { "token\($0)" } + ["tokenX"])
+        termFrequenciesByContentHash: [
+            "structured-a": termFreqs(Set((1...10).map { "token\($0)" })),
+            "structured-b": termFreqs(Set((1...9).map { "token\($0)" } + ["tokenX"]))
         ],
         structuredRecordsByContentHash: [
             "structured-a": InvoiceStructuredDataRecord(
@@ -1255,11 +1259,11 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "no-number-b"
     )
 
-    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.duplicateGroups(
         for: [firstInbox, secondInbox],
-        tokenSetsByContentHash: [
-            "no-number-a": Set((1...10).map { "token\($0)" }),
-            "no-number-b": Set((1...9).map { "token\($0)" } + ["tokenX"])
+        termFrequenciesByContentHash: [
+            "no-number-a": termFreqs(Set((1...10).map { "token\($0)" })),
+            "no-number-b": termFreqs(Set((1...9).map { "token\($0)" } + ["tokenX"]))
         ],
         structuredRecordsByContentHash: [
             "no-number-a": InvoiceStructuredDataRecord(
@@ -1311,11 +1315,11 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "receipt-b"
     )
 
-    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.duplicateGroups(
         for: [firstInbox, secondInbox],
-        tokenSetsByContentHash: [
-            "receipt-a": Set((1...10).map { "token\($0)" }),
-            "receipt-b": Set((1...9).map { "token\($0)" } + ["tokenX"])
+        termFrequenciesByContentHash: [
+            "receipt-a": termFreqs(Set((1...10).map { "token\($0)" })),
+            "receipt-b": termFreqs(Set((1...9).map { "token\($0)" } + ["tokenX"]))
         ],
         structuredRecordsByContentHash: [
             "receipt-a": InvoiceStructuredDataRecord(
@@ -1368,14 +1372,12 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "invoice-2"
     )
 
-    // Same vendor template: text similarity rounds to 90% and would otherwise group,
-    // but the differing invoice numbers prove these are distinct documents.
     let sharedTokens = Set((1...43).map { "token\($0)" })
-    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.duplicateGroups(
         for: [firstInbox, secondInbox],
-        tokenSetsByContentHash: [
-            "invoice-1": sharedTokens.union(["unique1"]),
-            "invoice-2": sharedTokens.union(["unique2", "unique3", "unique4", "unique5"])
+        termFrequenciesByContentHash: [
+            "invoice-1": termFreqs(sharedTokens.union(["unique1"])),
+            "invoice-2": termFreqs(sharedTokens.union(["unique2", "unique3", "unique4", "unique5"]))
         ],
         structuredRecordsByContentHash: [
             "invoice-1": InvoiceStructuredDataRecord(
@@ -1397,7 +1399,6 @@ private final class RecordingPreviewPersistHandler {
         ]
     )
 
-    #expect(DuplicateDetector.meetsRoundedThreshold(43.0 / 48.0, threshold: 0.9) == true)
     #expect(groups.isEmpty)
 }
 
@@ -1428,14 +1429,12 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "receipt-feb"
     )
 
-    // Same vendor, no invoice numbers (receipts), highly similar text — but different
-    // purchase dates prove these are two distinct receipts.
     let sharedTokens = Set((1...43).map { "token\($0)" })
-    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.duplicateGroups(
         for: [firstInbox, secondInbox],
-        tokenSetsByContentHash: [
-            "receipt-jan": sharedTokens.union(["unique1"]),
-            "receipt-feb": sharedTokens.union(["unique2", "unique3", "unique4", "unique5"])
+        termFrequenciesByContentHash: [
+            "receipt-jan": termFreqs(sharedTokens.union(["unique1"])),
+            "receipt-feb": termFreqs(sharedTokens.union(["unique2", "unique3", "unique4", "unique5"]))
         ],
         structuredRecordsByContentHash: [
             "receipt-jan": InvoiceStructuredDataRecord(
@@ -1457,51 +1456,213 @@ private final class RecordingPreviewPersistHandler {
         ]
     )
 
-    #expect(DuplicateDetector.meetsRoundedThreshold(43.0 / 48.0, threshold: 0.9) == true)
     #expect(groups.isEmpty)
 }
 
-@Test func duplicateDetectorRoundsNinetyPercentThresholdForGrouping() async throws {
+@Test func duplicateDetectorDoesNotGroupDifferentVendors() async throws {
     let firstInbox = ScannedInvoiceFile(
-        id: "/Inbox/rounded-a.jpg",
-        name: "rounded-a.jpg",
-        fileURL: URL(fileURLWithPath: "/Inbox/rounded-a.jpg"),
+        id: "/Inbox/vendor-a.pdf",
+        name: "vendor-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/vendor-a.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        contentHash: "vendor-a"
+    )
+
+    let secondInbox = ScannedInvoiceFile(
+        id: "/Inbox/vendor-b.pdf",
+        name: "vendor-b.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/vendor-b.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        contentHash: "vendor-b"
+    )
+
+    let sharedTokens = Set((1...43).map { "token\($0)" })
+    let groups = DuplicateDetector.duplicateGroups(
+        for: [firstInbox, secondInbox],
+        termFrequenciesByContentHash: [
+            "vendor-a": termFreqs(sharedTokens.union(["unique1"])),
+            "vendor-b": termFreqs(sharedTokens.union(["unique2", "unique3", "unique4", "unique5"]))
+        ],
+        structuredRecordsByContentHash: [
+            "vendor-a": InvoiceStructuredDataRecord(
+                companyName: "Acme Corp",
+                invoiceNumber: "INV-42",
+                invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                documentType: .invoice,
+                provider: .lmStudio,
+                modelName: "test-model"
+            ),
+            "vendor-b": InvoiceStructuredDataRecord(
+                companyName: "Other Corp",
+                invoiceNumber: "INV-42",
+                invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                documentType: .invoice,
+                provider: .lmStudio,
+                modelName: "test-model"
+            )
+        ]
+    )
+
+    #expect(groups.isEmpty)
+}
+
+@Test func duplicateDetectorGroupsIdenticalContentHashWithoutText() async throws {
+    let firstInbox = ScannedInvoiceFile(
+        id: "/Inbox/same-a.pdf",
+        name: "same-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/same-a.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        contentHash: "identical-hash"
+    )
+
+    let secondInbox = ScannedInvoiceFile(
+        id: "/Inbox/same-b.pdf",
+        name: "same-b.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/same-b.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        contentHash: "identical-hash"
+    )
+
+    let groups = DuplicateDetector.duplicateGroups(
+        for: [firstInbox, secondInbox],
+        termFrequenciesByContentHash: [:]
+    )
+
+    #expect(groups.count == 1)
+    #expect(groups.first.map { Set($0.artifactIDs) } == Set([firstInbox.id, secondInbox.id]))
+}
+
+@Test func documentMatchKindReturnsIdenticalFileForSameContentHash() async throws {
+    let refArtifact = DocumentArtifactReference(
+        id: "/Inbox/doc-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/doc-a.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        contentHash: "same-hash"
+    )
+    let dupArtifact = DocumentArtifactReference(
+        id: "/Inbox/doc-b.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/doc-b.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        contentHash: "same-hash"
+    )
+    let document = Document(artifacts: [refArtifact, dupArtifact], metadata: .empty)
+
+    #expect(document.matchKind(forArtifactID: dupArtifact.id) == .identicalFile)
+    #expect(document.badgeTitle(forArtifactID: dupArtifact.id) == nil)
+}
+
+@Test func documentMatchKindReturnsSameDocumentForDifferentContentHash() async throws {
+    let refArtifact = DocumentArtifactReference(
+        id: "/Processed/doc-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Processed/doc-a.pdf"),
+        location: .processed,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        contentHash: "hash-a"
+    )
+    let dupArtifact = DocumentArtifactReference(
+        id: "/Inbox/doc-b.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/doc-b.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        contentHash: "hash-b"
+    )
+    let document = Document(artifacts: [refArtifact, dupArtifact], metadata: .empty)
+
+    #expect(document.matchKind(forArtifactID: dupArtifact.id) == .sameDocument)
+    #expect(document.badgeTitle(forArtifactID: dupArtifact.id) == "Duplicate Processed")
+}
+
+@Test func documentIdenticalCopyBadgeTitle() async throws {
+    let refArtifact = DocumentArtifactReference(
+        id: "/Processed/doc-a.pdf",
+        fileURL: URL(fileURLWithPath: "/Processed/doc-a.pdf"),
+        location: .processed,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        contentHash: "same-hash"
+    )
+    let dupArtifact = DocumentArtifactReference(
+        id: "/Inbox/doc-b.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/doc-b.pdf"),
+        location: .inbox,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        contentHash: "same-hash"
+    )
+    let document = Document(artifacts: [refArtifact, dupArtifact], metadata: .empty)
+
+    #expect(document.matchKind(forArtifactID: dupArtifact.id) == .identicalFile)
+    #expect(document.badgeTitle(forArtifactID: dupArtifact.id) == "Identical Copy")
+    #expect(document.duplicateInfo(forArtifactID: dupArtifact.id)?.reason == "Identical copy of doc-a.pdf")
+}
+
+@Test func duplicateDetectorGroupsAboveCosineThreshold() async throws {
+    let firstInbox = ScannedInvoiceFile(
+        id: "/Inbox/cosine-a.jpg",
+        name: "cosine-a.jpg",
+        fileURL: URL(fileURLWithPath: "/Inbox/cosine-a.jpg"),
         location: .inbox,
         vendor: nil,
         invoiceDate: nil,
         processedAt: nil,
         addedAt: Date(timeIntervalSince1970: 10),
         fileType: .jpeg,
-        contentHash: "rounded-a"
+        contentHash: "cosine-a"
     )
 
     let secondInbox = ScannedInvoiceFile(
-        id: "/Inbox/rounded-b.jpeg",
-        name: "rounded-b.jpeg",
-        fileURL: URL(fileURLWithPath: "/Inbox/rounded-b.jpeg"),
+        id: "/Inbox/cosine-b.jpeg",
+        name: "cosine-b.jpeg",
+        fileURL: URL(fileURLWithPath: "/Inbox/cosine-b.jpeg"),
         location: .inbox,
         vendor: nil,
         invoiceDate: nil,
         processedAt: nil,
         addedAt: Date(timeIntervalSince1970: 20),
         fileType: .jpeg,
-        contentHash: "rounded-b"
+        contentHash: "cosine-b"
     )
 
     let sharedTokens = Set((1...43).map { "token\($0)" })
-    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.duplicateGroups(
         for: [firstInbox, secondInbox],
-        tokenSetsByContentHash: [
-            "rounded-a": sharedTokens,
-            "rounded-b": sharedTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"])
+        termFrequenciesByContentHash: [
+            "cosine-a": termFreqs(sharedTokens),
+            "cosine-b": termFreqs(sharedTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"]))
         ]
     )
 
-    #expect(abs(DuplicateDetector.jaccardSimilarity(
-        sharedTokens,
-        sharedTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"])
-    ) - (43.0 / 48.0)) < 0.0001)
-    #expect(DuplicateDetector.meetsRoundedThreshold(43.0 / 48.0, threshold: 0.9) == true)
+    let aTerms = termFreqs(sharedTokens)
+    let bTerms = termFreqs(sharedTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"]))
+    let (df, dc) = DuplicateDetector.computeDocumentFrequencies(from: [aTerms, bTerms])
+    let cosine = DuplicateDetector.cosineSimilarity(lhs: aTerms, rhs: bTerms, documentFrequencies: df, documentCount: dc)
+    #expect(cosine >= DuplicateDetector.textSimilarityThreshold)
     #expect(groups.count == 1)
     #expect(groups.first.map { Set($0.artifactIDs) } == Set([firstInbox.id, secondInbox.id]))
 }
@@ -1535,15 +1696,15 @@ private final class RecordingPreviewPersistHandler {
 
     let firstPageTokens = Set((1...43).map { "token\($0)" })
     let secondPageOnlyTokens = Set((1...35).map { "page2token\($0)" })
-    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+    let groups = DuplicateDetector.duplicateGroups(
         for: [firstInbox, secondInbox],
-        tokenSetsByContentHash: [
-            "two-page": firstPageTokens.union(secondPageOnlyTokens),
-            "one-page": firstPageTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"])
+        termFrequenciesByContentHash: [
+            "two-page": termFreqs(firstPageTokens.union(secondPageOnlyTokens)),
+            "one-page": termFreqs(firstPageTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"]))
         ],
-        firstPageTokenSetsByContentHash: [
-            "two-page": firstPageTokens,
-            "one-page": firstPageTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"])
+        firstPageTermFrequenciesByContentHash: [
+            "two-page": termFreqs(firstPageTokens),
+            "one-page": termFreqs(firstPageTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"]))
         ],
         structuredRecordsByContentHash: [
             "two-page": InvoiceStructuredDataRecord(
@@ -1565,8 +1726,6 @@ private final class RecordingPreviewPersistHandler {
         ]
     )
 
-    #expect(DuplicateDetector.meetsRoundedThreshold(43.0 / 83.0, threshold: 0.8) == false)
-    #expect(DuplicateDetector.meetsRoundedThreshold(43.0 / 48.0, threshold: 0.9) == true)
     #expect(groups.count == 1)
     #expect(groups.first.map { Set($0.artifactIDs) } == Set([firstInbox.id, secondInbox.id]))
 }
@@ -1950,12 +2109,13 @@ private final class RecordingPreviewPersistHandler {
         from: [first, second],
         workflowsByArtifactID: [:],
         documentMetadataHintsByArtifactID: [:],
-        duplicateTokensByHash: [:],
-        duplicateFirstPageTokensByHash: [:]
+        duplicateTermFrequenciesByHash: [:],
+        duplicateFirstPageTermFrequenciesByHash: [:]
     )
 
     #expect(snapshot.artifacts.count == 2)
-    #expect(snapshot.documents.count == 2)
+    #expect(snapshot.documents.count == 1)
+    #expect(snapshot.documents.first?.artifacts.count == 2)
 }
 
 @Test func librarySnapshotBuilderExposesPossibleSameInvoiceMatchesForInvoices() async throws {
@@ -1980,29 +2140,24 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "invoice-b"
     )
 
+    let sharedMetadata = DocumentMetadata(
+        vendor: "Acme Corp",
+        invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+        invoiceNumber: "INV-42",
+        documentType: .invoice
+    )
     let snapshot = LibrarySnapshotBuilder(
-        structuredRecordForContentHash: { contentHash in
-            switch contentHash {
-            case "invoice-a", "invoice-b":
-                InvoiceStructuredDataRecord(
-                    companyName: "Acme Corp",
-                    invoiceNumber: "INV-42",
-                    invoiceDate: utcDate(year: 2024, month: 1, day: 5),
-                    documentType: .invoice,
-                    provider: .lmStudio,
-                    modelName: "test-model"
-                )
-            default:
-                nil
-            }
-        }
+        structuredRecordForContentHash: { _ in nil }
     )
     .build(
         from: [first, second],
         workflowsByArtifactID: [:],
-        documentMetadataHintsByArtifactID: [:],
-        duplicateTokensByHash: [:],
-        duplicateFirstPageTokensByHash: [:]
+        documentMetadataHintsByArtifactID: [
+            first.id: sharedMetadata,
+            second.id: sharedMetadata
+        ],
+        duplicateTermFrequenciesByHash: [:],
+        duplicateFirstPageTermFrequenciesByHash: [:]
     )
 
     let firstMatches = snapshot.possibleSameInvoiceMatchesByArtifactID[first.id]
@@ -2039,29 +2194,24 @@ private final class RecordingPreviewPersistHandler {
         contentHash: "receipt-b"
     )
 
+    let sharedMetadata = DocumentMetadata(
+        vendor: "Staples",
+        invoiceDate: utcDate(year: 2024, month: 3, day: 21),
+        invoiceNumber: nil,
+        documentType: .receipt
+    )
     let snapshot = LibrarySnapshotBuilder(
-        structuredRecordForContentHash: { contentHash in
-            switch contentHash {
-            case "receipt-a", "receipt-b":
-                InvoiceStructuredDataRecord(
-                    companyName: "Staples",
-                    invoiceNumber: nil,
-                    invoiceDate: utcDate(year: 2024, month: 3, day: 21),
-                    documentType: .receipt,
-                    provider: .lmStudio,
-                    modelName: "test-model"
-                )
-            default:
-                nil
-            }
-        }
+        structuredRecordForContentHash: { _ in nil }
     )
     .build(
         from: [first, second],
         workflowsByArtifactID: [:],
-        documentMetadataHintsByArtifactID: [:],
-        duplicateTokensByHash: [:],
-        duplicateFirstPageTokensByHash: [:]
+        documentMetadataHintsByArtifactID: [
+            first.id: sharedMetadata,
+            second.id: sharedMetadata
+        ],
+        duplicateTermFrequenciesByHash: [:],
+        duplicateFirstPageTermFrequenciesByHash: [:]
     )
 
     #expect(snapshot.possibleSameInvoiceMatchesByArtifactID[first.id]?.first?.matchedArtifactID == second.id)
@@ -2111,11 +2261,11 @@ private final class RecordingPreviewPersistHandler {
         from: [first, second],
         workflowsByArtifactID: [:],
         documentMetadataHintsByArtifactID: [:],
-        duplicateTokensByHash: [
-            "duplicate-a": Set(["acme", "invoice", "inv42"]),
-            "duplicate-b": Set(["acme", "invoice", "inv42"])
+        duplicateTermFrequenciesByHash: [
+            "duplicate-a": termFreqs(Set(["acme", "invoice", "inv42"])),
+            "duplicate-b": termFreqs(Set(["acme", "invoice", "inv42"]))
         ],
-        duplicateFirstPageTokensByHash: [:]
+        duplicateFirstPageTermFrequenciesByHash: [:]
     )
 
     #expect(snapshot.documents.count == 1)
@@ -2174,36 +2324,42 @@ private final class RecordingPreviewPersistHandler {
 
     #expect(similarities.count == 2)
     #expect(similarities[0].matchedFileURL.lastPathComponent == "incoming-2.pdf")
-    #expect(abs(similarities[0].score - 0.6) < 0.0001)
+    #expect(similarities[0].score > similarities[1].score)
     #expect(similarities[0].meetsThreshold == false)
     #expect(similarities[0].artifactCount == 1)
     #expect(similarities[1].matchedFileURL.lastPathComponent == "incoming-3.pdf")
-    #expect(abs(similarities[1].score - (2.0 / 6.0)) < 0.0001)
+    #expect(similarities[1].score > 0)
+    #expect(similarities[1].meetsThreshold == false)
 }
 
-@Test func documentBestSimilarityRoundsNinetyPercentThreshold() async throws {
+@Test func documentBestSimilarityUsesCosineSimilarity() async throws {
     let match = DocumentArtifactReference(
-        id: "/Inbox/rounded-b.jpeg",
-        fileURL: URL(fileURLWithPath: "/Inbox/rounded-b.jpeg"),
+        id: "/Inbox/cosine-b.jpeg",
+        fileURL: URL(fileURLWithPath: "/Inbox/cosine-b.jpeg"),
         location: .inbox,
         addedAt: Date(timeIntervalSince1970: 20),
         fileType: .jpeg,
-        contentHash: "rounded-b"
+        contentHash: "cosine-b"
     )
     let sharedTokens = Set((1...43).map { "token\($0)" })
-    let matchedTokens = sharedTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"])
+    let aTerms = termFreqs(sharedTokens)
+    let bTerms = termFreqs(sharedTokens.union(["extra1", "extra2", "extra3", "extra4", "extra5"]))
+    let (df, dc) = DuplicateDetector.computeDocumentFrequencies(from: [aTerms, bTerms])
     let document = Document(artifacts: [match], metadata: .empty)
 
     let similarity = try #require(
         document.bestSimilarity(
-            to: sharedTokens,
-            tokensByArtifactID: [match.id: matchedTokens],
-            threshold: 0.9
+            to: aTerms,
+            termFrequenciesByArtifactID: [match.id: bTerms],
+            documentFrequencies: df,
+            documentCount: dc,
+            threshold: DuplicateDetector.textSimilarityThreshold
         )
     )
 
-    #expect(abs(similarity.score - (43.0 / 48.0)) < 0.0001)
-    #expect(similarity.meetsThreshold == true)
+    let expectedCosine = DuplicateDetector.cosineSimilarity(lhs: aTerms, rhs: bTerms, documentFrequencies: df, documentCount: dc)
+    #expect(abs(similarity.score - expectedCosine) < 0.0001)
+    #expect(similarity.meetsThreshold == (expectedCosine >= DuplicateDetector.textSimilarityThreshold))
 }
 
 @Test func appModelBuildsDistinctSingletonDocumentsForMatchingContentHashes() async throws {
@@ -2243,8 +2399,8 @@ private final class RecordingPreviewPersistHandler {
     await model.reloadLibraryForTesting()
 
     let documents = await MainActor.run { model.documents }
-    #expect(documents.count == 2)
-    #expect(Set(documents.map(\.id)).count == 2)
+    #expect(documents.count == 1)
+    #expect(documents.first?.artifacts.count == 2)
 }
 
 @Test func appModelManualDocumentEditUpdatesAllChildren() async throws {
@@ -2922,6 +3078,11 @@ private final class RecordingPreviewPersistHandler {
 
     await model.reloadLibraryForTesting()
 
+    let documents = await MainActor.run { model.documents }
+    let duplicates = documents.filter(\.isDuplicate)
+    #expect(duplicates.count == 1)
+    #expect(duplicates.first?.artifacts.count == 2)
+
     let badgeTitles = await MainActor.run {
         model.invoices.reduce(into: [String: String]()) { result, invoice in
             if let badgeTitle = model.possibleSameInvoiceBadgeTitlesByArtifactID[invoice.id] {
@@ -2929,9 +3090,7 @@ private final class RecordingPreviewPersistHandler {
             }
         }
     }
-
-    #expect(badgeTitles.count == 2)
-    #expect(Set(badgeTitles.values) == Set(["Possible Same Invoice"]))
+    #expect(badgeTitles.isEmpty)
 }
 
 @Test func appModelReturnsPossibleSameInvoiceMatchesForStructuredMatches() async throws {
@@ -2985,16 +3144,16 @@ private final class RecordingPreviewPersistHandler {
 
     await model.reloadLibraryForTesting()
 
-    let matches = try #require(await MainActor.run {
+    let documents = await MainActor.run { model.documents }
+    let duplicates = documents.filter(\.isDuplicate)
+    #expect(duplicates.count == 1)
+    #expect(duplicates.first?.artifacts.count == 2)
+
+    let inboxMatches = try #require(await MainActor.run {
         let inboxInvoice = model.invoices.first(where: { $0.location == .inbox })
         return inboxInvoice.map { model.possibleSameInvoiceMatches(for: $0.id) }
     })
-
-    #expect(matches.count == 1)
-    #expect(matches.first?.matchedLocation == .processing)
-    #expect(matches.first?.matchedFileURL.lastPathComponent == "incoming-2.pdf")
-    #expect(matches.first?.metadata.vendor == "Acme Corp")
-    #expect(matches.first?.metadata.invoiceNumber == "INV-42")
+    #expect(inboxMatches.isEmpty)
 }
 
 @Test func appModelMovesUnprocessedDuplicatePeersToDuplicatesFolderWhenProcessingStarts() async throws {
