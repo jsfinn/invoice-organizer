@@ -20,7 +20,8 @@ enum DuplicateDetector {
         for files: [ScannedInvoiceFile],
         termFrequenciesByContentHash: [String: [String: Int]],
         firstPageTermFrequenciesByContentHash: [String: [String: Int]] = [:],
-        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord] = [:]
+        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord] = [:],
+        separatedContentHashPairs: Set<ContentHashPair> = []
     ) -> [ArtifactDuplicateCluster] {
         buildClusters(
             candidates: files.map {
@@ -35,7 +36,8 @@ enum DuplicateDetector {
             },
             termFrequenciesByContentHash: termFrequenciesByContentHash,
             firstPageTermFrequenciesByContentHash: firstPageTermFrequenciesByContentHash,
-            structuredRecordsByContentHash: structuredRecordsByContentHash
+            structuredRecordsByContentHash: structuredRecordsByContentHash,
+            separatedContentHashPairs: separatedContentHashPairs
         )
     }
 
@@ -56,7 +58,8 @@ enum DuplicateDetector {
         for invoices: [PhysicalArtifact],
         termFrequenciesByContentHash: [String: [String: Int]],
         firstPageTermFrequenciesByContentHash: [String: [String: Int]] = [:],
-        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord] = [:]
+        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord] = [:],
+        separatedContentHashPairs: Set<ContentHashPair> = []
     ) -> [ArtifactDuplicateCluster] {
         buildClusters(
             candidates: invoices.map {
@@ -71,7 +74,8 @@ enum DuplicateDetector {
             },
             termFrequenciesByContentHash: termFrequenciesByContentHash,
             firstPageTermFrequenciesByContentHash: firstPageTermFrequenciesByContentHash,
-            structuredRecordsByContentHash: structuredRecordsByContentHash
+            structuredRecordsByContentHash: structuredRecordsByContentHash,
+            separatedContentHashPairs: separatedContentHashPairs
         )
     }
 
@@ -198,7 +202,8 @@ enum DuplicateDetector {
         candidates: [DuplicateCandidate],
         termFrequenciesByContentHash: [String: [String: Int]],
         firstPageTermFrequenciesByContentHash: [String: [String: Int]],
-        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord]
+        structuredRecordsByContentHash: [String: InvoiceStructuredDataRecord],
+        separatedContentHashPairs: Set<ContentHashPair> = []
     ) -> [ArtifactDuplicateCluster] {
         let identitiesByContentHash: [String: DocumentIdentity] = Dictionary(
             uniqueKeysWithValues: structuredRecordsByContentHash.compactMap { hash, record in
@@ -234,10 +239,36 @@ enum DuplicateDetector {
             }
         }
 
+        // Track the set of content hashes living under each root so user-declared
+        // "not a duplicate" overrides can be enforced even through transitive matches.
+        var contentHashesByRoot: [String: Set<String>] = [:]
+        if !separatedContentHashPairs.isEmpty {
+            for e in enriched {
+                if let hash = e.candidate.contentHash {
+                    contentHashesByRoot[e.candidate.id, default: []].insert(hash)
+                }
+            }
+        }
+
+        func isSeparated(_ hashesA: Set<String>, _ hashesB: Set<String>) -> Bool {
+            guard !separatedContentHashPairs.isEmpty else { return false }
+            for ha in hashesA {
+                for hb in hashesB where separatedContentHashPairs.contains(ContentHashPair(ha, hb)) {
+                    return true
+                }
+            }
+            return false
+        }
+
         func canMerge(_ a: String, _ b: String) -> Bool {
             let rootA = uf.find(a)
             let rootB = uf.find(b)
             guard rootA != rootB else { return true }
+
+            if isSeparated(contentHashesByRoot[rootA] ?? [], contentHashesByRoot[rootB] ?? []) {
+                return false
+            }
+
             let idsA = identitiesByRoot[rootA] ?? []
             let idsB = identitiesByRoot[rootB] ?? []
             for idA in idsA {
@@ -254,9 +285,14 @@ enum DuplicateDetector {
             guard rootA != rootB else { return }
             let idsA = identitiesByRoot.removeValue(forKey: rootA) ?? []
             let idsB = identitiesByRoot.removeValue(forKey: rootB) ?? []
+            let hashesA = contentHashesByRoot.removeValue(forKey: rootA) ?? []
+            let hashesB = contentHashesByRoot.removeValue(forKey: rootB) ?? []
             uf.union(a, b)
             let newRoot = uf.find(a)
             identitiesByRoot[newRoot] = idsA + idsB
+            if !hashesA.isEmpty || !hashesB.isEmpty {
+                contentHashesByRoot[newRoot] = hashesA.union(hashesB)
+            }
         }
 
         // Step 1: Union identical files (same contentHash)

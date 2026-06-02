@@ -1709,6 +1709,68 @@ private final class RecordingPreviewPersistHandler {
     #expect(groups.first.map { Set($0.artifactIDs) } == Set([firstInbox.id, secondInbox.id]))
 }
 
+@Test func duplicateDetectorRespectsNotADuplicateOverride() async throws {
+    func slip(_ name: String, hash: String, addedAt: TimeInterval) -> ScannedInvoiceFile {
+        ScannedInvoiceFile(
+            id: "/Inbox/\(name)",
+            name: name,
+            fileURL: URL(fileURLWithPath: "/Inbox/\(name)"),
+            location: .inbox,
+            vendor: nil,
+            invoiceDate: nil,
+            processedAt: nil,
+            addedAt: Date(timeIntervalSince1970: addedAt),
+            fileType: .pdf,
+            contentHash: hash
+        )
+    }
+
+    let slipA = slip("slip-a.pdf", hash: "slip-a", addedAt: 10)
+    let slipB = slip("slip-b.pdf", hash: "slip-b", addedAt: 20)
+    let slipC = slip("slip-c.pdf", hash: "slip-c", addedAt: 30)
+
+    // All three share enough boilerplate that text similarity groups them.
+    let sharedTokens = Set((1...43).map { "token\($0)" })
+    let termFrequencies: [String: [String: Int]] = [
+        "slip-a": termFreqs(sharedTokens.union(["amounta"])),
+        "slip-b": termFreqs(sharedTokens.union(["amountb"])),
+        "slip-c": termFreqs(sharedTokens.union(["amountc"]))
+    ]
+
+    let grouped = DuplicateDetector.duplicateGroups(
+        for: [slipA, slipB, slipC],
+        termFrequenciesByContentHash: termFrequencies
+    )
+    #expect(grouped.count == 1)
+    #expect(grouped.first.map { Set($0.artifactIDs) } == Set([slipA.id, slipB.id, slipC.id]))
+
+    // With all pairwise overrides, the three slips fully separate into singletons.
+    let separated = DuplicateDetector.duplicateGroups(
+        for: [slipA, slipB, slipC],
+        termFrequenciesByContentHash: termFrequencies,
+        separatedContentHashPairs: [
+            ContentHashPair("slip-a", "slip-b"),
+            ContentHashPair("slip-a", "slip-c"),
+            ContentHashPair("slip-b", "slip-c")
+        ]
+    )
+    #expect(separated.isEmpty)
+
+    // A genuine identical copy of slip A still groups with A (and stays apart from B/C).
+    let slipACopy = slip("slip-a-copy.pdf", hash: "slip-a", addedAt: 40)
+    let withDuplicateOfA = DuplicateDetector.duplicateGroups(
+        for: [slipA, slipACopy, slipB, slipC],
+        termFrequenciesByContentHash: termFrequencies,
+        separatedContentHashPairs: [
+            ContentHashPair("slip-a", "slip-b"),
+            ContentHashPair("slip-a", "slip-c"),
+            ContentHashPair("slip-b", "slip-c")
+        ]
+    )
+    #expect(withDuplicateOfA.count == 1)
+    #expect(withDuplicateOfA.first.map { Set($0.artifactIDs) } == Set([slipA.id, slipACopy.id]))
+}
+
 @Test func duplicateDetectorFallsBackToFirstPageWhenWholeDocumentMisses() async throws {
     let firstInbox = ScannedInvoiceFile(
         id: "/Inbox/scan0155.pdf",
@@ -4524,4 +4586,29 @@ private actor MockStructuredExtractionClient: InvoiceStructuredExtractionClient 
     let portrait = PDFJoinService.fittedPageSize(forPixelWidth: 1000, pixelHeight: 4000)
     #expect(portrait.width <= 612)
     #expect(portrait.height == 792)
+}
+
+@Test func fileDuplicationProducesDistinctHashWithSamePageCount() throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let sourceURL = tempRoot.appendingPathComponent("receipts.pdf")
+    try writeSizedPagesPDF(pageWidths: [200, 200], to: sourceURL)
+    let originalHash = try FileHasher.sha256(for: sourceURL)
+
+    let copyURL = tempRoot.appendingPathComponent("receipts (2).pdf")
+    try FileDuplicationService.duplicate(source: sourceURL, to: copyURL, fileType: .pdf)
+
+    // The original is untouched; the copy exists with a different content hash.
+    #expect(FileManager.default.fileExists(atPath: sourceURL.path))
+    #expect(FileManager.default.fileExists(atPath: copyURL.path))
+    #expect(try FileHasher.sha256(for: sourceURL) == originalHash)
+
+    let copyHash = try FileHasher.sha256(for: copyURL)
+    #expect(copyHash != originalHash)
+
+    // The page content is preserved (lossless duplicate).
+    let copyDocument = try #require(PDFDocument(url: copyURL))
+    #expect(copyDocument.pageCount == 2)
 }

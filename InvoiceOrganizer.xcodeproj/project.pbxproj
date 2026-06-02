@@ -49,12 +49,14 @@
 		8FDA23D49EA2E77B9E33C3C3 /* InvoiceOrganizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78FD9A85C78EBE3E91D8A16B /* InvoiceOrganizer.swift */; };
 		8FE3202B65B0675F5791F0FD /* FileSystemReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71E06555631417D9EC5E3DCA /* FileSystemReconciler.swift */; };
 		A20CA93BB39B2B9A044CA212 /* DocumentIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7682FA66D1B7FB76E36C84A4 /* DocumentIdentity.swift */; };
+		FA0CE5510000000000000001 /* DuplicateOverride.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0CE5510000000000000002 /* DuplicateOverride.swift */; };
 		A2347D9B9A9CF3FA3A53A249 /* InboxFileScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A09E6698764231FA35A064B /* InboxFileScanner.swift */; };
 		A66C5448BF50F5CE76501A16 /* VendorField.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEAA5D10C6354B20E1C62723 /* VendorField.swift */; };
 		A968A5F4295E7484CDE14E37 /* MetadataCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2966DA8927843A277944D0 /* MetadataCard.swift */; };
 		AAE047B68510D3CA39C47D7B /* HEICConversionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C9F2297AAA7C5B0B246F2D /* HEICConversionService.swift */; };
 		ADE24B3B39591DDF3C2B95CB /* InvoiceBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E8D83B92318C265A64BB5A /* InvoiceBrowserView.swift */; };
 		B48F1879B1266916E57CCC3E /* PDFJoinService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877721AEDBC9129BA20DECCC /* PDFJoinService.swift */; };
+		FA0CE5510000000000000011 /* FileDuplicationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0CE5510000000000000012 /* FileDuplicationService.swift */; };
 		BC83E30BB70637C9DE4A9D2F /* FileSystemWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E268A82D45D710A14642278A /* FileSystemWatcher.swift */; };
 		C15DDD7372AC7EDA0249EBD8 /* InvoiceFilePageReorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CE3F84651B89A29FB77F2D9 /* InvoiceFilePageReorder.swift */; };
 		C3458C702A574D12EA6725A6 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 62C5D55AC0D492C024EC571F /* Sparkle */; };
@@ -114,11 +116,13 @@
 		719CEBD6BDEFA69B3F710CFF /* PreviewSessionID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSessionID.swift; sourceTree = "<group>"; };
 		71E06555631417D9EC5E3DCA /* FileSystemReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSystemReconciler.swift; sourceTree = "<group>"; };
 		7682FA66D1B7FB76E36C84A4 /* DocumentIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentIdentity.swift; sourceTree = "<group>"; };
+		FA0CE5510000000000000002 /* DuplicateOverride.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateOverride.swift; sourceTree = "<group>"; };
 		78FD9A85C78EBE3E91D8A16B /* InvoiceOrganizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceOrganizer.swift; sourceTree = "<group>"; };
 		7AB0FA9279C3AF73F4A32F11 /* DocumentTextExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTextExtractor.swift; sourceTree = "<group>"; };
 		7F6D5AC17B04AE12587BC23B /* FileHasher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileHasher.swift; sourceTree = "<group>"; };
 		84B72E2F14F2484DF372353A /* FolderPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPicker.swift; sourceTree = "<group>"; };
 		877721AEDBC9129BA20DECCC /* PDFJoinService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFJoinService.swift; sourceTree = "<group>"; };
+		FA0CE5510000000000000012 /* FileDuplicationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDuplicationService.swift; sourceTree = "<group>"; };
 		8859CBC8FCFBFFFCD16E3550 /* FilenameReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilenameReconciler.swift; sourceTree = "<group>"; };
 		890624B54CA6140BDBEF5B82 /* ReplacementPreviewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplacementPreviewRenderer.swift; sourceTree = "<group>"; };
 		8954A8C3B26AEE2DDE97AD98 /* InvoiceOrganizerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InvoiceOrganizerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -179,6 +183,7 @@
 			children = (
 				7682FA66D1B7FB76E36C84A4 /* DocumentIdentity.swift */,
 				A28C5011B0C04CA094EC2609 /* DuplicateDetector.swift */,
+				FA0CE5510000000000000002 /* DuplicateOverride.swift */,
 			);
 			path = Dedup;
 			sourceTree = "<group>";
@@ -302,6 +307,7 @@
 				D0A89232411F7BFE6110AA18 /* ArchivePathBuilder.swift */,
 				6796E8204ECE65BE00F76321 /* ArtifactAccessCoordinator.swift */,
 				5C2B0EF7678E0C79BC24E477 /* DragExportService.swift */,
+				FA0CE5510000000000000012 /* FileDuplicationService.swift */,
 				39C9F2297AAA7C5B0B246F2D /* HEICConversionService.swift */,
 				2A09E6698764231FA35A064B /* InboxFileScanner.swift */,
 				14871783BF02D73949C3FD6B /* InvoiceArchiver.swift */,
@@ -560,6 +566,7 @@
 				5083F31BF23A63D2CD1E6BDE /* ContentView.swift in Sources */,
 				83ECCB9A5900200E7F2BA87A /* DataEntryCard.swift in Sources */,
 				A20CA93BB39B2B9A044CA212 /* DocumentIdentity.swift in Sources */,
+				FA0CE5510000000000000001 /* DuplicateOverride.swift in Sources */,
 				1165F9DA6EA3092C39C86D9C /* DocumentModels.swift in Sources */,
 				4B5085087E7A30C4E56FF281 /* DocumentTextExtractor.swift in Sources */,
 				674515D41F153EC079AB144F /* DragExportService.swift in Sources */,
@@ -590,6 +597,7 @@
 				0F6634A3CFB26914E3E63CE4 /* LibrarySnapshotBuilder.swift in Sources */,
 				A968A5F4295E7484CDE14E37 /* MetadataCard.swift in Sources */,
 				B48F1879B1266916E57CCC3E /* PDFJoinService.swift in Sources */,
+				FA0CE5510000000000000011 /* FileDuplicationService.swift in Sources */,
 				534ED6E769D4298E38C7701D /* PhysicalArtifactIdentityStore.swift in Sources */,
 				376C57B76E8FB72913092367 /* PreviewAssetProvider.swift in Sources */,
 				619BDB7310BD91F7B64A5AE2 /* PreviewCard.swift in Sources */,

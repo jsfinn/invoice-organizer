@@ -49,6 +49,7 @@ final class AppModel: ObservableObject {
     private var queueHandlerSetupTask: Task<Void, Never>?
     private var librarySnapshot: LibrarySnapshot = .empty
     private var workflowByID: [String: StoredInvoiceWorkflow]
+    private var separatedContentHashPairs: Set<ContentHashPair> = DuplicateOverrideStore.load()
     private var documentMetadataHintsByArtifactID: [PhysicalArtifact.ID: DocumentMetadata] = [:]
     private var rescannedDocumentContextsByID: [Document.ID: DocumentRescanContext] = [:]
     private var rescannedDocumentIDsByHash: [String: Set<Document.ID>] = [:]
@@ -546,6 +547,26 @@ final class AppModel: ObservableObject {
         }
 
         openInPreviewHandler(urls)
+    }
+
+    func showInFinder(ids: [PhysicalArtifact.ID]) {
+        var seenURLs: Set<URL> = []
+        let urls = ids.reduce(into: [URL]()) { urls, artifactID in
+            guard let handle = invoices.first(where: { $0.id == artifactID })?.handle,
+                  accessCoordinator.fileExists(for: handle),
+                  seenURLs.insert(handle.fileURL).inserted else {
+                return
+            }
+
+            urls.append(handle.fileURL)
+        }
+
+        guard !urls.isEmpty else {
+            NSSound.beep()
+            return
+        }
+
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
     func fileIcon(for invoice: PhysicalArtifact) -> NSImage {
@@ -1060,6 +1081,98 @@ final class AppModel: ObservableObject {
             await fileSystemReconciler.reconcileNow()
         } catch {
             settingsErrorMessage = error.localizedDescription
+        }
+    }
+
+    /// Whether the given selection can be split into a separate copy: exactly one
+    /// unprocessed/in-progress file with a known content hash.
+    func canDuplicateForSeparateProcessing(ids: [PhysicalArtifact.ID]) -> Bool {
+        guard ids.count == 1, let artifact = invoices.first(where: { $0.id == ids[0] }) else {
+            return false
+        }
+        return (artifact.location == .inbox || artifact.location == .processing)
+            && artifact.contentHash != nil
+    }
+
+    /// Creates an independently-processable copy of a file (e.g. for a second receipt captured
+    /// in the same image). The copy carries a unique metadata marker so it has a distinct
+    /// content hash, and is recorded as "not a duplicate" of the original so the visually
+    /// identical pages are never regrouped by text/structured matching.
+    func duplicateForSeparateProcessing(id: PhysicalArtifact.ID, fileName: String) async {
+        metadataFlushGuard?()
+
+        guard canDuplicateForSeparateProcessing(ids: [id]),
+              let source = invoices.first(where: { $0.id == id }) else {
+            settingsErrorMessage = "Only an unprocessed or in-progress file can be split into a separate copy."
+            return
+        }
+
+        let sourceURL = source.fileURL
+        let destinationFolder = sourceURL.deletingLastPathComponent()
+        let fileExtension = sourceURL.pathExtension
+        let destinationURL = Self.uniqueCopyURL(
+            in: destinationFolder,
+            preferredFileName: fileName,
+            fileExtension: fileExtension
+        )
+        let fileType = source.fileType
+
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try FileDuplicationService.duplicate(source: sourceURL, to: destinationURL, fileType: fileType)
+            }.value
+        } catch {
+            settingsErrorMessage = error.localizedDescription
+            return
+        }
+
+        let newHash = try? FileHasher.sha256(for: destinationURL)
+        if let originalHash = source.contentHash, let newHash, newHash != originalHash {
+            separatedContentHashPairs.insert(ContentHashPair(originalHash, newHash))
+            DuplicateOverrideStore.save(separatedContentHashPairs)
+        }
+
+        _ = PhysicalArtifactIdentityStore.shared.id(for: destinationURL)
+        PhysicalArtifactIdentityStore.shared.save()
+
+        fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
+        settingsErrorMessage = nil
+        let copyArtifactID = PhysicalArtifactIdentityStore.shared.existingID(for: destinationURL)
+        setSelection(ids: Set(copyArtifactID.map { [$0] } ?? []), primary: copyArtifactID)
+        await fileSystemReconciler.reconcileNow()
+    }
+
+    private static func uniqueCopyURL(in folder: URL, preferredFileName: String, fileExtension: String) -> URL {
+        let trimmed = preferredFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffixToDrop = "." + fileExtension.lowercased()
+        let baseCandidate: String
+        if trimmed.isEmpty {
+            baseCandidate = "Copy"
+        } else if !fileExtension.isEmpty, trimmed.lowercased().hasSuffix(suffixToDrop) {
+            baseCandidate = String(trimmed.dropLast(suffixToDrop.count))
+        } else {
+            baseCandidate = trimmed
+        }
+        let sanitizedBase = baseCandidate.replacingOccurrences(of: "/", with: "-")
+
+        let fileManager = FileManager.default
+        func candidateURL(_ name: String) -> URL {
+            let withName = folder.appendingPathComponent(name)
+            return fileExtension.isEmpty ? withName : withName.appendingPathExtension(fileExtension)
+        }
+
+        var candidate = candidateURL(sanitizedBase)
+        guard fileManager.fileExists(atPath: candidate.path) else {
+            return candidate
+        }
+
+        var suffix = 2
+        while true {
+            candidate = candidateURL("\(sanitizedBase) \(suffix)")
+            if !fileManager.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            suffix += 1
         }
     }
 
@@ -1623,10 +1736,64 @@ final class AppModel: ObservableObject {
             workflowsByArtifactID: workflowByID,
             documentMetadataHintsByArtifactID: documentMetadataHintsByArtifactID,
             duplicateTermFrequenciesByHash: computationCache.duplicateTermFrequenciesByHash,
-            duplicateFirstPageTermFrequenciesByHash: computationCache.firstPageDuplicateTermFrequenciesByHash
+            duplicateFirstPageTermFrequenciesByHash: computationCache.firstPageDuplicateTermFrequenciesByHash,
+            separatedContentHashPairs: separatedContentHashPairs
         )
         invoices = librarySnapshot.artifacts
         documents = librarySnapshot.documents
+    }
+
+    /// Records a user override declaring the given artifacts to be distinct documents, so the
+    /// duplicate detector never groups them again. Separates the selected artifacts from each
+    /// other and from the other members of any duplicate group they currently belong to, while
+    /// preserving genuine duplicate relationships among the *unselected* members.
+    func markArtifactsAsNotDuplicates(ids: [PhysicalArtifact.ID]) {
+        let selectedIDs = Set(ids)
+        guard !selectedIDs.isEmpty else { return }
+
+        let hashByID = Dictionary(
+            invoices.compactMap { invoice -> (PhysicalArtifact.ID, String)? in
+                guard let hash = invoice.contentHash else { return nil }
+                return (invoice.id, hash)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        let selectedHashes = Set(selectedIDs.compactMap { hashByID[$0] })
+        guard !selectedHashes.isEmpty else { return }
+
+        var otherHashes: Set<String> = []
+        for document in documents where document.isDuplicate {
+            guard !document.artifactIDs.isDisjoint(with: selectedIDs) else { continue }
+            for reference in document.artifacts where !selectedIDs.contains(reference.id) {
+                if let hash = reference.contentHash {
+                    otherHashes.insert(hash)
+                }
+            }
+        }
+        otherHashes.subtract(selectedHashes)
+
+        var newPairs: Set<ContentHashPair> = []
+
+        let selectedArray = Array(selectedHashes)
+        for i in selectedArray.indices {
+            for j in (i + 1)..<selectedArray.count {
+                newPairs.insert(ContentHashPair(selectedArray[i], selectedArray[j]))
+            }
+        }
+
+        for selected in selectedHashes {
+            for other in otherHashes {
+                newPairs.insert(ContentHashPair(selected, other))
+            }
+        }
+
+        let additions = newPairs.subtracting(separatedContentHashPairs)
+        guard !additions.isEmpty else { return }
+
+        separatedContentHashPairs.formUnion(additions)
+        DuplicateOverrideStore.save(separatedContentHashPairs)
+        rebuildLibrarySnapshot()
     }
 
     private func syncSelectionForVisibleInvoices() {

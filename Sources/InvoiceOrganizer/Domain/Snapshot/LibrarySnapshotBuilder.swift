@@ -36,7 +36,8 @@ struct LibrarySnapshotBuilder {
         workflowsByArtifactID: [PhysicalArtifact.ID: StoredInvoiceWorkflow],
         documentMetadataHintsByArtifactID: [PhysicalArtifact.ID: DocumentMetadata],
         duplicateTermFrequenciesByHash: [String: [String: Int]],
-        duplicateFirstPageTermFrequenciesByHash: [String: [String: Int]]
+        duplicateFirstPageTermFrequenciesByHash: [String: [String: Int]],
+        separatedContentHashPairs: Set<ContentHashPair> = []
     ) -> LibrarySnapshot {
         let structuredRecordsByHash: [String: InvoiceStructuredDataRecord] = artifacts.reduce(into: [:]) { recordsByHash, artifact in
             guard let contentHash = artifact.contentHash,
@@ -51,7 +52,8 @@ struct LibrarySnapshotBuilder {
             for: artifacts,
             termFrequenciesByContentHash: duplicateTermFrequenciesByHash,
             firstPageTermFrequenciesByContentHash: duplicateFirstPageTermFrequenciesByHash,
-            structuredRecordsByContentHash: structuredRecordsByHash
+            structuredRecordsByContentHash: structuredRecordsByHash,
+            separatedContentHashPairs: separatedContentHashPairs
         )
         let documents = buildDocuments(
             from: artifacts,

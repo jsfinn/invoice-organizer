@@ -128,8 +128,17 @@ struct QueueSidebar: View {
                     onJoinIntoPDF: { orderedIDs in
                         promptForJoinedPDFName(orderedIDs: orderedIDs)
                     },
+                    onDuplicateForSeparateProcessing: { orderedIDs in
+                        promptForSeparateCopyName(orderedIDs: orderedIDs)
+                    },
+                    onMarkNotDuplicate: { orderedIDs in
+                        model.markArtifactsAsNotDuplicates(ids: orderedIDs)
+                    },
                     onOpenInPreview: { orderedIDs in
                         model.openInPreview(ids: orderedIDs)
+                    },
+                    onShowInFinder: { orderedIDs in
+                        model.showInFinder(ids: orderedIDs)
                     },
                     dragExportURL: { invoice in
                         try model.dragExportURL(for: invoice)
@@ -168,6 +177,41 @@ struct QueueSidebar: View {
         Task {
             await model.joinArtifactsIntoPDF(ids: orderedIDs, fileName: fileName)
         }
+    }
+
+    private func promptForSeparateCopyName(orderedIDs: [PhysicalArtifact.ID]) {
+        guard model.canDuplicateForSeparateProcessing(ids: orderedIDs),
+              let id = orderedIDs.first else { return }
+
+        let defaultName = suggestedSeparateCopyName(for: id)
+
+        let alert = NSAlert()
+        alert.messageText = "Split into a Separate Copy"
+        alert.informativeText = "Creates an independent copy of this file so a second receipt can be processed and named separately. The original is left in place."
+        alert.addButton(withTitle: "Create Copy")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        textField.stringValue = defaultName
+        textField.placeholderString = "Copy"
+        alert.accessoryView = textField
+        alert.window.initialFirstResponder = textField
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let fileName = textField.stringValue
+        Task {
+            await model.duplicateForSeparateProcessing(id: id, fileName: fileName)
+        }
+    }
+
+    private func suggestedSeparateCopyName(for id: PhysicalArtifact.ID) -> String {
+        guard let artifact = model.invoices.first(where: { $0.id == id }) else {
+            return "Copy"
+        }
+
+        let baseName = artifact.fileURL.deletingPathExtension().lastPathComponent
+        return baseName.isEmpty ? "Copy" : "\(baseName) (2)"
     }
 
     private func suggestedJoinedFileName(for orderedIDs: [PhysicalArtifact.ID]) -> String {

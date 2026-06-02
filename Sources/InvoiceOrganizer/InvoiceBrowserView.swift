@@ -19,7 +19,10 @@ struct InvoiceBrowserView: NSViewRepresentable {
     let onRescan: () -> Void
     let onArchive: ([PhysicalArtifact.ID]) -> Void
     let onJoinIntoPDF: ([PhysicalArtifact.ID]) -> Void
+    let onDuplicateForSeparateProcessing: ([PhysicalArtifact.ID]) -> Void
+    let onMarkNotDuplicate: ([PhysicalArtifact.ID]) -> Void
     let onOpenInPreview: ([PhysicalArtifact.ID]) -> Void
+    let onShowInFinder: ([PhysicalArtifact.ID]) -> Void
     let dragExportURL: (PhysicalArtifact) throws -> URL
     let fileIcon: (PhysicalArtifact) -> NSImage
 
@@ -402,6 +405,27 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 menu.addItem(joinItem)
             }
 
+            if canDuplicateForSeparateProcessing(selectedArtifacts) {
+                if menu.items.isEmpty == false {
+                    menu.addItem(.separator())
+                }
+
+                let splitItem = NSMenuItem(title: "Split into Separate Copy…", action: #selector(duplicateSelectionForSeparateProcessing), keyEquivalent: "")
+                splitItem.target = self
+                menu.addItem(splitItem)
+            }
+
+            if canMarkNotDuplicate(selectedArtifacts) {
+                if menu.items.isEmpty == false {
+                    menu.addItem(.separator())
+                }
+
+                let title = selectedArtifacts.count > 1 ? "Mark as Not Duplicates" : "Mark as Not a Duplicate"
+                let markItem = NSMenuItem(title: title, action: #selector(markSelectionNotDuplicate), keyEquivalent: "")
+                markItem.target = self
+                menu.addItem(markItem)
+            }
+
             if !selectedArtifacts.isEmpty {
                 if menu.items.isEmpty == false {
                     menu.addItem(.separator())
@@ -410,6 +434,10 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 let openInPreviewItem = NSMenuItem(title: "Open in Preview", action: #selector(openSelectionInPreview), keyEquivalent: "")
                 openInPreviewItem.target = self
                 menu.addItem(openInPreviewItem)
+
+                let showInFinderItem = NSMenuItem(title: "Show in Finder", action: #selector(showSelectionInFinder), keyEquivalent: "")
+                showInFinderItem.target = self
+                menu.addItem(showInFinderItem)
 
                 let archiveItem = NSMenuItem(title: "Archive", action: #selector(archiveSelection), keyEquivalent: "")
                 archiveItem.target = self
@@ -446,6 +474,11 @@ struct InvoiceBrowserView: NSViewRepresentable {
         }
 
         @objc
+        private func showSelectionInFinder() {
+            parent.onShowInFinder(orderedSelectedInvoiceIDs())
+        }
+
+        @objc
         private func archiveSelection() {
             parent.onArchive(orderedSelectedInvoiceIDs())
         }
@@ -453,6 +486,36 @@ struct InvoiceBrowserView: NSViewRepresentable {
         @objc
         private func joinSelectionIntoPDF() {
             parent.onJoinIntoPDF(orderedSelectedInvoiceIDs())
+        }
+
+        @objc
+        private func markSelectionNotDuplicate() {
+            parent.onMarkNotDuplicate(orderedSelectedInvoiceIDs())
+        }
+
+        @objc
+        private func duplicateSelectionForSeparateProcessing() {
+            parent.onDuplicateForSeparateProcessing(orderedSelectedInvoiceIDs())
+        }
+
+        /// Splitting applies to a single unprocessed/in-progress file (e.g. one image
+        /// containing two receipts that each need to be processed separately).
+        private func canDuplicateForSeparateProcessing(_ selectedArtifacts: [PhysicalArtifact]) -> Bool {
+            guard parent.queueTab == .unprocessed || parent.queueTab == .inProgress else {
+                return false
+            }
+            return selectedArtifacts.count == 1 && selectedArtifacts[0].contentHash != nil
+        }
+
+        /// The action applies when at least one selected artifact is part of a duplicate group,
+        /// i.e. there is some existing grouping the override could split apart.
+        private func canMarkNotDuplicate(_ selectedArtifacts: [PhysicalArtifact]) -> Bool {
+            let selectedIDs = Set(selectedArtifacts.map(\.id))
+            guard !selectedIDs.isEmpty else { return false }
+
+            return parent.documents.contains { document in
+                document.isDuplicate && !document.artifactIDs.isDisjoint(with: selectedIDs)
+            }
         }
 
         private func canJoinIntoPDF(_ selectedArtifacts: [PhysicalArtifact]) -> Bool {
