@@ -38,7 +38,7 @@ final class PreviewRotationCoordinator: ObservableObject {
 
     /// Enqueues a background commit from an active context if that context has unsaved rotation changes.
     func enqueueCommitIfNeeded(from context: ActivePreviewContext?) {
-        guard let request = context?.rotationCommitRequest else {
+        guard let request = context?.editCommitRequest else {
             return
         }
 
@@ -49,6 +49,11 @@ final class PreviewRotationCoordinator: ObservableObject {
     /// Returns the currently queued or in-flight quarter-turn value for an invoice, if any.
     func pendingQuarterTurns(for invoiceID: PhysicalArtifact.ID) -> Int? {
         entriesByInvoiceID[invoiceID]?.request.quarterTurns
+    }
+
+    /// Returns the currently queued or in-flight page order for an invoice, if any.
+    func pendingPageOrder(for invoiceID: PhysicalArtifact.ID) -> [Int]? {
+        entriesByInvoiceID[invoiceID]?.request.pageOrder
     }
 
     /// Returns the current save status for an invoice's queued rotation commit.

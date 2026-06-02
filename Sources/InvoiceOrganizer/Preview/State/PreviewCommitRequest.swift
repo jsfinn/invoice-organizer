@@ -3,6 +3,8 @@ import Foundation
 struct PreviewCommitRequest: Sendable, Equatable {
     let handle: ArtifactHandle
     let quarterTurns: Int
+    /// New page order as a permutation of `0..<pageCount`, or nil when pages are unchanged.
+    let pageOrder: [Int]?
 
     var invoiceID: PhysicalArtifact.ID {
         handle.artifactID
@@ -24,8 +26,9 @@ struct PreviewCommitRequest: Sendable, Equatable {
         handle.addedAt
     }
 
-    init(invoice: PhysicalArtifact, quarterTurns: Int) {
+    init(invoice: PhysicalArtifact, quarterTurns: Int, pageOrder: [Int]? = nil) {
         self.handle = invoice.handle
         self.quarterTurns = normalizedPreviewRotationQuarterTurns(quarterTurns)
+        self.pageOrder = pageOrder
     }
 }

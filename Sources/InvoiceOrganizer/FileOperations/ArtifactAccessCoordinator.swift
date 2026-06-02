@@ -49,6 +49,12 @@ final class ArtifactAccessCoordinator {
         }.value
     }
 
+    func reorderPages(handle: ArtifactHandle, order: [Int]) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try InvoiceFilePageReorder.reorderPages(at: handle.fileURL, order: order)
+        }.value
+    }
+
     func updatedContentHash(for handle: ArtifactHandle) -> String? {
         try? FileHasher.sha256(for: handle.fileURL)
     }

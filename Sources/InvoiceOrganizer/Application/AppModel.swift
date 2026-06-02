@@ -984,6 +984,113 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Whether the given selection can be joined into a single multi-page PDF.
+    /// Requires at least two artifacts that all live in the same inbox/processing folder.
+    func canJoinArtifactsIntoPDF(ids: [PhysicalArtifact.ID]) -> Bool {
+        let artifacts = ids.compactMap { id in invoices.first { $0.id == id } }
+        guard artifacts.count >= 2, artifacts.count == ids.count else { return false }
+        guard artifacts.allSatisfy({ $0.location == .inbox || $0.location == .processing }) else { return false }
+        let folders = Set(artifacts.map { $0.fileURL.deletingLastPathComponent().standardizedFileURL.path })
+        return folders.count == 1
+    }
+
+    /// Joins the selected artifacts (in the provided display order) into a single
+    /// multi-page PDF in the same folder, then archives the original source files.
+    func joinArtifactsIntoPDF(ids: [PhysicalArtifact.ID], fileName: String) async {
+        metadataFlushGuard?()
+
+        guard canJoinArtifactsIntoPDF(ids: ids) else {
+            settingsErrorMessage = "Select two or more files from the same queue to join them into a PDF."
+            return
+        }
+        guard let archiveRoot = folderSettings.duplicatesURL else {
+            settingsErrorMessage = "Choose an Archive folder before joining documents."
+            return
+        }
+
+        let orderedArtifacts = ids.compactMap { id in invoices.first { $0.id == id } }
+        guard let firstArtifact = orderedArtifacts.first else { return }
+
+        let destinationFolder = firstArtifact.fileURL.deletingLastPathComponent()
+        let destinationURL = Self.uniqueJoinedPDFURL(in: destinationFolder, preferredFileName: fileName)
+        let sources = orderedArtifacts.map { PDFJoinSource(fileURL: $0.fileURL, fileType: $0.fileType) }
+
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try PDFJoinService.join(sources: sources, to: destinationURL)
+            }.value
+        } catch {
+            settingsErrorMessage = error.localizedDescription
+            return
+        }
+
+        _ = PhysicalArtifactIdentityStore.shared.id(for: destinationURL)
+        PhysicalArtifactIdentityStore.shared.save()
+
+        let joinedContentHashes = Set(orderedArtifacts.compactMap { $0.contentHash })
+        let remainingContentHashes = Set(
+            invoices
+                .filter { !ids.contains($0.id) }
+                .compactMap { $0.contentHash }
+        )
+        let orphanedContentHashes = joinedContentHashes.subtracting(remainingContentHashes)
+
+        do {
+            let result = try workflowActionCoordinator.moveArtifactsToArchive(
+                artifacts: orderedArtifacts,
+                workflowsByID: workflowByID,
+                archiveRoot: archiveRoot
+            )
+            workflowByID = result.workflowsByID
+            persistWorkflow()
+
+            if !orphanedContentHashes.isEmpty {
+                await computationCache.invalidate(contentHashes: orphanedContentHashes)
+                syncComputationHashes()
+                textPendingHashes.subtract(orphanedContentHashes)
+                textFailedHashes.subtract(orphanedContentHashes)
+                structuredPendingHashes.subtract(orphanedContentHashes)
+                structuredFailedHashes.subtract(orphanedContentHashes)
+            }
+
+            fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
+            settingsErrorMessage = nil
+            let joinedArtifactID = PhysicalArtifactIdentityStore.shared.existingID(for: destinationURL)
+            setSelection(ids: Set(joinedArtifactID.map { [$0] } ?? []), primary: joinedArtifactID)
+            await fileSystemReconciler.reconcileNow()
+        } catch {
+            settingsErrorMessage = error.localizedDescription
+        }
+    }
+
+    private static func uniqueJoinedPDFURL(in folder: URL, preferredFileName: String) -> URL {
+        let trimmed = preferredFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName: String
+        if trimmed.isEmpty {
+            baseName = "Joined Document"
+        } else if trimmed.lowercased().hasSuffix(".pdf") {
+            baseName = String(trimmed.dropLast(4))
+        } else {
+            baseName = trimmed
+        }
+        let sanitizedBase = baseName.replacingOccurrences(of: "/", with: "-")
+
+        let fileManager = FileManager.default
+        var candidate = folder.appendingPathComponent(sanitizedBase).appendingPathExtension("pdf")
+        guard fileManager.fileExists(atPath: candidate.path) else {
+            return candidate
+        }
+
+        var suffix = 2
+        while true {
+            candidate = folder.appendingPathComponent("\(sanitizedBase) \(suffix)").appendingPathExtension("pdf")
+            if !fileManager.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
     func rescanInvoices(ids: Set<PhysicalArtifact.ID>) async {
         await queueHandlerSetupTask?.value
         let selectedArtifacts = invoices.filter { ids.contains($0.id) }
@@ -1327,9 +1434,13 @@ final class AppModel: ObservableObject {
         )
     }
 
+    /// Persists queued preview edits (page reorder and/or rotation) to disk, recomputes the
+    /// content hash, and migrates caches so extraction pipelines are not needlessly restarted.
+    /// Reorder is applied before rotation so the requested order is preserved.
     func persistPreviewRotation(for request: PreviewCommitRequest) async -> PreviewRotationSaveResult? {
         let rotation = normalizePreviewRotation(request.quarterTurns)
-        guard rotation != 0,
+        let pageOrder = request.pageOrder
+        guard rotation != 0 || pageOrder != nil,
               let invoice = resolvedInvoice(for: request) else {
             return nil
         }
@@ -1341,7 +1452,13 @@ final class AppModel: ObservableObject {
         }
 
         do {
-            try await accessCoordinator.rotate(handle: handle, quarterTurns: rotation)
+            if let pageOrder {
+                try await accessCoordinator.reorderPages(handle: handle, order: pageOrder)
+            }
+
+            if rotation != 0 {
+                try await accessCoordinator.rotate(handle: handle, quarterTurns: rotation)
+            }
 
             let updatedContentHash = accessCoordinator.updatedContentHash(for: handle)
             await migrateCachedArtifacts(from: invoice.contentHash, to: updatedContentHash)

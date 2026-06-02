@@ -109,6 +109,48 @@ private func writePDF(width: CGFloat, height: CGFloat, to url: URL) throws {
     try (data as Data).write(to: url)
 }
 
+private func writeMultiPagePDF(pageCount: Int, width: CGFloat = 200, height: CGFloat = 300, to url: URL) throws {
+    let data = NSMutableData()
+    var mediaBox = CGRect(x: 0, y: 0, width: width, height: height)
+
+    guard let consumer = CGDataConsumer(data: data),
+          let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+
+    for _ in 0..<pageCount {
+        context.beginPDFPage(nil)
+        context.setFillColor(CGColor(gray: 0.9, alpha: 1))
+        context.fill(mediaBox)
+        context.endPDFPage()
+    }
+    context.closePDF()
+
+    try (data as Data).write(to: url)
+}
+
+private func writeSizedPagesPDF(pageWidths: [CGFloat], height: CGFloat = 300, to url: URL) throws {
+    let data = NSMutableData()
+    var firstBox = CGRect(x: 0, y: 0, width: pageWidths.first ?? 200, height: height)
+
+    guard let consumer = CGDataConsumer(data: data),
+          let context = CGContext(consumer: consumer, mediaBox: &firstBox, nil) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+
+    for width in pageWidths {
+        var mediaBox = CGRect(x: 0, y: 0, width: width, height: height)
+        let pageInfo = [kCGPDFContextMediaBox as String: NSData(bytes: &mediaBox, length: MemoryLayout<CGRect>.size)] as CFDictionary
+        context.beginPDFPage(pageInfo)
+        context.setFillColor(CGColor(gray: 0.9, alpha: 1))
+        context.fill(mediaBox)
+        context.endPDFPage()
+    }
+    context.closePDF()
+
+    try (data as Data).write(to: url)
+}
+
 private func imagePixelSize(at url: URL) throws -> CGSize {
     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
@@ -4357,4 +4399,129 @@ private actor MockStructuredExtractionClient: InvoiceStructuredExtractionClient 
     #expect(flushed.invoiceDate == targetDate)
     #expect(flushed.invoiceNumber == "INV-001")
     #expect(flushed.documentType == .invoice)
+}
+
+// MARK: - PDF Join Tests
+
+@Test func pdfJoinServiceMergesPdfAndImageIntoMultiPagePDF() throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let pdfURL = tempRoot.appendingPathComponent("page1.pdf")
+    try writePDF(width: 200, height: 300, to: pdfURL)
+    let imageURL = tempRoot.appendingPathComponent("page2.jpg")
+    try writePNG(width: 120, height: 90, to: imageURL)
+
+    let destinationURL = tempRoot.appendingPathComponent("joined.pdf")
+    let sources = [
+        PDFJoinSource(fileURL: pdfURL, fileType: .pdf),
+        PDFJoinSource(fileURL: imageURL, fileType: .jpeg)
+    ]
+
+    try PDFJoinService.join(sources: sources, to: destinationURL)
+
+    #expect(FileManager.default.fileExists(atPath: destinationURL.path))
+    let merged = try #require(PDFDocument(url: destinationURL))
+    #expect(merged.pageCount == 2)
+}
+
+@Test func pdfJoinServicePreservesAllPagesFromMultiPageSources() throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let firstURL = tempRoot.appendingPathComponent("a.pdf")
+    try writeMultiPagePDF(pageCount: 3, to: firstURL)
+    let secondURL = tempRoot.appendingPathComponent("b.pdf")
+    try writeMultiPagePDF(pageCount: 2, to: secondURL)
+
+    let destinationURL = tempRoot.appendingPathComponent("joined.pdf")
+    try PDFJoinService.join(
+        sources: [
+            PDFJoinSource(fileURL: firstURL, fileType: .pdf),
+            PDFJoinSource(fileURL: secondURL, fileType: .pdf)
+        ],
+        to: destinationURL
+    )
+
+    let merged = try #require(PDFDocument(url: destinationURL))
+    #expect(merged.pageCount == 5)
+}
+
+@Test func pdfJoinServiceThrowsForSingleSource() throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let pdfURL = tempRoot.appendingPathComponent("only.pdf")
+    try writePDF(width: 200, height: 300, to: pdfURL)
+    let destinationURL = tempRoot.appendingPathComponent("joined.pdf")
+
+    #expect(throws: PDFJoinService.JoinError.self) {
+        try PDFJoinService.join(
+            sources: [PDFJoinSource(fileURL: pdfURL, fileType: .pdf)],
+            to: destinationURL
+        )
+    }
+}
+
+// MARK: - PDF Page Reorder Tests
+
+@Test func pageReorderRewritesPdfInRequestedOrder() throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let pdfURL = tempRoot.appendingPathComponent("multi.pdf")
+    try writeSizedPagesPDF(pageWidths: [100, 200, 300], to: pdfURL)
+
+    try InvoiceFilePageReorder.reorderPages(at: pdfURL, order: [2, 0, 1])
+
+    let reordered = try #require(PDFDocument(url: pdfURL))
+    #expect(reordered.pageCount == 3)
+    let widths = (0..<reordered.pageCount).compactMap { reordered.page(at: $0)?.bounds(for: .mediaBox).width }
+    #expect(widths == [300, 100, 200])
+}
+
+@Test func pageReorderIsNoOpForIdentityOrder() throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let pdfURL = tempRoot.appendingPathComponent("multi.pdf")
+    try writeSizedPagesPDF(pageWidths: [100, 200], to: pdfURL)
+    let originalHash = try FileHasher.sha256(for: pdfURL)
+
+    try InvoiceFilePageReorder.reorderPages(at: pdfURL, order: [0, 1])
+
+    let unchangedHash = try FileHasher.sha256(for: pdfURL)
+    #expect(originalHash == unchangedHash)
+}
+
+@Test func pageReorderThrowsForInvalidPermutation() throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let pdfURL = tempRoot.appendingPathComponent("multi.pdf")
+    try writeSizedPagesPDF(pageWidths: [100, 200, 300], to: pdfURL)
+
+    #expect(throws: InvoiceFilePageReorder.ReorderError.self) {
+        try InvoiceFilePageReorder.reorderPages(at: pdfURL, order: [0, 1])
+    }
+    #expect(throws: InvoiceFilePageReorder.ReorderError.self) {
+        try InvoiceFilePageReorder.reorderPages(at: pdfURL, order: [0, 1, 1])
+    }
+}
+
+@Test func pdfJoinServiceFitsImagePagesWithinLetterBounds() {
+    let landscape = PDFJoinService.fittedPageSize(forPixelWidth: 4000, pixelHeight: 2000)
+    #expect(landscape.width <= 612)
+    #expect(landscape.height <= 792)
+    #expect(landscape.width == 612)
+
+    let portrait = PDFJoinService.fittedPageSize(forPixelWidth: 1000, pixelHeight: 4000)
+    #expect(portrait.width <= 612)
+    #expect(portrait.height == 792)
 }

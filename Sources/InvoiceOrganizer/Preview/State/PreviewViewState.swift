@@ -31,6 +31,10 @@ final class PreviewViewState: ObservableObject {
         activeContext?.rotationQuarterTurns ?? 0
     }
 
+    var pageOrder: [Int] {
+        activeContext?.pageOrder ?? []
+    }
+
     var rotationSaveStatus: PreviewRotationCoordinator.SaveStatus {
         activeContext?.rotationSaveStatus ?? .idle
     }
@@ -69,8 +73,12 @@ final class PreviewViewState: ObservableObject {
                 return
             }
 
+            let pendingOrder = rotationCoordinator.pendingPageOrder(for: invoice.id)
             updateActiveContext {
                 $0.updateContent(.asset(asset))
+                if case .pdf(let document) = asset {
+                    $0.setPageCount(document.pageCount, pendingOrder: pendingOrder)
+                }
             }
         } catch is CancellationError {
             return
@@ -96,6 +104,16 @@ final class PreviewViewState: ObservableObject {
         updateActiveContext {
             _ = $0.rotate(by: quarterTurnsDelta)
         }
+    }
+
+    // MARK: - Page Reordering
+
+    /// Updates the in-memory page order for the active document. `order` is a permutation
+    /// of `0..<pageCount`. The change is held in memory (and reflected live in the preview);
+    /// it is written to disk once on handoff/quit via the commit coordinator, mirroring rotation.
+    func reorderPages(_ order: [Int], for invoice: PhysicalArtifact) {
+        guard activeContext?.invoice.id == invoice.id else { return }
+        updateActiveContext { _ = $0.reorderPages(order) }
     }
 
     // MARK: - Metadata Editing

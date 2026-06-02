@@ -125,6 +125,9 @@ struct QueueSidebar: View {
                             await model.archiveInvoices(ids: orderedIDs)
                         }
                     },
+                    onJoinIntoPDF: { orderedIDs in
+                        promptForJoinedPDFName(orderedIDs: orderedIDs)
+                    },
                     onOpenInPreview: { orderedIDs in
                         model.openInPreview(ids: orderedIDs)
                     },
@@ -140,6 +143,41 @@ struct QueueSidebar: View {
         .padding()
         .frame(minWidth: 680)
         .frame(maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func promptForJoinedPDFName(orderedIDs: [PhysicalArtifact.ID]) {
+        guard model.canJoinArtifactsIntoPDF(ids: orderedIDs) else { return }
+
+        let defaultName = suggestedJoinedFileName(for: orderedIDs)
+
+        let alert = NSAlert()
+        alert.messageText = "Join \(orderedIDs.count) Files into PDF"
+        alert.informativeText = "Pages will follow the current list order. The original files will be moved to your Archive folder."
+        alert.addButton(withTitle: "Join")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        textField.stringValue = defaultName
+        textField.placeholderString = "Joined Document"
+        alert.accessoryView = textField
+        alert.window.initialFirstResponder = textField
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let fileName = textField.stringValue
+        Task {
+            await model.joinArtifactsIntoPDF(ids: orderedIDs, fileName: fileName)
+        }
+    }
+
+    private func suggestedJoinedFileName(for orderedIDs: [PhysicalArtifact.ID]) -> String {
+        guard let firstID = orderedIDs.first,
+              let artifact = model.invoices.first(where: { $0.id == firstID }) else {
+            return "Joined Document"
+        }
+
+        let baseName = artifact.fileURL.deletingPathExtension().lastPathComponent
+        return baseName.isEmpty ? "Joined Document" : "\(baseName) (joined)"
     }
 
     @ViewBuilder

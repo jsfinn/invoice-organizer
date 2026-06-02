@@ -18,9 +18,13 @@ struct InvoicePreviewView: View {
                 content: previewState.content,
                 viewport: viewport,
                 rotationQuarterTurns: previewState.rotationQuarterTurns,
+                pageOrder: previewState.pageOrder,
                 onChooseFit: applyFitZoom,
                 onRotate: { delta in
                     previewState.rotate(by: delta, for: invoice)
+                },
+                onReorderPages: { order in
+                    previewState.reorderPages(order, for: invoice)
                 }
             )
             .frame(maxWidth: .infinity)

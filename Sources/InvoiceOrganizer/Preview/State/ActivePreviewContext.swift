@@ -20,6 +20,13 @@ struct ActivePreviewContext {
     var persistedQuarterTurns: Int
     var rotationSaveStatus: PreviewRotationCoordinator.SaveStatus
 
+    // MARK: - Page Order
+
+    /// Current in-memory page order (permutation of `0..<pageCount`). Empty until the
+    /// PDF asset has loaded and the page count is known.
+    var pageOrder: [Int]
+    var persistedPageOrder: [Int]
+
     // MARK: - Metadata
 
     var pendingMetadata: DocumentMetadata
@@ -38,6 +45,8 @@ struct ActivePreviewContext {
         self.rotationQuarterTurns = normalizedRotation
         self.persistedQuarterTurns = normalizedRotation
         self.rotationSaveStatus = rotationSaveStatus
+        self.pageOrder = []
+        self.persistedPageOrder = []
         self.pendingMetadata = metadata
         self.committedMetadata = metadata
     }
@@ -46,13 +55,22 @@ struct ActivePreviewContext {
         rotationQuarterTurns != persistedQuarterTurns
     }
 
+    var isPageOrderDirty: Bool {
+        !pageOrder.isEmpty && pageOrder != persistedPageOrder
+    }
+
     var isMetadataDirty: Bool {
         pendingMetadata != committedMetadata
     }
 
-    var rotationCommitRequest: PreviewCommitRequest? {
-        guard isRotationDirty else { return nil }
-        return PreviewCommitRequest(invoice: invoice, quarterTurns: rotationQuarterTurns)
+    /// A commit request capturing any unsaved rotation and/or page-order changes.
+    var editCommitRequest: PreviewCommitRequest? {
+        guard isRotationDirty || isPageOrderDirty else { return nil }
+        return PreviewCommitRequest(
+            invoice: invoice,
+            quarterTurns: rotationQuarterTurns,
+            pageOrder: isPageOrderDirty ? pageOrder : nil
+        )
     }
 
     mutating func rotate(by quarterTurnsDelta: Int) -> Bool {
@@ -64,6 +82,34 @@ struct ActivePreviewContext {
         }
 
         rotationQuarterTurns = updatedRotation
+        rotationSaveStatus = .idle
+        return true
+    }
+
+    /// Establishes the known page count once the PDF asset has loaded, optionally
+    /// restoring a still-pending (unsaved) order queued by the commit coordinator.
+    mutating func setPageCount(_ count: Int, pendingOrder: [Int]?) {
+        let identity = Array(0..<max(count, 0))
+        persistedPageOrder = identity
+
+        if let pendingOrder,
+           pendingOrder.count == count,
+           Set(pendingOrder) == Set(identity) {
+            pageOrder = pendingOrder
+        } else {
+            pageOrder = identity
+        }
+    }
+
+    mutating func reorderPages(_ newOrder: [Int]) -> Bool {
+        guard !pageOrder.isEmpty,
+              newOrder.count == pageOrder.count,
+              Set(newOrder) == Set(pageOrder),
+              newOrder != pageOrder else {
+            return false
+        }
+
+        pageOrder = newOrder
         rotationSaveStatus = .idle
         return true
     }

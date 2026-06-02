@@ -1,6 +1,7 @@
 import AppKit
 import PDFKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum PreviewViewport: Equatable {
     case fit
@@ -12,8 +13,12 @@ struct ReplacementPreviewRendererView: View {
     let content: PreviewContent
     let viewport: PreviewViewport
     let rotationQuarterTurns: Int
+    let pageOrder: [Int]
     let onChooseFit: () -> Void
     let onRotate: (Int) -> Void
+    let onReorderPages: ([Int]) -> Void
+
+    @State private var requestedPage: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -64,13 +69,7 @@ struct ReplacementPreviewRendererView: View {
             case .error(let title, let message):
                 PreviewErrorView(title: title, message: message, size: size)
             case .asset(.pdf(let document)):
-                PDFPreviewSurface(
-                    document: document,
-                    viewport: viewport,
-                    rotationQuarterTurns: rotationQuarterTurns
-                )
-                .id(sessionID)
-                .frame(width: size.width, height: size.height)
+                pdfContent(document: document, size: size)
             case .asset(.image(let image)):
                 ImagePreviewSurface(
                     image: image,
@@ -83,6 +82,194 @@ struct ReplacementPreviewRendererView: View {
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private static let thumbnailSidebarWidth: CGFloat = 132
+
+    @ViewBuilder
+    private func pdfContent(document: PDFDocument, size: CGSize) -> some View {
+        if document.pageCount > 1 {
+            let surfaceWidth = max(size.width - Self.thumbnailSidebarWidth - 8, 200)
+            HStack(spacing: 8) {
+                PDFThumbnailSidebar(
+                    document: document,
+                    initialOrder: resolvedPageOrder(pageCount: document.pageCount),
+                    onReorder: onReorderPages,
+                    onSelectPage: { requestedPage = $0 }
+                )
+                .id(ObjectIdentifier(document))
+                .frame(width: Self.thumbnailSidebarWidth, height: size.height)
+
+                PDFPreviewSurface(
+                    document: document,
+                    viewport: viewport,
+                    rotationQuarterTurns: rotationQuarterTurns,
+                    pageOrder: resolvedPageOrder(pageCount: document.pageCount),
+                    scrollToPage: requestedPage
+                )
+                .id(sessionID)
+                .frame(width: surfaceWidth, height: size.height)
+            }
+            .frame(width: size.width, height: size.height)
+        } else {
+            PDFPreviewSurface(
+                document: document,
+                viewport: viewport,
+                rotationQuarterTurns: rotationQuarterTurns,
+                pageOrder: [],
+                scrollToPage: nil
+            )
+            .id(sessionID)
+            .frame(width: size.width, height: size.height)
+        }
+    }
+
+    /// The live page order to display, falling back to identity until the state knows the count.
+    private func resolvedPageOrder(pageCount: Int) -> [Int] {
+        guard pageOrder.count == pageCount, Set(pageOrder) == Set(0..<pageCount) else {
+            return Array(0..<pageCount)
+        }
+        return pageOrder
+    }
+}
+
+private struct PDFThumbnailSidebar: View {
+    let document: PDFDocument
+    let onReorder: ([Int]) -> Void
+    let onSelectPage: (Int) -> Void
+
+    @State private var pageOrder: [Int]
+    @State private var thumbnails: [Int: NSImage] = [:]
+    @State private var draggingPageIndex: Int?
+
+    init(
+        document: PDFDocument,
+        initialOrder: [Int],
+        onReorder: @escaping ([Int]) -> Void,
+        onSelectPage: @escaping (Int) -> Void
+    ) {
+        self.document = document
+        self.onReorder = onReorder
+        self.onSelectPage = onSelectPage
+        let identity = Array(0..<document.pageCount)
+        let resolved = (initialOrder.count == document.pageCount && Set(initialOrder) == Set(identity))
+            ? initialOrder
+            : identity
+        _pageOrder = State(initialValue: resolved)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 8) {
+                ForEach(Array(pageOrder.enumerated()), id: \.element) { position, pageIndex in
+                    thumbnailRow(position: position, pageIndex: pageIndex)
+                        .onDrag {
+                            draggingPageIndex = pageIndex
+                            return NSItemProvider(object: String(pageIndex) as NSString)
+                        }
+                        .onDrop(
+                            of: [UTType.text],
+                            delegate: ThumbnailDropDelegate(
+                                targetPageIndex: pageIndex,
+                                pageOrder: $pageOrder,
+                                draggingPageIndex: $draggingPageIndex,
+                                onReorder: onReorder
+                            )
+                        )
+                }
+            }
+            .padding(8)
+        }
+        .scrollContentBackground(.hidden)
+        .task(id: ObjectIdentifier(document)) {
+            await generateThumbnails()
+        }
+    }
+
+    @ViewBuilder
+    private func thumbnailRow(position: Int, pageIndex: Int) -> some View {
+        VStack(spacing: 4) {
+            Group {
+                if let image = thumbnails[pageIndex] {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color(nsColor: .quaternaryLabelColor).opacity(0.3))
+                        .overlay(ProgressView().controlSize(.small))
+                }
+            }
+            .frame(width: 84, height: 108)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            Text("\(position + 1)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .opacity(draggingPageIndex == pageIndex ? 0.4 : 1)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onSelectPage(position)
+        }
+    }
+
+    /// Generates thumbnails one page at a time, yielding between pages so a multi-page
+    /// document never blocks the main thread in a single long stall. Thumbnails are keyed
+    /// by the document's original page index, so they survive in-memory reordering and are
+    /// never regenerated while the user rearranges pages.
+    @MainActor
+    private func generateThumbnails() async {
+        let size = NSSize(width: 168, height: 216)
+        for pageIndex in 0..<document.pageCount where thumbnails[pageIndex] == nil {
+            if Task.isCancelled { return }
+            guard let page = document.page(at: pageIndex) else { continue }
+            let image = page.thumbnail(of: size, for: .mediaBox)
+            thumbnails[pageIndex] = image
+            await Task.yield()
+        }
+    }
+}
+
+private struct ThumbnailDropDelegate: DropDelegate {
+    let targetPageIndex: Int
+    @Binding var pageOrder: [Int]
+    @Binding var draggingPageIndex: Int?
+    let onReorder: ([Int]) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging = draggingPageIndex,
+              dragging != targetPageIndex,
+              let fromPosition = pageOrder.firstIndex(of: dragging),
+              let toPosition = pageOrder.firstIndex(of: targetPageIndex) else {
+            return
+        }
+
+        withAnimation(.easeInOut(duration: 0.15)) {
+            pageOrder.move(
+                fromOffsets: IndexSet(integer: fromPosition),
+                toOffset: toPosition > fromPosition ? toPosition + 1 : toPosition
+            )
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let didReorder = draggingPageIndex != nil
+        draggingPageIndex = nil
+        if didReorder {
+            onReorder(pageOrder)
+        }
+        return true
     }
 }
 
@@ -126,6 +313,8 @@ private struct PDFPreviewSurface: NSViewRepresentable {
     let document: PDFDocument
     let viewport: PreviewViewport
     let rotationQuarterTurns: Int
+    let pageOrder: [Int]
+    let scrollToPage: Int?
 
     func makeNSView(context: Context) -> PDFPreviewSurfaceView {
         PDFPreviewSurfaceView()
@@ -135,8 +324,10 @@ private struct PDFPreviewSurface: NSViewRepresentable {
         nsView.render(
             document: document,
             viewport: viewport,
-            rotationQuarterTurns: rotationQuarterTurns
+            rotationQuarterTurns: rotationQuarterTurns,
+            pageOrder: pageOrder
         )
+        nsView.scrollToPageIfNeeded(scrollToPage)
     }
 }
 
@@ -144,11 +335,13 @@ private final class PDFPreviewSurfaceView: NSView {
     private struct RenderKey: Equatable {
         let documentID: ObjectIdentifier
         let rotationQuarterTurns: Int
+        let pageOrder: [Int]
     }
 
     private let pdfView = PDFView()
     private var renderKey: RenderKey?
     private var currentViewport: PreviewViewport = .fit
+    private var lastScrolledPage: Int?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -165,24 +358,40 @@ private final class PDFPreviewSurfaceView: NSView {
         applyViewport()
     }
 
-    func render(document: PDFDocument, viewport: PreviewViewport, rotationQuarterTurns: Int) {
+    func render(document: PDFDocument, viewport: PreviewViewport, rotationQuarterTurns: Int, pageOrder: [Int]) {
         currentViewport = viewport
 
         let normalizedRotation = normalizedPreviewRotationQuarterTurns(rotationQuarterTurns)
         let nextKey = RenderKey(
             documentID: ObjectIdentifier(document),
-            rotationQuarterTurns: normalizedRotation
+            rotationQuarterTurns: normalizedRotation,
+            pageOrder: pageOrder
         )
 
         if nextKey != renderKey {
-            pdfView.document = rotatedPreviewDocument(from: document, quarterTurns: normalizedRotation)
+            pdfView.document = displayPreviewDocument(
+                from: document,
+                pageOrder: pageOrder,
+                quarterTurns: normalizedRotation
+            )
             if let firstPage = pdfView.document?.page(at: 0) {
                 pdfView.go(to: firstPage)
             }
             renderKey = nextKey
+            lastScrolledPage = nil
         }
 
         applyViewport()
+    }
+
+    func scrollToPageIfNeeded(_ pageIndex: Int?) {
+        guard let pageIndex, pageIndex != lastScrolledPage else { return }
+        guard let document = pdfView.document, pageIndex >= 0, pageIndex < document.pageCount,
+              let page = document.page(at: pageIndex) else {
+            return
+        }
+        lastScrolledPage = pageIndex
+        pdfView.go(to: page)
     }
 
     private func setup() {
@@ -407,21 +616,41 @@ private final class TopAlignedImageDocumentView: NSView {
     }
 }
 
-private func rotatedPreviewDocument(from sourceDocument: PDFDocument, quarterTurns: Int) -> PDFDocument {
+/// Builds the document shown by the preview surface, applying any live page reorder and/or
+/// rotation. When both are no-ops the source document is returned unchanged. Pages are copied
+/// so the shared/cached source document is never mutated.
+private func displayPreviewDocument(
+    from sourceDocument: PDFDocument,
+    pageOrder: [Int],
+    quarterTurns: Int
+) -> PDFDocument {
     let normalizedRotation = normalizedPreviewRotationQuarterTurns(quarterTurns)
-    guard normalizedRotation != 0,
-          let data = sourceDocument.dataRepresentation(),
-          let rotatedDocument = PDFDocument(data: data) else {
+    let pageCount = sourceDocument.pageCount
+    let identity = Array(0..<pageCount)
+    let isIdentityOrder = pageOrder.isEmpty
+        || (pageOrder.count == pageCount && pageOrder == identity)
+
+    guard normalizedRotation != 0 || !isIdentityOrder else {
         return sourceDocument
     }
 
+    let order = (pageOrder.count == pageCount && Set(pageOrder) == Set(identity)) ? pageOrder : identity
+    let result = PDFDocument()
     let rotationDelta = -normalizedRotation * 90
-    for pageIndex in 0..<rotatedDocument.pageCount {
-        guard let page = rotatedDocument.page(at: pageIndex) else { continue }
-        page.rotation = normalizedPreviewPageRotation(page.rotation + rotationDelta)
+
+    for (newIndex, originalIndex) in order.enumerated() {
+        guard originalIndex >= 0,
+              originalIndex < pageCount,
+              let page = sourceDocument.page(at: originalIndex)?.copy() as? PDFPage else {
+            continue
+        }
+        if normalizedRotation != 0 {
+            page.rotation = normalizedPreviewPageRotation(page.rotation + rotationDelta)
+        }
+        result.insert(page, at: newIndex)
     }
 
-    return rotatedDocument
+    return result
 }
 
 private func normalizedPreviewPageRotation(_ value: Int) -> Int {

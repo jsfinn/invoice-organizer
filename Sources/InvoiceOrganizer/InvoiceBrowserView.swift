@@ -18,6 +18,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
     let onMoveToProcessed: () -> Void
     let onRescan: () -> Void
     let onArchive: ([PhysicalArtifact.ID]) -> Void
+    let onJoinIntoPDF: ([PhysicalArtifact.ID]) -> Void
     let onOpenInPreview: ([PhysicalArtifact.ID]) -> Void
     let dragExportURL: (PhysicalArtifact) throws -> URL
     let fileIcon: (PhysicalArtifact) -> NSImage
@@ -391,6 +392,16 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 menu.addItem(rescanItem)
             }
 
+            if canJoinIntoPDF(selectedArtifacts) {
+                if menu.items.isEmpty == false {
+                    menu.addItem(.separator())
+                }
+
+                let joinItem = NSMenuItem(title: "Join into PDF…", action: #selector(joinSelectionIntoPDF), keyEquivalent: "")
+                joinItem.target = self
+                menu.addItem(joinItem)
+            }
+
             if !selectedArtifacts.isEmpty {
                 if menu.items.isEmpty == false {
                     menu.addItem(.separator())
@@ -437,6 +448,23 @@ struct InvoiceBrowserView: NSViewRepresentable {
         @objc
         private func archiveSelection() {
             parent.onArchive(orderedSelectedInvoiceIDs())
+        }
+
+        @objc
+        private func joinSelectionIntoPDF() {
+            parent.onJoinIntoPDF(orderedSelectedInvoiceIDs())
+        }
+
+        private func canJoinIntoPDF(_ selectedArtifacts: [PhysicalArtifact]) -> Bool {
+            guard parent.queueTab == .unprocessed || parent.queueTab == .inProgress,
+                  selectedArtifacts.count >= 2 else {
+                return false
+            }
+
+            let folders = Set(selectedArtifacts.map {
+                $0.fileURL.deletingLastPathComponent().standardizedFileURL.path
+            })
+            return folders.count == 1
         }
 
         private func syncSelection(to selectedIDs: Set<PhysicalArtifact.ID>) {

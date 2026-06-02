@@ -249,6 +249,30 @@ struct WorkflowActionCoordinator {
         return WorkflowActionResult(workflowsByID: nextWorkflows, selectedArtifactIDs: [])
     }
 
+    /// Archives an explicit list of artifacts (rather than whole documents).
+    /// Used by the "Join into PDF" flow, which archives exactly the chosen source
+    /// files without pulling in sibling duplicates from their documents.
+    func moveArtifactsToArchive(
+        artifacts: [PhysicalArtifact],
+        workflowsByID: [String: StoredInvoiceWorkflow],
+        archiveRoot: URL
+    ) throws -> WorkflowActionResult {
+        guard !artifacts.isEmpty else {
+            return WorkflowActionResult(workflowsByID: workflowsByID, selectedArtifactIDs: [])
+        }
+
+        var nextWorkflows = workflowsByID
+
+        for artifact in artifacts {
+            let destURL = try InvoiceWorkspaceMover.moveToArchive(artifact, archiveRoot: archiveRoot)
+            identityStore.updateURL(from: artifact.fileURL, to: destURL)
+            nextWorkflows.removeValue(forKey: artifact.id)
+        }
+
+        identityStore.save()
+        return WorkflowActionResult(workflowsByID: nextWorkflows, selectedArtifactIDs: [])
+    }
+
     func applyWorkflow(
         _ workflow: StoredInvoiceWorkflow,
         to artifactID: PhysicalArtifact.ID,
