@@ -1341,6 +1341,126 @@ private final class RecordingPreviewPersistHandler {
     #expect(groups.first.map { Set($0.artifactIDs) } == Set([firstInbox.id, secondInbox.id]))
 }
 
+@Test func duplicateDetectorDoesNotGroupSameVendorInvoicesWithDifferentInvoiceNumbers() async throws {
+    let firstInbox = ScannedInvoiceFile(
+        id: "/Inbox/invoice-1.pdf",
+        name: "invoice-1.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-1.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .pdf,
+        contentHash: "invoice-1"
+    )
+
+    let secondInbox = ScannedInvoiceFile(
+        id: "/Inbox/invoice-2.pdf",
+        name: "invoice-2.pdf",
+        fileURL: URL(fileURLWithPath: "/Inbox/invoice-2.pdf"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .pdf,
+        contentHash: "invoice-2"
+    )
+
+    // Same vendor template: text similarity rounds to 90% and would otherwise group,
+    // but the differing invoice numbers prove these are distinct documents.
+    let sharedTokens = Set((1...43).map { "token\($0)" })
+    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+        for: [firstInbox, secondInbox],
+        tokenSetsByContentHash: [
+            "invoice-1": sharedTokens.union(["unique1"]),
+            "invoice-2": sharedTokens.union(["unique2", "unique3", "unique4", "unique5"])
+        ],
+        structuredRecordsByContentHash: [
+            "invoice-1": InvoiceStructuredDataRecord(
+                companyName: "Your Company Name",
+                invoiceNumber: "00000001",
+                invoiceDate: utcDate(year: 2026, month: 3, day: 31),
+                documentType: .invoice,
+                provider: .lmStudio,
+                modelName: "test-model"
+            ),
+            "invoice-2": InvoiceStructuredDataRecord(
+                companyName: "Your Company Name",
+                invoiceNumber: "00000002",
+                invoiceDate: utcDate(year: 2026, month: 4, day: 30),
+                documentType: .invoice,
+                provider: .lmStudio,
+                modelName: "test-model"
+            )
+        ]
+    )
+
+    #expect(DuplicateDetector.meetsRoundedThreshold(43.0 / 48.0, threshold: 0.9) == true)
+    #expect(groups.isEmpty)
+}
+
+@Test func duplicateDetectorDoesNotGroupSameVendorReceiptsWithDifferentDates() async throws {
+    let firstInbox = ScannedInvoiceFile(
+        id: "/Inbox/receipt-jan.heic",
+        name: "receipt-jan.heic",
+        fileURL: URL(fileURLWithPath: "/Inbox/receipt-jan.heic"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 10),
+        fileType: .heic,
+        contentHash: "receipt-jan"
+    )
+
+    let secondInbox = ScannedInvoiceFile(
+        id: "/Inbox/receipt-feb.jpeg",
+        name: "receipt-feb.jpeg",
+        fileURL: URL(fileURLWithPath: "/Inbox/receipt-feb.jpeg"),
+        location: .inbox,
+        vendor: nil,
+        invoiceDate: nil,
+        processedAt: nil,
+        addedAt: Date(timeIntervalSince1970: 20),
+        fileType: .jpeg,
+        contentHash: "receipt-feb"
+    )
+
+    // Same vendor, no invoice numbers (receipts), highly similar text — but different
+    // purchase dates prove these are two distinct receipts.
+    let sharedTokens = Set((1...43).map { "token\($0)" })
+    let groups = DuplicateDetector.extractedTextDuplicateGroups(
+        for: [firstInbox, secondInbox],
+        tokenSetsByContentHash: [
+            "receipt-jan": sharedTokens.union(["unique1"]),
+            "receipt-feb": sharedTokens.union(["unique2", "unique3", "unique4", "unique5"])
+        ],
+        structuredRecordsByContentHash: [
+            "receipt-jan": InvoiceStructuredDataRecord(
+                companyName: "Coffee Shop",
+                invoiceNumber: nil,
+                invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                documentType: .receipt,
+                provider: .lmStudio,
+                modelName: "test-model"
+            ),
+            "receipt-feb": InvoiceStructuredDataRecord(
+                companyName: "Coffee Shop",
+                invoiceNumber: nil,
+                invoiceDate: utcDate(year: 2024, month: 2, day: 9),
+                documentType: .receipt,
+                provider: .lmStudio,
+                modelName: "test-model"
+            )
+        ]
+    )
+
+    #expect(DuplicateDetector.meetsRoundedThreshold(43.0 / 48.0, threshold: 0.9) == true)
+    #expect(groups.isEmpty)
+}
+
 @Test func duplicateDetectorRoundsNinetyPercentThresholdForGrouping() async throws {
     let firstInbox = ScannedInvoiceFile(
         id: "/Inbox/rounded-a.jpg",

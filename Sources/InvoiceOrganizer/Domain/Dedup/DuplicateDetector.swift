@@ -200,6 +200,10 @@ enum DuplicateDetector {
         var bestScore = 0.0
 
         for (index, group) in groups.enumerated() {
+            if group.contains(where: { hasConflictingStructuredIdentity(candidate, $0) }) {
+                continue
+            }
+
             let groupBestScore = group.reduce(0.0) { currentBest, member in
                 let hasStructuredMatch = candidate.structuredSignature != nil &&
                     candidate.structuredSignature == member.structuredSignature
@@ -259,6 +263,81 @@ enum DuplicateDetector {
 
     private static func roundedPercent(_ value: Double) -> Int {
         Int((value * 100).rounded())
+    }
+
+    /// Two candidates that both carry structured signatures but disagree on an intrinsic
+    /// identifier (invoice number or invoice date) describe distinct documents. These
+    /// extracted fields are far more reliable discriminators than near-boundary text
+    /// similarity, so a conflict vetoes grouping regardless of how close the Jaccard
+    /// score lands to the threshold. The veto only applies when both sides have a
+    /// structured signature, so files that have not yet been extracted are unaffected.
+    private static func hasConflictingStructuredIdentity(
+        _ lhs: CandidateTextSignature,
+        _ rhs: CandidateTextSignature
+    ) -> Bool {
+        guard let lhsSignature = lhs.structuredSignature,
+              let rhsSignature = rhs.structuredSignature else {
+            return false
+        }
+
+        // A document's invoice date is intrinsic: the same document always carries the
+        // same date, so different dates mean different documents. This is the only
+        // identity signal available for receipts, which lack invoice numbers.
+        if lhsSignature.invoiceDate != rhsSignature.invoiceDate {
+            return true
+        }
+
+        if let lhsNumber = lhsSignature.invoiceNumber,
+           let rhsNumber = rhsSignature.invoiceNumber,
+           normalizedInvoiceNumber(lhsNumber) != normalizedInvoiceNumber(rhsNumber) {
+            return true
+        }
+
+        return false
+    }
+
+    /// Human-readable explanation of why two extracted records would be vetoed from
+    /// grouping, or `nil` when no structured conflict applies. Mirrors
+    /// `hasConflictingStructuredIdentity` so the debug surface matches real behavior.
+    static func structuredVetoReason(
+        between lhs: InvoiceStructuredDataRecord?,
+        and rhs: InvoiceStructuredDataRecord?
+    ) -> String? {
+        guard let lhs,
+              let rhs,
+              let lhsSignature = StructuredDuplicateSignature(record: lhs),
+              let rhsSignature = StructuredDuplicateSignature(record: rhs) else {
+            return nil
+        }
+
+        if lhsSignature.invoiceDate != rhsSignature.invoiceDate {
+            return "Vetoed: invoice dates differ (\(vetoDateString(lhsSignature.invoiceDate)) vs \(vetoDateString(rhsSignature.invoiceDate)))"
+        }
+
+        if let lhsNumber = lhsSignature.invoiceNumber,
+           let rhsNumber = rhsSignature.invoiceNumber,
+           normalizedInvoiceNumber(lhsNumber) != normalizedInvoiceNumber(rhsNumber) {
+            return "Vetoed: invoice numbers differ (\(lhsNumber) vs \(rhsNumber))"
+        }
+
+        return nil
+    }
+
+    private static func vetoDateString(_ date: Date) -> String {
+        let components = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: date)
+        guard let year = components.year,
+              let month = components.month,
+              let day = components.day else {
+            return "unknown"
+        }
+
+        return String(format: "%04d-%02d-%02d", year, month, day)
+    }
+
+    private static func normalizedInvoiceNumber(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 
     private static func structuredDuplicateSignatures(

@@ -210,14 +210,33 @@ final class AppModel: ObservableObject {
             return []
         }
 
+        let candidateRecord = computationCache.structuredRecord(forContentHash: contentHash)
+        let contentHashByArtifactID = Dictionary(
+            librarySnapshot.artifacts.compactMap { artifact -> (PhysicalArtifact.ID, String)? in
+                guard let hash = artifact.contentHash else { return nil }
+                return (artifact.id, hash)
+            },
+            uniquingKeysWith: { existing, _ in existing }
+        )
+
         return librarySnapshot.documents
             .filter { !$0.contains(artifactID: artifactID) }
-            .compactMap { document in
-                document.bestSimilarity(
+            .compactMap { document -> DuplicateSimilarity? in
+                guard var similarity = document.bestSimilarity(
                     to: artifactTokens,
                     tokensByArtifactID: librarySnapshot.duplicateTokenSetsByArtifactID,
                     threshold: duplicateSimilarityThreshold
+                ) else {
+                    return nil
+                }
+
+                let matchedRecord = contentHashByArtifactID[similarity.matchedArtifactID]
+                    .flatMap { computationCache.structuredRecord(forContentHash: $0) }
+                similarity.vetoReason = DuplicateDetector.structuredVetoReason(
+                    between: candidateRecord,
+                    and: matchedRecord
                 )
+                return similarity
             }
             .sorted { lhs, rhs in
                 if lhs.score != rhs.score {

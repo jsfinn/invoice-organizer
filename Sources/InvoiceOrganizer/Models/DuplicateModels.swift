@@ -13,6 +13,7 @@ struct DuplicateSimilarity: Identifiable, Equatable, Sendable {
     let artifactCount: Int
     let score: Double
     let meetsThreshold: Bool
+    var vetoReason: String?
 
     var id: String { documentID }
 }

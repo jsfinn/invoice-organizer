@@ -173,6 +173,12 @@ struct MetadataCard: View {
                                          : "Best match in \(similarity.artifactCount)-file document")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+
+                                    if let vetoReason = similarity.vetoReason {
+                                        Text(vetoReason)
+                                            .font(.caption)
+                                            .foregroundStyle(.orange)
+                                    }
                                 }
                                 .font(.footnote)
                             }
