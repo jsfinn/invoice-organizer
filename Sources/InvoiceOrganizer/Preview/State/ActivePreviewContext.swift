@@ -55,6 +55,21 @@ struct ActivePreviewContext {
         rotationQuarterTurns != persistedQuarterTurns
     }
 
+    /// The rotation (in quarter turns, normalized to 0..<4) that still needs to be
+    /// written to disk to make the file match the on-screen preview. This is the
+    /// delta to apply, not the absolute orientation, so it can be applied on top of
+    /// a file that already reflects `persistedQuarterTurns`.
+    var uncommittedRotationQuarterTurns: Int {
+        normalizedPreviewRotationQuarterTurns(rotationQuarterTurns - persistedQuarterTurns)
+    }
+
+    /// Marks rotation up to `target` as having been written to disk. Used by the
+    /// immediate (per-rotate) persistence path so subsequent saves only apply the
+    /// remaining delta and `isRotationDirty` reflects the true unsaved state.
+    mutating func markRotationPersisted(upTo target: Int) {
+        persistedQuarterTurns = normalizedPreviewRotationQuarterTurns(target)
+    }
+
     var isPageOrderDirty: Bool {
         !pageOrder.isEmpty && pageOrder != persistedPageOrder
     }

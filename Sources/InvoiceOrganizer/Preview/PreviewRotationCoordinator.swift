@@ -28,12 +28,19 @@ final class PreviewRotationCoordinator: ObservableObject {
 
     var persistHandler: PersistHandler?
 
+    /// Reports whether an out-of-band saver (e.g. immediate per-rotate rotation
+    /// persistence in `PreviewViewState`) still has work in flight, so quit/handoff
+    /// flushes wait for it too.
+    var externalPendingWork: (@MainActor () -> Bool)?
+    /// Awaits completion of the out-of-band saver described by `externalPendingWork`.
+    var externalFlush: (@MainActor () async -> Void)?
+
     private var entriesByInvoiceID: [PhysicalArtifact.ID: CommitEntry] = [:]
     private var commitTasksByInvoiceID: [PhysicalArtifact.ID: Task<Void, Never>] = [:]
 
     /// Returns `true` when there are queued commit requests or save tasks still running.
     var hasPendingWork: Bool {
-        !entriesByInvoiceID.isEmpty || !commitTasksByInvoiceID.isEmpty
+        !entriesByInvoiceID.isEmpty || !commitTasksByInvoiceID.isEmpty || (externalPendingWork?() ?? false)
     }
 
     /// Enqueues a background commit from an active context if that context has unsaved rotation changes.
@@ -42,6 +49,11 @@ final class PreviewRotationCoordinator: ObservableObject {
             return
         }
 
+        enqueueCommit(request)
+    }
+
+    /// Enqueues a specific commit request for background persistence.
+    func enqueueCommit(_ request: PreviewCommitRequest) {
         entriesByInvoiceID[request.invoiceID] = CommitEntry(request: request, saveStatus: .idle)
         scheduleCommitIfNeeded(for: request.invoiceID)
     }
@@ -124,5 +136,6 @@ final class PreviewRotationCoordinator: ObservableObject {
         for invoiceID in Array(entriesByInvoiceID.keys) {
             await commitRequestIfNeeded(for: invoiceID)
         }
+        await externalFlush?()
     }
 }

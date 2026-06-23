@@ -640,6 +640,99 @@ private final class RecordingPreviewPersistHandler {
 }
 
 @MainActor
+private final class RecordingImmediateRotationHandler {
+    private(set) var deltas: [Int] = []
+    private var hashCounter = 0
+
+    func persist(_ invoiceID: PhysicalArtifact.ID, _ delta: Int) async -> PreviewRotationSaveResult? {
+        deltas.append(delta)
+        hashCounter += 1
+        return PreviewRotationSaveResult(contentHash: "immediate-hash-\(hashCounter)")
+    }
+}
+
+@MainActor
+@Test func previewViewStatePersistsEachRotationImmediatelyAsDelta() async throws {
+    let url = URL(fileURLWithPath: "/tmp/immediate-rotation.png")
+    let provider = TestPreviewAssetProvider(
+        responses: [url: .success(asset: .image(NSImage(size: NSSize(width: 10, height: 10))), delay: .zero)]
+    )
+    let coordinator = PreviewRotationCoordinator()
+    let state = PreviewViewState(assetProvider: provider, rotationCoordinator: coordinator)
+
+    let recorder = RecordingImmediateRotationHandler()
+    state.rotationPersistHandler = recorder.persist
+
+    let invoice = PhysicalArtifact(
+        id: UUID().uuidString,
+        name: "immediate.png",
+        fileURL: url,
+        location: .inbox,
+        addedAt: .now,
+        fileType: .image,
+        status: .unprocessed,
+        contentHash: "immediate-hash-0"
+    )
+
+    await state.loadPreview(for: invoice, metadata: .empty)
+
+    state.rotate(by: 1, for: invoice)
+    try await waitUntil { recorder.deltas.count == 1 }
+    #expect(state.rotationQuarterTurns == 1)
+
+    state.rotate(by: 1, for: invoice)
+    try await waitUntil { recorder.deltas.count == 2 }
+    #expect(state.rotationQuarterTurns == 2)
+
+    // Each rotate persists only the incremental quarter turn (delta), so the rotation
+    // is never re-applied on top of an already-rotated file.
+    #expect(recorder.deltas == [1, 1])
+    #expect(state.rotationSaveStatus == .idle)
+}
+
+@MainActor
+@Test func previewViewStateCoalescesRapidRotationsIntoSingleDelta() async throws {
+    let url = URL(fileURLWithPath: "/tmp/immediate-rotation-coalesce.png")
+    let provider = TestPreviewAssetProvider(
+        responses: [url: .success(asset: .image(NSImage(size: NSSize(width: 10, height: 10))), delay: .zero)]
+    )
+    let coordinator = PreviewRotationCoordinator()
+    let state = PreviewViewState(assetProvider: provider, rotationCoordinator: coordinator)
+
+    let recorder = RecordingImmediateRotationHandler()
+    state.rotationPersistHandler = recorder.persist
+
+    let invoice = PhysicalArtifact(
+        id: UUID().uuidString,
+        name: "coalesce.png",
+        fileURL: url,
+        location: .inbox,
+        addedAt: .now,
+        fileType: .image,
+        status: .unprocessed,
+        contentHash: "immediate-hash-0"
+    )
+
+    await state.loadPreview(for: invoice, metadata: .empty)
+
+    state.rotate(by: 1, for: invoice)
+    state.rotate(by: 1, for: invoice)
+    state.rotate(by: 1, for: invoice)
+
+    try await waitUntil { state.rotationSaveStatus == .idle && !recorder.deltas.isEmpty }
+
+    #expect(state.rotationQuarterTurns == 3)
+    #expect(recorder.deltas.reduce(0, +) % 4 == 3)
+}
+
+@MainActor
+private func waitUntil(_ condition: () -> Bool, attempts: Int = 200) async throws {
+    for _ in 0..<attempts where !condition() {
+        try await Task.sleep(for: .milliseconds(5))
+    }
+}
+
+@MainActor
 @Test func previewViewStateCommitsDirtyRotationBeforeLoadingNextSelection() async throws {
     let firstURL = URL(fileURLWithPath: "/tmp/rotation-first.png")
     let secondURL = URL(fileURLWithPath: "/tmp/rotation-second.png")

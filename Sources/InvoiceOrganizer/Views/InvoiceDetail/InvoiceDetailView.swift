@@ -66,6 +66,9 @@ struct InvoiceDetailView: View {
             previewState.metadataFlushHandler = { [weak model] artifactID, metadata in
                 model?.applyBufferedMetadata(metadata, for: artifactID)
             }
+            previewState.rotationPersistHandler = { [weak model] artifactID, deltaQuarterTurns in
+                await model?.persistPreviewRotation(for: artifactID, quarterTurns: deltaQuarterTurns)
+            }
             model.metadataFlushGuard = { [weak previewState] in
                 previewState?.flushMetadataImmediately()
             }
