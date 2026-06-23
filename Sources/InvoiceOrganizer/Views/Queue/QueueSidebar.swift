@@ -165,7 +165,7 @@ struct QueueSidebar: View {
         alert.addButton(withTitle: "Join")
         alert.addButton(withTitle: "Cancel")
 
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
         textField.stringValue = defaultName
         textField.placeholderString = "Joined Document"
         alert.accessoryView = textField
@@ -221,7 +221,7 @@ struct QueueSidebar: View {
         }
 
         let baseName = artifact.fileURL.deletingPathExtension().lastPathComponent
-        return baseName.isEmpty ? "Joined Document" : "\(baseName) (joined)"
+        return baseName.isEmpty ? "Joined Document" : baseName
     }
 
     @ViewBuilder
