@@ -168,10 +168,23 @@ jobs:
           dmg_file="$(ls dist/*.dmg | head -1)"
           api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_KEY_ID}.p8"
 
+          set +e
           submission_output="$(xcrun notarytool submit "${dmg_file}" --key "${api_key_path}" --key-id "${APPLE_KEY_ID}" --issuer "${APPLE_ISSUER_ID}" --wait 2>&1)"
+          submit_exit_code=$?
+          set -e
+
           echo "${submission_output}"
 
           submission_id="$(echo "${submission_output}" | python3 -c 'import re, sys; m = re.search(r"id: ([0-9a-f-]+)", sys.stdin.read()); print(m.group(1) if m else "")')"
+
+          if [[ "${submit_exit_code}" -ne 0 ]]; then
+            echo "notarytool submit failed with exit code ${submit_exit_code}."
+            if [[ -n "${submission_id}" ]]; then
+              echo "Fetching notarization log for ${submission_id}..."
+              xcrun notarytool log "${submission_id}" --key "${api_key_path}" --key-id "${APPLE_KEY_ID}" --issuer "${APPLE_ISSUER_ID}" || true
+            fi
+            exit "${submit_exit_code}"
+          fi
 
           if echo "${submission_output}" | grep -q "status: Invalid"; then
             echo "Notarization failed. Fetching rejection log..."
