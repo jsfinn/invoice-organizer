@@ -54,6 +54,7 @@ final class AppModel: ObservableObject {
     private var documentMetadataHintsByArtifactID: [PhysicalArtifact.ID: DocumentMetadata] = [:]
     private var rescannedDocumentContextsByID: [Document.ID: DocumentRescanContext] = [:]
     private var rescannedDocumentIDsByHash: [String: Set<Document.ID>] = [:]
+    private var pendingPreferredSelectionID: PhysicalArtifact.ID?
     private var isSynchronizingSelection = false
     private var didRunStartupHEICCheck = false
 
@@ -961,6 +962,7 @@ final class AppModel: ObservableObject {
 
     func archiveInvoices(ids: [PhysicalArtifact.ID]) async {
         metadataFlushGuard?()
+        pendingPreferredSelectionID = nil
 
         guard let archiveRoot = folderSettings.duplicatesURL else {
             settingsErrorMessage = "Choose an Archive folder before archiving invoices."
@@ -971,6 +973,9 @@ final class AppModel: ObservableObject {
         guard !documents.isEmpty else { return }
 
         let allArtifactIDs = documents.flatMap(\.artifactIDs)
+        applyOptimisticDeparture(of: Set(allArtifactIDs)) { removedIDs in
+            optimisticallyRemoveArtifacts(ids: removedIDs)
+        }
         let archivedContentHashes = Set(allArtifactIDs.compactMap { id in
             invoices.first { $0.id == id }?.contentHash
         })
@@ -1003,15 +1008,16 @@ final class AppModel: ObservableObject {
 
             fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
             settingsErrorMessage = nil
-            setSelection(ids: [], primary: nil)
             await fileSystemReconciler.reconcileNow()
         } catch {
+            pendingPreferredSelectionID = nil
             settingsErrorMessage = error.localizedDescription
         }
     }
 
     func deleteInvoicesToTrash(ids: [PhysicalArtifact.ID]) async {
         metadataFlushGuard?()
+        pendingPreferredSelectionID = nil
 
         var seenURLs: Set<URL> = []
         let selectedArtifacts = ids.compactMap { artifactID -> PhysicalArtifact? in
@@ -1029,6 +1035,9 @@ final class AppModel: ObservableObject {
         }
 
         let selectedIDs = Set(selectedArtifacts.map(\.id))
+        applyOptimisticDeparture(of: selectedIDs) { removedIDs in
+            optimisticallyRemoveArtifacts(ids: removedIDs)
+        }
         let deletedContentHashes = Set(selectedArtifacts.compactMap(\.contentHash))
         let remainingContentHashes = Set(
             invoices
@@ -1053,9 +1062,9 @@ final class AppModel: ObservableObject {
 
             fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
             settingsErrorMessage = nil
-            setSelection(ids: [], primary: nil)
             await fileSystemReconciler.reconcileNow()
         } catch {
+            pendingPreferredSelectionID = nil
             settingsErrorMessage = error.localizedDescription
         }
     }
@@ -1328,6 +1337,10 @@ final class AppModel: ObservableObject {
 
         let documents = resolveDocuments(for: ids) { $0.canReopenToInProgress }
         guard !documents.isEmpty else { return }
+        let reopenedIDs = Set(documents.flatMap(\.artifactIDs))
+        applyOptimisticDeparture(of: reopenedIDs) { movedIDs in
+            optimisticallyRelocateArtifacts(ids: movedIDs, to: .processing, status: .inProgress)
+        }
 
         do {
             let result = try workflowActionCoordinator.reopenToInProgress(
@@ -1340,13 +1353,14 @@ final class AppModel: ObservableObject {
             persistWorkflow()
             settingsErrorMessage = nil
             refreshLibrary()
-            selectedArtifactIDs = result.selectedArtifactIDs
         } catch {
             settingsErrorMessage = error.localizedDescription
         }
     }
 
     func moveInvoicesToInProgress(ids: [PhysicalArtifact.ID]) {
+        pendingPreferredSelectionID = nil
+
         let allIDs = Set(ids)
         let processedIDs = Set(invoices.filter { allIDs.contains($0.id) && $0.canReopenToInProgress }.map(\.id))
         if !processedIDs.isEmpty {
@@ -1367,6 +1381,10 @@ final class AppModel: ObservableObject {
 
         let documents = resolveDocuments(for: inboxIDs) { $0.canMoveToInProgress }
         guard !documents.isEmpty else { return }
+        let movedToInProgressIDs = Set(documents.flatMap(\.artifactIDs))
+        applyOptimisticDeparture(of: movedToInProgressIDs) { movedIDs in
+            optimisticallyRelocateArtifacts(ids: movedIDs, to: .processing, status: .inProgress)
+        }
 
         do {
             let result = try workflowActionCoordinator.moveToInProgress(
@@ -1383,14 +1401,15 @@ final class AppModel: ObservableObject {
             persistWorkflow()
             settingsErrorMessage = nil
             refreshLibrary()
-            selectedArtifactIDs = result.selectedArtifactIDs
         } catch {
+            pendingPreferredSelectionID = nil
             settingsErrorMessage = error.localizedDescription
         }
     }
 
     func moveInvoicesToUnprocessed(ids: Set<PhysicalArtifact.ID>) {
         metadataFlushGuard?()
+        pendingPreferredSelectionID = nil
 
         guard !ids.isEmpty else { return }
         guard let inboxRoot = folderSettings.inboxURL else {
@@ -1400,6 +1419,10 @@ final class AppModel: ObservableObject {
 
         let documents = resolveDocuments(for: ids) { $0.location == .processing }
         guard !documents.isEmpty else { return }
+        let movedToUnprocessedIDs = Set(documents.flatMap(\.artifactIDs))
+        applyOptimisticDeparture(of: movedToUnprocessedIDs) { movedIDs in
+            optimisticallyRelocateArtifacts(ids: movedIDs, to: .inbox, status: .unprocessed)
+        }
 
         do {
             let result = try workflowActionCoordinator.moveToUnprocessed(
@@ -1412,14 +1435,15 @@ final class AppModel: ObservableObject {
             persistWorkflow()
             settingsErrorMessage = nil
             refreshLibrary()
-            selectedArtifactIDs = result.selectedArtifactIDs
         } catch {
+            pendingPreferredSelectionID = nil
             settingsErrorMessage = error.localizedDescription
         }
     }
 
     func moveInvoicesToProcessed(ids: Set<PhysicalArtifact.ID>) {
         metadataFlushGuard?()
+        pendingPreferredSelectionID = nil
 
         guard !ids.isEmpty else { return }
         guard let processedRoot = folderSettings.processedURL else {
@@ -1429,6 +1453,7 @@ final class AppModel: ObservableObject {
 
         let documents = resolveDocuments(for: ids) { $0.canMarkDone }
         guard !documents.isEmpty else { return }
+        let movedToProcessedIDs = Set(documents.flatMap(\.artifactIDs))
 
         let allEligibleArtifactIDs = documents.flatMap(\.artifactIDs)
         guard allEligibleArtifactIDs.allSatisfy({
@@ -1436,6 +1461,10 @@ final class AppModel: ObservableObject {
         }) else {
             settingsErrorMessage = "Set a vendor before moving invoices to Processed."
             return
+        }
+
+        applyOptimisticDeparture(of: movedToProcessedIDs) { movedIDs in
+            optimisticallyRelocateArtifacts(ids: movedIDs, to: .processed, status: .processed)
         }
 
         do {
@@ -1449,8 +1478,8 @@ final class AppModel: ObservableObject {
             persistWorkflow()
             settingsErrorMessage = nil
             refreshLibrary()
-            selectedArtifactIDs = result.selectedArtifactIDs
         } catch {
+            pendingPreferredSelectionID = nil
             settingsErrorMessage = error.localizedDescription
         }
     }
@@ -1852,6 +1881,9 @@ final class AppModel: ObservableObject {
     }
 
     private func syncSelectionForVisibleInvoices() {
+        let preferredSelectionID = pendingPreferredSelectionID
+        pendingPreferredSelectionID = nil
+
         let visible = visibleArtifacts
         guard !visible.isEmpty else {
             setSelection(ids: [], primary: nil)
@@ -1872,6 +1904,12 @@ final class AppModel: ObservableObject {
             return
         }
 
+        if let preferredSelectionID,
+           visibleIDs.contains(preferredSelectionID) {
+            setSelection(ids: [preferredSelectionID], primary: preferredSelectionID)
+            return
+        }
+
         guard let first = visible.first?.id else { return }
         setSelection(ids: [first], primary: first)
     }
@@ -1881,6 +1919,83 @@ final class AppModel: ObservableObject {
         selectedArtifactIDs = ids
         selectedArtifactID = primary
         isSynchronizingSelection = false
+    }
+
+    private func setPreferredSelectionAfterRemoving(ids removedIDs: Set<PhysicalArtifact.ID>) {
+        guard !removedIDs.isEmpty else {
+            pendingPreferredSelectionID = nil
+            return
+        }
+
+        let orderedVisibleIDs = sortedVisibleArtifacts.map(\.id)
+        guard !orderedVisibleIDs.isEmpty else {
+            pendingPreferredSelectionID = nil
+            return
+        }
+
+        let anchorID = selectedArtifactID
+            ?? orderedVisibleIDs.first(where: { selectedArtifactIDs.contains($0) })
+            ?? orderedVisibleIDs.first
+
+        guard let anchorID,
+              let anchorIndex = orderedVisibleIDs.firstIndex(of: anchorID) else {
+            pendingPreferredSelectionID = nil
+            return
+        }
+
+        let remainingIDs = orderedVisibleIDs.filter { !removedIDs.contains($0) }
+        guard !remainingIDs.isEmpty else {
+            pendingPreferredSelectionID = nil
+            return
+        }
+
+        let replacementIndex = min(anchorIndex, remainingIDs.count - 1)
+        pendingPreferredSelectionID = remainingIDs[replacementIndex]
+    }
+
+    private func applyPendingPreferredSelection() {
+        if let pendingPreferredSelectionID {
+            setSelection(ids: [pendingPreferredSelectionID], primary: pendingPreferredSelectionID)
+        } else {
+            setSelection(ids: [], primary: nil)
+        }
+    }
+
+    private func applyOptimisticDeparture(
+        of ids: Set<PhysicalArtifact.ID>,
+        mutation: (Set<PhysicalArtifact.ID>) -> Void
+    ) {
+        guard !ids.isEmpty else { return }
+        setPreferredSelectionAfterRemoving(ids: ids)
+        applyPendingPreferredSelection()
+        mutation(ids)
+    }
+
+    private func optimisticallyRelocateArtifacts(
+        ids: Set<PhysicalArtifact.ID>,
+        to location: InvoiceLocation,
+        status: InvoiceStatus
+    ) {
+        guard !ids.isEmpty else { return }
+
+        var didChange = false
+        for index in invoices.indices where ids.contains(invoices[index].id) {
+            invoices[index].location = location
+            invoices[index].status = status
+            invoices[index].processedAt = (location == .processed) ? .now : nil
+            didChange = true
+        }
+
+        guard didChange else { return }
+        rebuildLibrarySnapshot()
+    }
+
+    private func optimisticallyRemoveArtifacts(ids: Set<PhysicalArtifact.ID>) {
+        guard !ids.isEmpty else { return }
+        let previousCount = invoices.count
+        invoices.removeAll { ids.contains($0.id) }
+        guard invoices.count != previousCount else { return }
+        rebuildLibrarySnapshot()
     }
 
     private func migrateCachedArtifacts(from previousContentHash: String?, to updatedContentHash: String?) async {

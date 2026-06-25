@@ -3639,6 +3639,164 @@ private func waitUntil(_ condition: () -> Bool, attempts: Int = 200) async throw
     #expect(await structuredStore.cachedContentHashes() == [keepMeHash])
 }
 
+@MainActor
+@Test func appModelDeleteKeepsSelectionAtSameListPosition() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let names = ["a.pdf", "b.pdf", "c.pdf", "d.pdf"]
+    for name in names {
+        let url = inboxRoot.appendingPathComponent(name)
+        try Data(name.utf8).write(to: url)
+    }
+
+    let model = AppModel(
+        folderSettings: FolderSettings(
+            inboxURL: inboxRoot,
+            processedURL: processedRoot,
+            processingURL: processingRoot
+        ),
+        workflowByID: [:],
+        textStore: InMemoryInvoiceTextStore(),
+        textExtractor: MockDocumentTextExtractor(),
+        structuredDataStore: InMemoryInvoiceStructuredDataStore(),
+        structuredExtractionClient: MockStructuredExtractionClient(),
+        autoRefresh: false,
+        moveToTrash: { url in
+            try FileManager.default.removeItem(at: url)
+        }
+    )
+
+    await model.reloadLibraryForTesting()
+    model.setActiveBrowserSortDescriptors([InvoiceBrowserSortDescriptor(columnID: .name, ascending: true)])
+
+    let orderedBeforeDelete = model.invoices
+        .filter { $0.location == .inbox }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    let selected = try #require(orderedBeforeDelete.first(where: { $0.name == "c.pdf" }))
+    model.setSelectedArtifactIDs([selected.id])
+
+    await model.deleteInvoicesToTrash(ids: [selected.id])
+
+    let remainingSorted = model.invoices
+        .filter { $0.location == .inbox }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    #expect(remainingSorted.map(\.name) == ["a.pdf", "b.pdf", "d.pdf"])
+    #expect(model.selectedArtifactID == remainingSorted[2].id)
+    #expect(remainingSorted[2].name == "d.pdf")
+}
+
+@MainActor
+@Test func appModelMoveToProcessedSelectsReplacementImmediately() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let names = ["a.pdf", "b.pdf", "c.pdf", "d.pdf"]
+    let processingURLs = names.map { name in
+        processingRoot.appendingPathComponent(name)
+    }
+    for url in processingURLs {
+        try Data(url.lastPathComponent.utf8).write(to: url)
+    }
+
+    let workflowByID = Dictionary(uniqueKeysWithValues: processingURLs.map { url in
+        (
+            PhysicalArtifact.stableID(for: url),
+            StoredInvoiceWorkflow(
+                vendor: "Acme",
+                invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+                invoiceNumber: nil,
+                documentType: .invoice,
+                isInProgress: true
+            )
+        )
+    })
+
+    let model = AppModel(
+        folderSettings: FolderSettings(
+            inboxURL: inboxRoot,
+            processedURL: processedRoot,
+            processingURL: processingRoot
+        ),
+        workflowByID: workflowByID,
+        textStore: InMemoryInvoiceTextStore(),
+        textExtractor: MockDocumentTextExtractor(),
+        structuredDataStore: InMemoryInvoiceStructuredDataStore(),
+        structuredExtractionClient: MockStructuredExtractionClient(),
+        autoRefresh: false
+    )
+
+    await model.reloadLibraryForTesting()
+    model.setSelectedQueueTab(.inProgress)
+    model.setActiveBrowserSortDescriptors([InvoiceBrowserSortDescriptor(columnID: .name, ascending: true)])
+
+    let ordered = model.invoices
+        .filter { $0.location == .processing }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    let selected = try #require(ordered.first(where: { $0.name == "c.pdf" }))
+    let expectedReplacement = try #require(ordered.first(where: { $0.name == "d.pdf" }))
+    model.setSelectedArtifactIDs([selected.id])
+
+    model.moveInvoicesToProcessed(ids: [selected.id])
+
+    #expect(model.selectedArtifactID == expectedReplacement.id)
+    #expect(model.selectedArtifactIDs == [expectedReplacement.id])
+    let visibleInProgressNames = model.visibleArtifacts.map(\.name).sorted()
+    #expect(visibleInProgressNames == ["a.pdf", "b.pdf", "d.pdf"])
+}
+
+@MainActor
+@Test func appModelReopenProcessedToInProgressMovesFileOnDisk() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let processedFileURL = processedRoot.appendingPathComponent("receipt.pdf")
+    try Data("processed-body".utf8).write(to: processedFileURL)
+
+    let model = AppModel(
+        folderSettings: FolderSettings(
+            inboxURL: inboxRoot,
+            processedURL: processedRoot,
+            processingURL: processingRoot
+        ),
+        workflowByID: [:],
+        textStore: InMemoryInvoiceTextStore(),
+        textExtractor: MockDocumentTextExtractor(),
+        structuredDataStore: InMemoryInvoiceStructuredDataStore(),
+        structuredExtractionClient: MockStructuredExtractionClient(),
+        autoRefresh: false
+    )
+
+    await model.reloadLibraryForTesting()
+    let processedArtifactID = try #require(model.invoices.first(where: { $0.location == .processed })?.id)
+
+    model.moveInvoicesToInProgress(ids: [processedArtifactID])
+    await model.reloadLibraryForTesting()
+
+    let movedURL = processingRoot.appendingPathComponent("receipt.pdf")
+    #expect(FileManager.default.fileExists(atPath: movedURL.path))
+    #expect(!FileManager.default.fileExists(atPath: processedFileURL.path))
+    #expect(model.invoices.contains(where: { $0.location == .processing && $0.name == "receipt.pdf" }))
+}
+
 @Test func appModelLeavesAllInboxPeersActionableAfterExtractionBackedReload() async throws {
     let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
