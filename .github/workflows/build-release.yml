@@ -217,3 +217,4 @@ jobs:
           git add appcast.xml
           git commit -m "Update appcast for ${{ github.ref_name }}"
           git push origin HEAD:release
+
