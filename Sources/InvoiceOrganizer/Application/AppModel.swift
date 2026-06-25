@@ -24,6 +24,7 @@ final class AppModel: ObservableObject {
 
     private let accessCoordinator = ArtifactAccessCoordinator()
     private let openInPreviewHandler: ([URL]) -> Void
+    private let moveToTrashHandler: (URL) throws -> Void
     private let computationCache: ArtifactComputationCache
     private let snapshotBuilder: LibrarySnapshotBuilder
     private let textStore: any InvoiceTextStoring
@@ -65,7 +66,8 @@ final class AppModel: ObservableObject {
         structuredExtractionClient: any InvoiceStructuredExtractionClient = RoutedStructuredExtractionClient(),
         llmSettings: LLMSettings? = nil,
         autoRefresh: Bool = true,
-        openInPreview: (([URL]) -> Void)? = nil
+        openInPreview: (([URL]) -> Void)? = nil,
+        moveToTrash: ((URL) throws -> Void)? = nil
     ) {
         let resolvedFolderSettings = folderSettings ?? Self.loadFolderSettings()
         let resolvedHEICConversionSettings = Self.loadHEICConversionSettings()
@@ -78,6 +80,9 @@ final class AppModel: ObservableObject {
         self.workflowByID = Self.migrateWorkflowKeysIfNeeded(workflowByID ?? InvoiceWorkflowStore.load())
         self.openInPreviewHandler = openInPreview ?? { urls in
             AppModel.systemOpenInPreview(urls)
+        }
+        self.moveToTrashHandler = moveToTrash ?? { url in
+            _ = try FileManager.default.trashItem(at: url, resultingItemURL: nil)
         }
         self.textStore = textStore
         self.structuredDataStore = structuredDataStore
@@ -986,6 +991,56 @@ final class AppModel: ObservableObject {
             )
             workflowByID = result.workflowsByID
             persistWorkflow()
+
+            if !orphanedContentHashes.isEmpty {
+                await computationCache.invalidate(contentHashes: orphanedContentHashes)
+                syncComputationHashes()
+                textPendingHashes.subtract(orphanedContentHashes)
+                textFailedHashes.subtract(orphanedContentHashes)
+                structuredPendingHashes.subtract(orphanedContentHashes)
+                structuredFailedHashes.subtract(orphanedContentHashes)
+            }
+
+            fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
+            settingsErrorMessage = nil
+            setSelection(ids: [], primary: nil)
+            await fileSystemReconciler.reconcileNow()
+        } catch {
+            settingsErrorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteInvoicesToTrash(ids: [PhysicalArtifact.ID]) async {
+        metadataFlushGuard?()
+
+        var seenURLs: Set<URL> = []
+        let selectedArtifacts = ids.compactMap { artifactID -> PhysicalArtifact? in
+            guard let artifact = invoices.first(where: { $0.id == artifactID }),
+                  accessCoordinator.fileExists(for: artifact.handle),
+                  seenURLs.insert(artifact.fileURL.standardizedFileURL).inserted else {
+                return nil
+            }
+            return artifact
+        }
+
+        guard !selectedArtifacts.isEmpty else {
+            NSSound.beep()
+            return
+        }
+
+        let selectedIDs = Set(selectedArtifacts.map(\.id))
+        let deletedContentHashes = Set(selectedArtifacts.compactMap(\.contentHash))
+        let remainingContentHashes = Set(
+            invoices
+                .filter { !selectedIDs.contains($0.id) }
+                .compactMap(\.contentHash)
+        )
+        let orphanedContentHashes = deletedContentHashes.subtracting(remainingContentHashes)
+
+        do {
+            for artifact in selectedArtifacts {
+                try moveToTrashHandler(artifact.fileURL)
+            }
 
             if !orphanedContentHashes.isEmpty {
                 await computationCache.invalidate(contentHashes: orphanedContentHashes)

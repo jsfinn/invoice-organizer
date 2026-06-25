@@ -3558,6 +3558,87 @@ private func waitUntil(_ condition: () -> Bool, attempts: Int = 200) async throw
     #expect(archiveFiles.map(\.lastPathComponent) == ["incoming.pdf"])
 }
 
+@MainActor
+@Test func appModelDeletesSelectedInvoicesToTrashAndForgetsOnlyOrphanedCaches() async throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)
+    let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)
+    let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
+    try FileManager.default.createDirectory(at: inboxRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processingRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: processedRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let deleteMeURL = inboxRoot.appendingPathComponent("delete-me.pdf")
+    let keepMeURL = inboxRoot.appendingPathComponent("keep-me.pdf")
+    try Data("delete-me-body".utf8).write(to: deleteMeURL)
+    try Data("keep-me-body".utf8).write(to: keepMeURL)
+
+    let deleteMeHash = try FileHasher.sha256(for: deleteMeURL)
+    let keepMeHash = try FileHasher.sha256(for: keepMeURL)
+
+    let textStore = InMemoryInvoiceTextStore()
+    let structuredStore = InMemoryInvoiceStructuredDataStore()
+    await textStore.save(InvoiceTextRecord(text: "Delete me", source: .pdfText), forContentHash: deleteMeHash)
+    await textStore.save(InvoiceTextRecord(text: "Keep me", source: .pdfText), forContentHash: keepMeHash)
+    await structuredStore.save(
+        InvoiceStructuredDataRecord(
+            companyName: "Delete Co",
+            invoiceNumber: "DEL-1",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            documentType: .invoice,
+            provider: .lmStudio,
+            modelName: "test-model"
+        ),
+        forContentHash: deleteMeHash
+    )
+    await structuredStore.save(
+        InvoiceStructuredDataRecord(
+            companyName: "Keep Co",
+            invoiceNumber: "KEEP-1",
+            invoiceDate: utcDate(year: 2024, month: 1, day: 6),
+            documentType: .invoice,
+            provider: .lmStudio,
+            modelName: "test-model"
+        ),
+        forContentHash: keepMeHash
+    )
+
+    var trashedURLs: [URL] = []
+    let model = AppModel(
+        folderSettings: FolderSettings(
+            inboxURL: inboxRoot,
+            processedURL: processedRoot,
+            processingURL: processingRoot
+        ),
+        workflowByID: [:],
+        textStore: textStore,
+        textExtractor: MockDocumentTextExtractor(),
+        structuredDataStore: structuredStore,
+        structuredExtractionClient: MockStructuredExtractionClient(),
+        autoRefresh: false,
+        moveToTrash: { url in
+            trashedURLs.append(url.standardizedFileURL)
+            try FileManager.default.removeItem(at: url)
+        }
+    )
+
+    await model.reloadLibraryForTesting()
+
+    let deleteID = try #require(model.invoices.first(where: { $0.name == "delete-me.pdf" })?.id)
+    await model.deleteInvoicesToTrash(ids: [deleteID])
+
+    #expect(trashedURLs == [deleteMeURL.standardizedFileURL])
+    #expect(!FileManager.default.fileExists(atPath: deleteMeURL.path))
+    #expect(FileManager.default.fileExists(atPath: keepMeURL.path))
+    #expect(model.invoices.count == 1)
+    #expect(model.invoices.first?.name == "keep-me.pdf")
+    #expect(model.extractedTextHashes == [keepMeHash])
+    #expect(model.structuredDataHashes == [keepMeHash])
+    #expect(await textStore.cachedContentHashes() == [keepMeHash])
+    #expect(await structuredStore.cachedContentHashes() == [keepMeHash])
+}
+
 @Test func appModelLeavesAllInboxPeersActionableAfterExtractionBackedReload() async throws {
     let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     let inboxRoot = tempRoot.appendingPathComponent("Inbox", isDirectory: true)

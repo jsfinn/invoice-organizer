@@ -23,6 +23,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
     let onMarkNotDuplicate: ([PhysicalArtifact.ID]) -> Void
     let onOpenInPreview: ([PhysicalArtifact.ID]) -> Void
     let onShowInFinder: ([PhysicalArtifact.ID]) -> Void
+    let onDelete: ([PhysicalArtifact.ID]) -> Void
     let dragExportURL: (PhysicalArtifact) throws -> URL
     let fileIcon: (PhysicalArtifact) -> NSImage
 
@@ -442,6 +443,11 @@ struct InvoiceBrowserView: NSViewRepresentable {
                 let archiveItem = NSMenuItem(title: "Archive", action: #selector(archiveSelection), keyEquivalent: "")
                 archiveItem.target = self
                 menu.addItem(archiveItem)
+
+                menu.addItem(.separator())
+                let deleteItem = NSMenuItem(title: "Delete", action: #selector(deleteSelection), keyEquivalent: "")
+                deleteItem.target = self
+                menu.addItem(deleteItem)
             }
 
             tableView.menu = menu
@@ -481,6 +487,11 @@ struct InvoiceBrowserView: NSViewRepresentable {
         @objc
         private func archiveSelection() {
             parent.onArchive(orderedSelectedInvoiceIDs())
+        }
+
+        @objc
+        private func deleteSelection() {
+            parent.onDelete(orderedSelectedInvoiceIDs())
         }
 
         @objc

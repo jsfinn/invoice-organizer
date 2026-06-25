@@ -140,6 +140,11 @@ struct QueueSidebar: View {
                     onShowInFinder: { orderedIDs in
                         model.showInFinder(ids: orderedIDs)
                     },
+                    onDelete: { orderedIDs in
+                        Task {
+                            await model.deleteInvoicesToTrash(ids: orderedIDs)
+                        }
+                    },
                     dragExportURL: { invoice in
                         try model.dragExportURL(for: invoice)
                     },
