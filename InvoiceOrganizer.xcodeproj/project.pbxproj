@@ -44,6 +44,7 @@
 		82FA2918CA0BD70D45E76E0C /* SetupRequiredView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352246B9A9E5914AD01C319E /* SetupRequiredView.swift */; };
 		831B14D18FD8EED458D3CDA2 /* ReplacementPreviewRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 890624B54CA6140BDBEF5B82 /* ReplacementPreviewRenderer.swift */; };
 		83ECCB9A5900200E7F2BA87A /* DataEntryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 466579A9DB3D8829B3512351 /* DataEntryCard.swift */; };
+		876515B13DEF91B886FED78E /* InboxImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0571D0C8023C2C2E6E04571E /* InboxImportService.swift */; };
 		87E0FD30EEFE88B1174BD6C4 /* FolderPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B72E2F14F2484DF372353A /* FolderPicker.swift */; };
 		888957EC03D662551738A5F1 /* ActivePreviewContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54CB09A3CB7ADCEEC97939DA /* ActivePreviewContext.swift */; };
 		8CAAC07F44B525554D1049CD /* InvoiceArchiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14871783BF02D73949C3FD6B /* InvoiceArchiver.swift */; };
@@ -57,6 +58,7 @@
 		AAE047B68510D3CA39C47D7B /* HEICConversionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C9F2297AAA7C5B0B246F2D /* HEICConversionService.swift */; };
 		ADE24B3B39591DDF3C2B95CB /* InvoiceBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E8D83B92318C265A64BB5A /* InvoiceBrowserView.swift */; };
 		B48F1879B1266916E57CCC3E /* PDFJoinService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877721AEDBC9129BA20DECCC /* PDFJoinService.swift */; };
+		B5D822DD1BA5C56A4200A6EF /* ExternalFileDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC8FB255D09ADBAD35FBB1DF /* ExternalFileDropDelegate.swift */; };
 		BC83E30BB70637C9DE4A9D2F /* FileSystemWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E268A82D45D710A14642278A /* FileSystemWatcher.swift */; };
 		C15DDD7372AC7EDA0249EBD8 /* InvoiceFilePageReorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CE3F84651B89A29FB77F2D9 /* InvoiceFilePageReorder.swift */; };
 		C3458C702A574D12EA6725A6 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 62C5D55AC0D492C024EC571F /* Sparkle */; };
@@ -87,6 +89,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0571D0C8023C2C2E6E04571E /* InboxImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxImportService.swift; sourceTree = "<group>"; };
 		0E32E67C5E7D6E2FDEFDE1ED /* WorkflowPersister.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowPersister.swift; sourceTree = "<group>"; };
 		14871783BF02D73949C3FD6B /* InvoiceArchiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceArchiver.swift; sourceTree = "<group>"; };
 		150C9BA921200FE9C87F83F6 /* StructuredExtractionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredExtractionHandler.swift; sourceTree = "<group>"; };
@@ -136,6 +139,7 @@
 		B4B500A3D4084819B5879BD7 /* FileDuplicationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDuplicationService.swift; sourceTree = "<group>"; };
 		BB2AC1BF353ED96C3261AE0D /* DuplicateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateModels.swift; sourceTree = "<group>"; };
 		BB46C2E0604798A19A9A2153 /* ArtifactModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactModels.swift; sourceTree = "<group>"; };
+		BC8FB255D09ADBAD35FBB1DF /* ExternalFileDropDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalFileDropDelegate.swift; sourceTree = "<group>"; };
 		BEAA5D10C6354B20E1C62723 /* VendorField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VendorField.swift; sourceTree = "<group>"; };
 		C06D890521617C46A0B30DDB /* ArtifactHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactHandle.swift; sourceTree = "<group>"; };
 		C323274BD1CBEA57661C2128 /* QueueSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueSidebar.swift; sourceTree = "<group>"; };
@@ -310,6 +314,7 @@
 				B4B500A3D4084819B5879BD7 /* FileDuplicationService.swift */,
 				39C9F2297AAA7C5B0B246F2D /* HEICConversionService.swift */,
 				2A09E6698764231FA35A064B /* InboxFileScanner.swift */,
+				0571D0C8023C2C2E6E04571E /* InboxImportService.swift */,
 				14871783BF02D73949C3FD6B /* InvoiceArchiver.swift */,
 				4CE3F84651B89A29FB77F2D9 /* InvoiceFilePageReorder.swift */,
 				30B92089CBED91EFFF2B8FBD /* InvoiceFileRotator.swift */,
@@ -387,6 +392,7 @@
 		B957CB5BB0D6369E611A9C63 /* Queue */ = {
 			isa = PBXGroup;
 			children = (
+				BC8FB255D09ADBAD35FBB1DF /* ExternalFileDropDelegate.swift */,
 				C323274BD1CBEA57661C2128 /* QueueSidebar.swift */,
 				3F148EE8CC3F868A3314FE06 /* QueueStatusCard.swift */,
 			);
@@ -455,7 +461,7 @@
 			path = State;
 			sourceTree = "<group>";
 		};
-		"TEMP_61577F2F-7F6A-42EC-B3A2-4BB43036A55A" /* Resources */ = {
+		"TEMP_DD3610D5-CD52-4E6E-BA20-A21650E46DD7" /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -572,6 +578,7 @@
 				59DBDC8510729494AF771643 /* DuplicateDetector.swift in Sources */,
 				45BA615069AA584B57C73103 /* DuplicateModels.swift in Sources */,
 				740E8893954B244F67C6F9F8 /* DuplicateOverride.swift in Sources */,
+				B5D822DD1BA5C56A4200A6EF /* ExternalFileDropDelegate.swift in Sources */,
 				9CBEA774CBCF8C910743083F /* FileDuplicationService.swift in Sources */,
 				FCB15CFC8FB3A1C3DCB67942 /* FileHasher.swift in Sources */,
 				8FE3202B65B0675F5791F0FD /* FileSystemReconciler.swift in Sources */,
@@ -582,6 +589,7 @@
 				F9A181E26A96C1A3679F9663 /* HEICConversionQueueModel.swift in Sources */,
 				AAE047B68510D3CA39C47D7B /* HEICConversionService.swift in Sources */,
 				A2347D9B9A9CF3FA3A53A249 /* InboxFileScanner.swift in Sources */,
+				876515B13DEF91B886FED78E /* InboxImportService.swift in Sources */,
 				8CAAC07F44B525554D1049CD /* InvoiceArchiver.swift in Sources */,
 				ADE24B3B39591DDF3C2B95CB /* InvoiceBrowserView.swift in Sources */,
 				512AD01EE37BD0FB4DD60083 /* InvoiceDetailView.swift in Sources */,
@@ -744,14 +752,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 40;
+				CURRENT_PROJECT_VERSION = 41;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/InvoiceOrganizer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.10.3;
+				MARKETING_VERSION = 0.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pkm.invoiceorganizer;
 				PRODUCT_MODULE_NAME = InvoiceOrganizer;
 				PRODUCT_NAME = "Invoice Organizer";
@@ -765,14 +773,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 40;
+				CURRENT_PROJECT_VERSION = 41;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/InvoiceOrganizer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.10.3;
+				MARKETING_VERSION = 0.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pkm.invoiceorganizer;
 				PRODUCT_MODULE_NAME = InvoiceOrganizer;
 				PRODUCT_NAME = "Invoice Organizer";
