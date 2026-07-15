@@ -912,6 +912,40 @@ final class AppModel: ObservableObject {
         fileSystemReconciler.refreshNow()
     }
 
+    /// Imports files dropped onto the Unprocessed view (from Finder/Desktop or
+    /// resolved Mail attachments) by copying them into the inbox folder.
+    func importDroppedFiles(at sourceURLs: [URL]) {
+        guard !sourceURLs.isEmpty else { return }
+        guard let inboxURL = folderSettings.inboxURL else {
+            settingsErrorMessage = "Choose an Inbox folder in Settings before adding files."
+            return
+        }
+
+        Task {
+            let result: InboxImportService.ImportResult
+            do {
+                result = try await Task.detached {
+                    try InboxImportService.importFiles(sourceURLs, into: inboxURL)
+                }.value
+            } catch {
+                settingsErrorMessage = "Couldn't add dropped files: \(error.localizedDescription)"
+                return
+            }
+
+            guard result.didImportAnything else { return }
+
+            await fileSystemReconciler.reconcileNow()
+
+            selectedQueueTab = .unprocessed
+            let importedIDs = Set(result.importedURLs.compactMap { url in
+                invoices.first { $0.fileURL.standardizedFileURL == url.standardizedFileURL }?.id
+            })
+            if !importedIDs.isEmpty {
+                setSelection(ids: importedIDs, primary: importedIDs.first)
+            }
+        }
+    }
+
     func runStartupHEICConversionCheckIfNeeded() {
         guard !didRunStartupHEICCheck else { return }
         didRunStartupHEICCheck = true

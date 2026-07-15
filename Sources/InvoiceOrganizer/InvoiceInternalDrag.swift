@@ -25,4 +25,10 @@ enum InvoiceInternalDrag {
         defer { activeInvoiceIDs = [] }
         return activeInvoiceIDs
     }
+
+    /// Whether an internal invoice drag is currently in flight, without consuming it.
+    @MainActor
+    static var isDragInFlight: Bool {
+        !activeInvoiceIDs.isEmpty
+    }
 }

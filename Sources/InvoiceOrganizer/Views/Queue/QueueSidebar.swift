@@ -1,11 +1,13 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct QueueSidebar: View {
     @ObservedObject var model: AppModel
     @State private var isUnprocessedDropTargeted = false
     @State private var isInProgressDropTargeted = false
     @State private var isProcessedDropTargeted = false
+    @State private var isExternalFileDropTargeted = false
 
     private var activeTabContext: QueueTabContext {
         model.queueScreenContext.activeTabContext
@@ -92,10 +94,11 @@ struct QueueSidebar: View {
                 Spacer()
             }
 
-            if model.visibleArtifacts.isEmpty {
-                ContentUnavailableView("No Invoices Found", systemImage: "tray")
-            } else {
-                InvoiceBrowserView(
+            Group {
+                if model.visibleArtifacts.isEmpty {
+                    emptyStateView
+                } else {
+                    InvoiceBrowserView(
                     invoices: model.visibleArtifacts,
                     documents: model.documents,
                     queueTab: model.selectedQueueTab,
@@ -151,12 +154,55 @@ struct QueueSidebar: View {
                     fileIcon: { invoice in
                         model.fileIcon(for: invoice)
                     }
-                )
+                    )
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .overlay {
+                if isExternalFileDropTargeted {
+                    externalFileDropHighlight
+                }
+            }
+            .onDrop(
+                of: ExternalFileDropDelegate.acceptedContentTypes,
+                delegate: ExternalFileDropDelegate(
+                    isTargeted: $isExternalFileDropTargeted,
+                    isEnabled: { model.selectedQueueTab == .unprocessed && model.folderSettings.inboxURL != nil },
+                    onImport: { model.importDroppedFiles(at: $0) }
+                )
+            )
         }
         .padding()
         .frame(minWidth: 680)
         .frame(maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var emptyStateView: some View {
+        if model.selectedQueueTab == .unprocessed {
+            ContentUnavailableView {
+                Label("No Invoices Found", systemImage: "tray")
+            } description: {
+                Text("Drag files or Mail attachments here to add them to Unprocessed.")
+            }
+        } else {
+            ContentUnavailableView("No Invoices Found", systemImage: "tray")
+        }
+    }
+
+    private var externalFileDropHighlight: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.accentColor.opacity(0.08))
+            )
+            .overlay(
+                Label("Drop to add to Unprocessed", systemImage: "square.and.arrow.down")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+            )
+            .allowsHitTesting(false)
     }
 
     private func promptForJoinedPDFName(orderedIDs: [PhysicalArtifact.ID]) {
