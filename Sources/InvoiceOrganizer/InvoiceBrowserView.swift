@@ -1,4 +1,5 @@
 import AppKit
+import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -20,6 +21,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
     let onArchive: ([PhysicalArtifact.ID]) -> Void
     let onJoinIntoPDF: ([PhysicalArtifact.ID]) -> Void
     let onDuplicateForSeparateProcessing: ([PhysicalArtifact.ID]) -> Void
+    let onSplitPDFIntoPages: ([PhysicalArtifact.ID]) -> Void
     let onMarkNotDuplicate: ([PhysicalArtifact.ID]) -> Void
     let onOpenInPreview: ([PhysicalArtifact.ID]) -> Void
     let onShowInFinder: ([PhysicalArtifact.ID]) -> Void
@@ -411,7 +413,17 @@ struct InvoiceBrowserView: NSViewRepresentable {
                     menu.addItem(.separator())
                 }
 
-                let splitItem = NSMenuItem(title: "Split into Separate Copy…", action: #selector(duplicateSelectionForSeparateProcessing), keyEquivalent: "")
+                let duplicateItem = NSMenuItem(title: "Duplicate for Separate Processing…", action: #selector(duplicateSelectionForSeparateProcessing), keyEquivalent: "")
+                duplicateItem.target = self
+                menu.addItem(duplicateItem)
+            }
+
+            if canSplitPDFIntoPages(selectedArtifacts) {
+                if menu.items.isEmpty == false {
+                    menu.addItem(.separator())
+                }
+
+                let splitItem = NSMenuItem(title: "Split into Pages…", action: #selector(splitSelectionIntoPages), keyEquivalent: "")
                 splitItem.target = self
                 menu.addItem(splitItem)
             }
@@ -509,13 +521,29 @@ struct InvoiceBrowserView: NSViewRepresentable {
             parent.onDuplicateForSeparateProcessing(orderedSelectedInvoiceIDs())
         }
 
-        /// Splitting applies to a single unprocessed/in-progress file (e.g. one image
+        @objc
+        private func splitSelectionIntoPages() {
+            parent.onSplitPDFIntoPages(orderedSelectedInvoiceIDs())
+        }
+
+        /// Duplicating applies to a single unprocessed/in-progress file (e.g. one image
         /// containing two receipts that each need to be processed separately).
         private func canDuplicateForSeparateProcessing(_ selectedArtifacts: [PhysicalArtifact]) -> Bool {
             guard parent.queueTab == .unprocessed || parent.queueTab == .inProgress else {
                 return false
             }
             return selectedArtifacts.count == 1 && selectedArtifacts[0].contentHash != nil
+        }
+
+        /// Splitting into pages applies to a single unprocessed/in-progress, multi-page PDF.
+        private func canSplitPDFIntoPages(_ selectedArtifacts: [PhysicalArtifact]) -> Bool {
+            guard parent.queueTab == .unprocessed || parent.queueTab == .inProgress,
+                  selectedArtifacts.count == 1 else {
+                return false
+            }
+            let artifact = selectedArtifacts[0]
+            guard artifact.fileType == .pdf else { return false }
+            return (PDFDocument(url: artifact.fileURL)?.pageCount ?? 0) >= 2
         }
 
         /// The action applies when at least one selected artifact is part of a duplicate group,

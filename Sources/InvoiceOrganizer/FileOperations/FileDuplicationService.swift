@@ -6,9 +6,12 @@ import UniformTypeIdentifiers
 
 /// Creates a near-identical copy of a document that carries a unique, invisible metadata
 /// marker so the copy has a *different* content hash than the original. This lets a single
-/// captured file (e.g. a photo containing two receipts) be split into independent documents
-/// that can each be processed and named separately, without the deduplicator treating them
-/// as identical files.
+/// captured file (e.g. a photo containing two receipts) be duplicated into independent
+/// documents that can each be processed and named separately, without the deduplicator
+/// treating them as identical files.
+///
+/// This is distinct from splitting a multi-page PDF into its pages (see `PDFPageSplitService`):
+/// duplication reproduces the *entire* source, page-for-page.
 ///
 /// The pixel/page content is preserved losslessly — only metadata is altered.
 enum FileDuplicationService {
@@ -88,7 +91,7 @@ enum FileDuplicationService {
     // MARK: - Helpers
 
     private static func uniqueMarker() -> String {
-        "invoice-organizer-split:\(UUID().uuidString)"
+        "invoice-organizer-duplicate:\(UUID().uuidString)"
     }
 
     private static func temporaryURL(for destination: URL) -> URL {

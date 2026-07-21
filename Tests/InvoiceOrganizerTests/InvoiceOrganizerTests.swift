@@ -4944,3 +4944,49 @@ private actor MockStructuredExtractionClient: InvoiceStructuredExtractionClient 
     let copyDocument = try #require(PDFDocument(url: copyURL))
     #expect(copyDocument.pageCount == 2)
 }
+
+@Test func pdfPageSplitProducesOneFilePerPageAndLeavesSourceUntouched() throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let sourceURL = tempRoot.appendingPathComponent("receipts.pdf")
+    try writeSizedPagesPDF(pageWidths: [200, 250, 300], to: sourceURL)
+    let originalHash = try FileHasher.sha256(for: sourceURL)
+
+    let createdURLs = try PDFPageSplitService.split(source: sourceURL, into: tempRoot, baseName: "receipts")
+
+    // One single-page PDF per source page, named predictably and in order.
+    #expect(createdURLs.count == 3)
+    #expect(createdURLs.map { $0.lastPathComponent } == [
+        "receipts - Page 1.pdf",
+        "receipts - Page 2.pdf",
+        "receipts - Page 3.pdf"
+    ])
+    for url in createdURLs {
+        let document = try #require(PDFDocument(url: url))
+        #expect(document.pageCount == 1)
+    }
+
+    // Page order/content is preserved (widths were distinct per page).
+    let widths = createdURLs.compactMap { PDFDocument(url: $0)?.page(at: 0)?.bounds(for: .mediaBox).width }
+    #expect(widths == [200, 250, 300])
+
+    // The source is untouched — the caller is responsible for removing it.
+    #expect(FileManager.default.fileExists(atPath: sourceURL.path))
+    #expect(try FileHasher.sha256(for: sourceURL) == originalHash)
+}
+
+@Test func pdfPageSplitRejectsSinglePageDocument() throws {
+    let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+    let sourceURL = tempRoot.appendingPathComponent("single.pdf")
+    try writeMultiPagePDF(pageCount: 1, to: sourceURL)
+
+    #expect(PDFPageSplitService.pageCount(of: sourceURL) == 1)
+    #expect(throws: PDFPageSplitService.SplitError.self) {
+        try PDFPageSplitService.split(source: sourceURL, into: tempRoot, baseName: "single")
+    }
+}

@@ -8,6 +8,7 @@ struct QueueSidebar: View {
     @State private var isInProgressDropTargeted = false
     @State private var isProcessedDropTargeted = false
     @State private var isExternalFileDropTargeted = false
+    @AppStorage("split.suppressConfirmation") private var suppressSplitConfirmation = false
 
     private var activeTabContext: QueueTabContext {
         model.queueScreenContext.activeTabContext
@@ -134,6 +135,9 @@ struct QueueSidebar: View {
                     onDuplicateForSeparateProcessing: { orderedIDs in
                         promptForSeparateCopyName(orderedIDs: orderedIDs)
                     },
+                    onSplitPDFIntoPages: { orderedIDs in
+                        promptForSplitIntoPages(orderedIDs: orderedIDs)
+                    },
                     onMarkNotDuplicate: { orderedIDs in
                         model.markArtifactsAsNotDuplicates(ids: orderedIDs)
                     },
@@ -237,7 +241,7 @@ struct QueueSidebar: View {
         let defaultName = suggestedSeparateCopyName(for: id)
 
         let alert = NSAlert()
-        alert.messageText = "Split into a Separate Copy"
+        alert.messageText = "Duplicate for Separate Processing"
         alert.informativeText = "Creates an independent copy of this file so a second receipt can be processed and named separately. The original is left in place."
         alert.addButton(withTitle: "Create Copy")
         alert.addButton(withTitle: "Cancel")
@@ -253,6 +257,34 @@ struct QueueSidebar: View {
         let fileName = textField.stringValue
         Task {
             await model.duplicateForSeparateProcessing(id: id, fileName: fileName)
+        }
+    }
+
+    private func promptForSplitIntoPages(orderedIDs: [PhysicalArtifact.ID]) {
+        guard model.canSplitPDFIntoPages(ids: orderedIDs),
+              let id = orderedIDs.first,
+              let artifact = model.invoices.first(where: { $0.id == id }) else { return }
+
+        if !suppressSplitConfirmation {
+            let pageCount = PDFPageSplitService.pageCount(of: artifact.fileURL)
+
+            let alert = NSAlert()
+            alert.messageText = "Split into \(pageCount) Pages"
+            alert.informativeText = "Creates one PDF per page in the same folder."
+            alert.addButton(withTitle: "Split")
+            alert.addButton(withTitle: "Cancel")
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = "Don't show again"
+
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+            if alert.suppressionButton?.state == .on {
+                suppressSplitConfirmation = true
+            }
+        }
+
+        Task {
+            await model.splitPDFIntoPages(id: id)
         }
     }
 

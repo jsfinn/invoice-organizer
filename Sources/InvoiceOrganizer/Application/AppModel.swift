@@ -1182,7 +1182,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Whether the given selection can be split into a separate copy: exactly one
+    /// Whether the given selection can be duplicated into a separate copy: exactly one
     /// unprocessed/in-progress file with a known content hash.
     func canDuplicateForSeparateProcessing(ids: [PhysicalArtifact.ID]) -> Bool {
         guard ids.count == 1, let artifact = invoices.first(where: { $0.id == ids[0] }) else {
@@ -1201,7 +1201,7 @@ final class AppModel: ObservableObject {
 
         guard canDuplicateForSeparateProcessing(ids: [id]),
               let source = invoices.first(where: { $0.id == id }) else {
-            settingsErrorMessage = "Only an unprocessed or in-progress file can be split into a separate copy."
+            settingsErrorMessage = "Only an unprocessed or in-progress file can be duplicated for separate processing."
             return
         }
 
@@ -1237,6 +1237,80 @@ final class AppModel: ObservableObject {
         settingsErrorMessage = nil
         let copyArtifactID = PhysicalArtifactIdentityStore.shared.existingID(for: destinationURL)
         setSelection(ids: Set(copyArtifactID.map { [$0] } ?? []), primary: copyArtifactID)
+        await fileSystemReconciler.reconcileNow()
+    }
+
+    /// Whether the given selection can be split into individual pages: exactly one
+    /// unprocessed/in-progress, multi-page PDF.
+    func canSplitPDFIntoPages(ids: [PhysicalArtifact.ID]) -> Bool {
+        guard ids.count == 1, let artifact = invoices.first(where: { $0.id == ids[0] }) else {
+            return false
+        }
+        guard artifact.fileType == .pdf,
+              artifact.location == .inbox || artifact.location == .processing else {
+            return false
+        }
+        return PDFPageSplitService.pageCount(of: artifact.fileURL) >= 2
+    }
+
+    /// Splits a multi-page PDF into one single-page PDF per page (named
+    /// "<original> - Page N.pdf") in the same folder, then moves the original to the Trash.
+    func splitPDFIntoPages(id: PhysicalArtifact.ID) async {
+        metadataFlushGuard?()
+
+        guard canSplitPDFIntoPages(ids: [id]),
+              let source = invoices.first(where: { $0.id == id }) else {
+            settingsErrorMessage = "Only a multi-page PDF in Unprocessed or In Progress can be split into pages."
+            return
+        }
+
+        let sourceURL = source.fileURL
+        let destinationFolder = sourceURL.deletingLastPathComponent()
+        let baseName = sourceURL.deletingPathExtension().lastPathComponent
+
+        let createdURLs: [URL]
+        do {
+            createdURLs = try await Task.detached(priority: .userInitiated) {
+                try PDFPageSplitService.split(source: sourceURL, into: destinationFolder, baseName: baseName)
+            }.value
+        } catch {
+            settingsErrorMessage = error.localizedDescription
+            return
+        }
+
+        for url in createdURLs {
+            _ = PhysicalArtifactIdentityStore.shared.id(for: url)
+        }
+        PhysicalArtifactIdentityStore.shared.save()
+
+        let splitContentHashes = Set([source.contentHash].compactMap { $0 })
+        let remainingContentHashes = Set(
+            invoices
+                .filter { $0.id != id }
+                .compactMap { $0.contentHash }
+        )
+        let orphanedContentHashes = splitContentHashes.subtracting(remainingContentHashes)
+
+        do {
+            try moveToTrashHandler(sourceURL)
+        } catch {
+            settingsErrorMessage = error.localizedDescription
+            return
+        }
+
+        if !orphanedContentHashes.isEmpty {
+            await computationCache.invalidate(contentHashes: orphanedContentHashes)
+            syncComputationHashes()
+            textPendingHashes.subtract(orphanedContentHashes)
+            textFailedHashes.subtract(orphanedContentHashes)
+            structuredPendingHashes.subtract(orphanedContentHashes)
+            structuredFailedHashes.subtract(orphanedContentHashes)
+        }
+
+        fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
+        settingsErrorMessage = nil
+        let createdIDs = createdURLs.compactMap { PhysicalArtifactIdentityStore.shared.existingID(for: $0) }
+        setSelection(ids: Set(createdIDs), primary: createdIDs.first)
         await fileSystemReconciler.reconcileNow()
     }
 
