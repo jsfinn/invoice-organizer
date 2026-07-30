@@ -106,11 +106,16 @@ private func normalizedFileComponent(_ value: String?) -> String? {
         .replacingOccurrences(of: ":", with: "-")
 }
 
+// The invoice date is a date-only value that the user picks and sees in the local
+// calendar (DatePicker, list/detail displays) and that the LLM extractor parses in the
+// local timezone. The filename must reflect that same local calendar day, otherwise an
+// invoice `Date` whose time-of-day straddles midnight in UTC (e.g. an evening timestamp
+// for a user behind UTC) would be written to the filename as the previous/next day.
 private let invoiceDateFormatter: DateFormatter = {
     let formatter = DateFormatter()
     formatter.calendar = Calendar(identifier: .gregorian)
     formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.timeZone = .autoupdatingCurrent
     formatter.dateFormat = "yyyy-MM-dd"
     return formatter
 }()

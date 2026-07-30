@@ -27,6 +27,24 @@ private func localDateComponents(_ date: Date) -> DateComponents {
     return calendar.dateComponents([.year, .month, .day], from: date)
 }
 
+// Builds a date-only value at local midnight, matching how an invoice date is picked in
+// the UI and formatted into filenames (both use the local calendar/timezone). Use this
+// instead of `utcDate` whenever a test asserts on a date embedded in a filename so the
+// assertion is independent of the machine's timezone.
+private func localDate(year: Int, month: Int, day: Int) -> Date {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .autoupdatingCurrent
+    return calendar.date(
+        from: DateComponents(
+            calendar: calendar,
+            timeZone: calendar.timeZone,
+            year: year,
+            month: month,
+            day: day
+        )
+    )!
+}
+
 private func termFreqs(_ tokens: Set<String>) -> [String: Int] {
     Dictionary(uniqueKeysWithValues: tokens.map { ($0, 1) })
 }
@@ -227,7 +245,7 @@ private final class RecordingPreviewPersistHandler {
 }
 
 @Test func processedFilenameIncludesInvoiceNumber() async throws {
-    let invoiceDate = utcDate(year: 2024, month: 1, day: 5)
+    let invoiceDate = localDate(year: 2024, month: 1, day: 5)
     let fileURL = URL(fileURLWithPath: "/tmp/invoice.pdf")
 
     let withNumber = ArchivePathBuilder.processedFilename(
@@ -338,7 +356,7 @@ private final class RecordingPreviewPersistHandler {
     let renamedURL = try InvoiceWorkspaceMover.renameInProcessing(
         invoice,
         vendor: "Amazon",
-        invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+        invoiceDate: localDate(year: 2024, month: 1, day: 5),
         invoiceNumber: "INV-42"
     )
 
@@ -1043,7 +1061,7 @@ private func waitUntil(_ condition: () -> Bool, attempts: Int = 200) async throw
     let inboxURL = tempRoot.appendingPathComponent("invoice.pdf")
     let processedRoot = tempRoot.appendingPathComponent("Processed", isDirectory: true)
     try "one".data(using: .utf8)?.write(to: inboxURL)
-    let invoiceDate = utcDate(year: 2024, month: 1, day: 5)
+    let invoiceDate = localDate(year: 2024, month: 1, day: 5)
 
     let invoice = PhysicalArtifact(
         id: UUID().uuidString,
@@ -4209,7 +4227,7 @@ private func waitUntil(_ condition: () -> Bool, attempts: Int = 200) async throw
         defaultResult: InvoiceStructuredDataRecord(
             companyName: "Acme Corp",
             invoiceNumber: "INV-42",
-            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            invoiceDate: localDate(year: 2024, month: 1, day: 5),
             documentType: .invoice,
             provider: .lmStudio,
             modelName: "qwen-local"
@@ -4244,7 +4262,7 @@ private func waitUntil(_ condition: () -> Bool, attempts: Int = 200) async throw
     #expect(movedInvoice.name == "Acme Corp-2024-01-05-INV-42.pdf")
     #expect(movedMetadata.vendor == "Acme Corp")
     #expect(movedMetadata.invoiceNumber == "INV-42")
-    #expect(movedMetadata.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
+    #expect(movedMetadata.invoiceDate == localDate(year: 2024, month: 1, day: 5))
     #expect(movedMetadata.documentType == .invoice)
 }
 
@@ -4274,7 +4292,7 @@ private func waitUntil(_ condition: () -> Bool, attempts: Int = 200) async throw
         defaultResult: InvoiceStructuredDataRecord(
             companyName: "Coffee Shop",
             invoiceNumber: nil,
-            invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+            invoiceDate: localDate(year: 2024, month: 1, day: 5),
             documentType: .receipt,
             provider: .lmStudio,
             modelName: "qwen-local"
@@ -4309,7 +4327,7 @@ private func waitUntil(_ condition: () -> Bool, attempts: Int = 200) async throw
     #expect(movedInvoice.name == "Coffee Shop-2024-01-05.pdf")
     #expect(movedMetadata.vendor == "Coffee Shop")
     #expect(movedMetadata.invoiceNumber == nil)
-    #expect(movedMetadata.invoiceDate == utcDate(year: 2024, month: 1, day: 5))
+    #expect(movedMetadata.invoiceDate == localDate(year: 2024, month: 1, day: 5))
     #expect(movedMetadata.documentType == .receipt)
 }
 
