@@ -206,6 +206,18 @@ final class AppModel: ObservableObject {
         librarySnapshot.possibleSameInvoiceMatchesByArtifactID[artifactID] ?? []
     }
 
+    func processedInvoiceColliding(
+        with metadata: DocumentMetadata,
+        excluding artifactID: PhysicalArtifact.ID
+    ) -> PhysicalArtifact? {
+        ProcessedInvoiceCollision.firstMatch(
+            metadata: metadata,
+            artifacts: invoices,
+            metadataByArtifactID: documentMetadataByArtifactID,
+            excludingArtifactID: artifactID
+        )
+    }
+
     var documentMetadataByArtifactID: [PhysicalArtifact.ID: DocumentMetadata] {
         librarySnapshot.documentMetadataByArtifactID
     }

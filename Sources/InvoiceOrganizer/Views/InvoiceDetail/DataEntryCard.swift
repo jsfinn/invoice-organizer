@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct DataEntryCard: View {
@@ -180,6 +181,65 @@ struct DataEntryCard: View {
     // MARK: - Save
 
     private func saveAll() {
+        if presentProcessedCollisionAlertIfNeeded() { return }
+        commitIfDirty()
+    }
+
+    private func saveAndNext() {
+        if presentProcessedCollisionAlertIfNeeded() { return }
+        commitIfDirty()
+        model.selectNextArtifact()
+    }
+
+    private func saveAndMoveToProcessed() {
+        if presentProcessedCollisionAlertIfNeeded() { return }
+        commitIfDirty()
+        model.moveInvoicesToProcessed(ids: [invoice.id])
+    }
+
+    private func proposedMetadata() -> DocumentMetadata {
+        var metadata = pendingMetadata
+        metadata.vendor = normalizedOptional(vendorDraft)
+        metadata.invoiceDate = invoiceDateDraft
+        metadata.documentType = documentTypeDraft
+        metadata.invoiceNumber = normalizedOptional(invoiceNumberDraft)
+        return metadata
+    }
+
+    private func presentProcessedCollisionAlertIfNeeded() -> Bool {
+        let metadata = proposedMetadata()
+        guard model.processedInvoiceColliding(
+            with: metadata,
+            excluding: invoice.id
+        ) != nil else {
+            return false
+        }
+
+        let dateText = metadata.invoiceDate?.formatted(date: .abbreviated, time: .omitted) ?? "—"
+        let alert = NSAlert()
+        alert.messageText = "Invoice Already Processed"
+        alert.informativeText = "An invoice with this vendor, date, and invoice number has already been processed."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+
+        let detailsField = NSTextField(wrappingLabelWithString: """
+        Vendor: \(metadata.vendor ?? "—")
+        Date: \(dateText)
+        Invoice Number: \(metadata.invoiceNumber ?? "—")
+        """)
+        detailsField.preferredMaxLayoutWidth = 500
+        let detailsSize = detailsField.fittingSize
+        detailsField.frame = NSRect(
+            origin: .zero,
+            size: NSSize(width: 500, height: detailsSize.height)
+        )
+        alert.accessoryView = detailsField
+
+        alert.runModal()
+        return true
+    }
+
+    private func commitIfDirty() {
         guard isDirty else { return }
 
         let vendor = normalizedOptional(vendorDraft)
@@ -187,22 +247,7 @@ struct DataEntryCard: View {
         let invoiceNumber = normalizedOptional(invoiceNumberDraft)
         invoiceNumberDraft = invoiceNumber ?? ""
 
-        var metadata = pendingMetadata
-        metadata.vendor = vendor
-        metadata.invoiceDate = invoiceDateDraft
-        metadata.documentType = documentTypeDraft
-        metadata.invoiceNumber = invoiceNumber
-        previewState.updatePendingMetadata(metadata)
-    }
-
-    private func saveAndNext() {
-        saveAll()
-        model.selectNextArtifact()
-    }
-
-    private func saveAndMoveToProcessed() {
-        saveAll()
-        model.moveInvoicesToProcessed(ids: [invoice.id])
+        previewState.updatePendingMetadata(proposedMetadata())
     }
 
     // MARK: - Helpers
