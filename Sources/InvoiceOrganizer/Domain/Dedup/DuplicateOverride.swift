@@ -24,7 +24,7 @@ struct ContentHashPair: Hashable, Codable, Sendable {
 
 /// Persists the set of user-declared "not a duplicate" overrides.
 enum DuplicateOverrideStore {
-    private static let defaultsKey = "dedup.separatedContentHashPairs"
+    static let defaultsKey = "dedup.separatedContentHashPairs"
 
     static func load() -> Set<ContentHashPair> {
         guard let data = UserDefaults.standard.data(forKey: defaultsKey),

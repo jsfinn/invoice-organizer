@@ -23,6 +23,7 @@ struct InvoiceOrganizerApp: App {
         .commands {
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: appDelegate.updaterController.updater)
+                ExportDiagnosticSnapshotView(model: model)
             }
         }
 

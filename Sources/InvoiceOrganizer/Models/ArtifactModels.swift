@@ -293,6 +293,10 @@ struct FolderSettings: Equatable, Sendable {
     var processingURL: URL? = nil
     var duplicatesURL: URL? = nil
 
+    var configuredURLs: [URL] {
+        [inboxURL, processingURL, processedURL, duplicatesURL].compactMap { $0 }
+    }
+
     func url(for role: FolderRole) -> URL? {
         switch role {
         case .inbox:

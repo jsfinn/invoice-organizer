@@ -12,7 +12,7 @@ protocol InvoiceStructuredDataStoring: Sendable {
 actor InvoiceStructuredDataStore: InvoiceStructuredDataStoring {
     static let shared = InvoiceStructuredDataStore()
 
-    private static let defaultsKey = "workflow.invoiceStructuredData"
+    static let defaultsKey = "workflow.invoiceStructuredData"
 
     private let defaults: UserDefaults
 

@@ -12,7 +12,7 @@ protocol InvoiceTextStoring: Sendable {
 actor InvoiceTextStore: InvoiceTextStoring {
     static let shared = InvoiceTextStore()
 
-    private static let defaultsKey = "workflow.invoiceExtractedText"
+    static let defaultsKey = "workflow.invoiceExtractedText"
 
     private let defaults: UserDefaults
 

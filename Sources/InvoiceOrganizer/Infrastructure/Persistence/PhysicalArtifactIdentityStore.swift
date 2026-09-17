@@ -5,7 +5,7 @@ final class PhysicalArtifactIdentityStore: @unchecked Sendable {
 
     private var pathToID: [String: String]
     private let lock = NSLock()
-    private static let defaultsKey = "artifact.identityMap"
+    static let defaultsKey = "artifact.identityMap"
 
     init(pathToID: [String: String] = [:]) {
         if pathToID.isEmpty {
@@ -51,6 +51,14 @@ final class PhysicalArtifactIdentityStore: @unchecked Sendable {
 
     func prune(keepingPaths activePaths: Set<String>) {
         lock.withLock {
+            guard !pathToID.isEmpty else { return }
+
+            // Matching none of the known paths means the roots were unreadable
+            // (permissions, unmounted volume), not that every file was deleted.
+            // Pruning here would hand every file a fresh UUID on the next scan and
+            // orphan every workflow record, which is keyed by the old ones.
+            guard activePaths.contains(where: { pathToID[$0] != nil }) else { return }
+
             let staleKeys = Set(pathToID.keys).subtracting(activePaths)
             for key in staleKeys {
                 pathToID.removeValue(forKey: key)
@@ -60,7 +68,9 @@ final class PhysicalArtifactIdentityStore: @unchecked Sendable {
 
     func save() {
         lock.withLock {
-            let data = try? JSONEncoder().encode(pathToID)
+            // set(nil) removes the key outright, so a failed encode has to leave the
+            // previous value alone rather than delete the map.
+            guard let data = try? JSONEncoder().encode(pathToID) else { return }
             UserDefaults.standard.set(data, forKey: Self.defaultsKey)
         }
     }

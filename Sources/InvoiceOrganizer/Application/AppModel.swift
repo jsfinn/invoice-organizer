@@ -36,6 +36,7 @@ final class AppModel: ObservableObject {
     private let structuredExtractionQueue: ContentHashQueue<StructuredExtractionHandler>
     private let workflowActionCoordinator = WorkflowActionCoordinator()
     private let filenameReconciler = FilenameReconciler()
+    private let diagnosticSnapshotRecorder = DiagnosticSnapshotRecorder()
     private var workflowPersister: WorkflowPersister!
     private var filenameReconcilerTask: Task<Void, Never>?
     private lazy var fileSystemReconciler = FileSystemReconciler(
@@ -154,6 +155,9 @@ final class AppModel: ObservableObject {
                 self?.applyFilenameRenameResult(result)
             }
         }
+        // Capture the legacy blobs before the first scan can rename, prune, or
+        // re-key anything.
+        diagnosticSnapshotRecorder.captureRawAtLaunch()
         fileSystemReconciler.updateConfiguration(folderSettings: resolvedFolderSettings, autoRefresh: autoRefresh)
     }
 
@@ -200,6 +204,25 @@ final class AppModel: ObservableObject {
 
     func documentMetadata(for artifactID: PhysicalArtifact.ID) -> DocumentMetadata {
         librarySnapshot.metadata(for: artifactID)
+    }
+
+    /// The library exactly as the UI resolves it right now, paired with the files on
+    /// disk behind it. Diagnostic dumps compare these two to prove a migration
+    /// changed nothing visible.
+    func computedLibraryState() -> ComputedLibraryState {
+        ComputedLibraryState.make(
+            artifacts: invoices,
+            metadata: { self.documentMetadata(for: $0) },
+            roots: folderSettings.configuredURLs
+        )
+    }
+
+    func exportDiagnosticSnapshot() throws -> URL {
+        try diagnosticSnapshotRecorder.exportSnapshot(computed: computedLibraryState())
+    }
+
+    var diagnosticsDirectory: URL {
+        diagnosticSnapshotRecorder.diagnosticsDirectory
     }
 
     func possibleSameInvoiceMatches(for artifactID: PhysicalArtifact.ID) -> [PossibleSameInvoiceMatch] {
@@ -1843,6 +1866,9 @@ final class AppModel: ObservableObject {
         syncComputationHashes()
         rebuildLibrarySnapshot()
         syncSelectionForVisibleInvoices()
+        diagnosticSnapshotRecorder.completeLaunchCapture { [weak self] in
+            self?.computedLibraryState() ?? ComputedLibraryState(artifacts: [], files: [])
+        }
 
         let newlyDetectedHEICFiles = invoices
             .filter { $0.location == .inbox && $0.fileType == .heic }

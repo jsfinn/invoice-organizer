@@ -1,7 +1,7 @@
 import Foundation
 
 enum InvoiceWorkflowStore {
-    private static let defaultsKey = "workflow.invoiceMetadata"
+    static let defaultsKey = "workflow.invoiceMetadata"
 
     static func load() -> [String: StoredInvoiceWorkflow] {
         let defaults = UserDefaults.standard

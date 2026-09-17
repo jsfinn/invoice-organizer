@@ -11,4 +11,12 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 
+# Diagnostic state dumps embed invoice OCR text, which can include bank and
+# routing numbers. They live in Application Support; these patterns catch a copy
+# exported into the repo by accident. Anchored, because git on macOS matches
+# ignore patterns case-insensitively and would otherwise swallow
+# Sources/InvoiceOrganizer/Infrastructure/Diagnostics/.
+/diagnostics/
+state-*.json
+
 /.cursor/
