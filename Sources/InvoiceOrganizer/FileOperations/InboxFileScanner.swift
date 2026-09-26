@@ -185,6 +185,20 @@ enum InboxFileScanner {
         excluding excludedRootURLs: [URL]
     ) throws -> [URL] {
         if recursive {
+            // enumerator(at:) yields nothing for a root it cannot read, which is
+            // indistinguishable from a genuinely empty archive. Callers prune every
+            // record that the scan does not return, so a volume that is merely
+            // offline or still syncing would cost the user their whole library.
+            // The non-recursive path below throws in that situation; match it.
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: rootURL.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue else {
+                throw CocoaError.error(.fileReadNoSuchFile, url: rootURL)
+            }
+            guard FileManager.default.isReadableFile(atPath: rootURL.path) else {
+                throw CocoaError.error(.fileReadNoPermission, url: rootURL)
+            }
+
             let enumerator = FileManager.default.enumerator(
                 at: rootURL,
                 includingPropertiesForKeys: Array(resourceKeys),

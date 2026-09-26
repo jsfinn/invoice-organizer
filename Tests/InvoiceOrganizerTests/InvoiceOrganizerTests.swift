@@ -308,6 +308,23 @@ private final class RecordingPreviewPersistHandler {
     #expect(scannedInboxFiles.map(\.fileURL.lastPathComponent) == ["incoming.pdf"])
 }
 
+@Test func scannerFailsOnAnUnreadableArchiveRatherThanCallingItEmpty() async throws {
+    // Callers prune every record the scan does not return, so "I could not read
+    // the archive" and "the archive is empty" have to stay distinguishable. A
+    // recursive enumerator conflates them; an archive on a volume that is offline
+    // or still syncing must raise rather than come back empty.
+    let emptyRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: emptyRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: emptyRoot) }
+
+    #expect(try InboxFileScanner.scanFiles(in: emptyRoot, location: .processed).isEmpty)
+
+    let missingRoot = emptyRoot.appendingPathComponent("NotSyncedYet", isDirectory: true)
+    #expect(throws: (any Error).self) {
+        try InboxFileScanner.scanFiles(in: missingRoot, location: .processed)
+    }
+}
+
 @Test func workspaceMoverMovesInvoiceIntoProcessingFolder() async throws {
     let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     let processingRoot = tempRoot.appendingPathComponent("Processing", isDirectory: true)

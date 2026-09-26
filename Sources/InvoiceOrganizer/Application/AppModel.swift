@@ -1924,6 +1924,13 @@ final class AppModel: ObservableObject {
         let staleKeys = previousKeys.subtracting(activeWorkflowIDs)
 
         guard !staleKeys.isEmpty else { return }
+
+        // Matching none of the stored records means the library was unreadable
+        // rather than emptied, the same reasoning PhysicalArtifactIdentityStore
+        // prunes on. Dropping the records here is unrecoverable: the files return
+        // under fresh identities with nothing left to attach to them.
+        guard activeWorkflowIDs.contains(where: { workflowByID[$0] != nil }) else { return }
+
         staleKeys.forEach { workflowByID.removeValue(forKey: $0) }
         persistWorkflow()
     }
