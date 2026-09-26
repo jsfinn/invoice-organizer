@@ -139,15 +139,24 @@ private func referenceCosineSimilarity(
     // summation order, and in particular must never straddle the match threshold.
     var worstDelta = 0.0
     var straddles = 0
+    var referenceElapsed = Duration.zero
+    var vectorElapsed = Duration.zero
+
     for i in corpus.indices {
         for j in (i + 1)..<corpus.count {
+            let referenceStart = ContinuousClock.now
             let expected = referenceCosineSimilarity(
                 lhs: corpus[i],
                 rhs: corpus[j],
                 documentFrequencies: documentFrequencies,
                 documentCount: documentCount
             )
+            referenceElapsed += ContinuousClock.now - referenceStart
+
+            let vectorStart = ContinuousClock.now
             let actual = DuplicateDetector.cosineSimilarity(lhs: vectors[i], rhs: vectors[j])
+            vectorElapsed += ContinuousClock.now - vectorStart
+
             worstDelta = max(worstDelta, abs(expected - actual))
 
             let threshold = DuplicateDetector.textSimilarityThreshold
@@ -157,6 +166,7 @@ private func referenceCosineSimilarity(
 
     let pairCount = corpus.count * (corpus.count - 1) / 2
     print("compared \(pairCount) pairs, worst delta \(worstDelta)")
+    print("pairwise cost: reference \(referenceElapsed) vs vectors \(vectorElapsed)")
     #expect(worstDelta < 1e-9, "similarity drifted by \(worstDelta)")
     #expect(straddles == 0, "\(straddles) pairs changed side of the match threshold")
 }
@@ -194,8 +204,65 @@ private func referenceCosineSimilarity(
     )
     let elapsed = ContinuousClock.now - start
 
+    let namesByID = Dictionary(uniqueKeysWithValues: files.map { ($0.id, $0.name) })
+    for cluster in clusters {
+        print("  group: \(cluster.artifactIDs.compactMap { namesByID[$0] })")
+    }
     print("clustered \(files.count) artifacts into \(clusters.count) groups in \(elapsed)")
     // A single pass has to stay well under a frame budget's worth of stalling, since
     // the library rebuilds once per extracted document during a bulk import.
     #expect(elapsed < .seconds(1), "clustering took \(elapsed)")
+}
+
+/// The whole snapshot rebuild, which is what runs on the main actor and therefore
+/// what the user experiences as a stall when files move between queues.
+@Test func realDumpSnapshotRebuildStaysResponsive() throws {
+    guard let dump = try loadDump(), let computed = dump.computed else {
+        print("skipped: set INVOICE_ORGANIZER_STATE_DUMP to a diagnostic dump")
+        return
+    }
+
+    let artifacts: [PhysicalArtifact] = computed.artifacts.map { artifact in
+        let fileURL = URL(fileURLWithPath: artifact.path)
+        return PhysicalArtifact(
+            id: artifact.artifactID,
+            name: fileURL.lastPathComponent,
+            fileURL: fileURL,
+            location: artifact.location,
+            vendor: artifact.vendor,
+            invoiceDate: artifact.invoiceDate,
+            invoiceNumber: artifact.invoiceNumber,
+            documentType: artifact.documentType,
+            addedAt: .now,
+            fileType: fileURL.pathExtension.lowercased() == "pdf" ? .pdf : .image,
+            status: artifact.status,
+            contentHash: artifact.contentHash
+        )
+    }
+
+    let structuredByHash = dump.raw.structuredDataByContentHash
+    let builder = LibrarySnapshotBuilder { structuredByHash[$0] }
+    let workflows = dump.raw.workflowByArtifactID
+    let termFrequencies = DuplicateDetector.termFrequenciesFromRecords(dump.raw.extractedTextByContentHash)
+    let firstPageFrequencies = DuplicateDetector.firstPageTermFrequenciesFromRecords(dump.raw.extractedTextByContentHash)
+    let separated = Set(dump.raw.separatedContentHashPairs)
+
+    var timings: [Duration] = []
+    for _ in 0..<5 {
+        let start = ContinuousClock.now
+        let snapshot = builder.build(
+            from: artifacts,
+            workflowsByArtifactID: workflows,
+            documentMetadataHintsByArtifactID: [:],
+            duplicateTermFrequenciesByHash: termFrequencies,
+            duplicateFirstPageTermFrequenciesByHash: firstPageFrequencies,
+            separatedContentHashPairs: separated
+        )
+        timings.append(ContinuousClock.now - start)
+        #expect(snapshot.documents.count > 0)
+    }
+
+    let median = timings.sorted()[timings.count / 2]
+    print("full snapshot rebuild over \(artifacts.count) artifacts: median \(median), all \(timings)")
+    #expect(median < .seconds(1), "rebuild took \(median)")
 }
