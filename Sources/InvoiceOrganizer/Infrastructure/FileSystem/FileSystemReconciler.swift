@@ -160,16 +160,29 @@ final class FileSystemReconciler {
                 InboxFileScanner.makeProcessedArtifact(from: file, workflow: workflowSnapshot[file.id])
             }
 
+            // The archive nests files as <Letter>/<Vendor>/file, so the parent folder
+            // names the vendor - but only for a file that actually sits in a vendor
+            // folder. A file loose in the processed root would otherwise be credited
+            // to a vendor named after the root itself.
+            let processedRootPath = processedURL?.standardizedFileURL.path
+            func vendorFolderName(for file: ScannedInvoiceFile) -> String? {
+                let parent = file.fileURL.deletingLastPathComponent().standardizedFileURL
+                guard parent.path != processedRootPath else { return nil }
+                return parent.lastPathComponent
+            }
+
             let metadataHints = Dictionary(
                 uniqueKeysWithValues: processedFiles.map { file in
-                    let workflow = workflowSnapshot[file.id]
+                    // Purely what the filename and folder say. The snapshot builder
+                    // merges this under the workflow record, so mixing workflow
+                    // values in here would just duplicate that logic.
                     return (
                         file.id,
                         DocumentMetadata(
-                            vendor: workflow?.vendor ?? file.vendor ?? file.fileURL.deletingLastPathComponent().lastPathComponent,
-                            invoiceDate: workflow?.invoiceDate ?? file.invoiceDate,
-                            invoiceNumber: workflow?.invoiceNumber,
-                            documentType: workflow?.documentType
+                            vendor: file.vendor ?? vendorFolderName(for: file),
+                            invoiceDate: file.invoiceDate,
+                            invoiceNumber: file.invoiceNumber,
+                            documentType: nil
                         )
                     )
                 }

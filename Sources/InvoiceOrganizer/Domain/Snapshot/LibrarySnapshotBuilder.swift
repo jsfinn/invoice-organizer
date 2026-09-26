@@ -228,11 +228,14 @@ struct LibrarySnapshotBuilder {
         workflowsByArtifactID: [PhysicalArtifact.ID: StoredInvoiceWorkflow],
         documentMetadataHintsByArtifactID: [PhysicalArtifact.ID: DocumentMetadata]
     ) -> DocumentMetadata {
-        if let workflow = workflowsByArtifactID[artifact.id] {
-            return DocumentMetadata(workflow: workflow)
+        let hints = documentMetadataHintsByArtifactID[artifact.id] ?? .empty
+        guard let workflow = workflowsByArtifactID[artifact.id] else {
+            return hints
         }
 
-        return documentMetadataHintsByArtifactID[artifact.id] ?? .empty
+        // A workflow record with blank fields must not hide what the filename knows,
+        // but anything the user actually set still wins.
+        return DocumentMetadata(workflow: workflow).fillingGaps(from: hints)
     }
 
     private func sharedDuplicateDocumentMetadata(

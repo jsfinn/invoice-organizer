@@ -137,37 +137,72 @@ enum DuplicateDetector {
         return (df, allTermFrequencies.count)
     }
 
+    /// A document's TF-IDF weights with its magnitude already folded in.
+    ///
+    /// A document's magnitude does not depend on what it is being compared against,
+    /// and the dot product only draws on terms the two documents share. Computing the
+    /// magnitude once per document therefore lets each pair walk the term
+    /// intersection (mean 27 on the reference corpus) rather than the union (mean
+    /// 297), which is where the pairwise pass spends nearly all of its time.
+    struct WeightedDocumentVector: Sendable {
+        let weights: [String: Double]
+        let magnitude: Double
+
+        var isEmpty: Bool { weights.isEmpty }
+    }
+
+    static func weightedVector(
+        for termFrequencies: [String: Int],
+        documentFrequencies: [String: Int],
+        documentCount: Int
+    ) -> WeightedDocumentVector {
+        let n = Double(documentCount)
+        var weights: [String: Double] = Dictionary(minimumCapacity: termFrequencies.count)
+        var magnitudeSq = 0.0
+
+        for (term, frequency) in termFrequencies {
+            let df = Double(documentFrequencies[term] ?? 0)
+            let weight = Double(frequency) * (log((n + 1.0) / (df + 1.0)) + 1.0)
+            weights[term] = weight
+            magnitudeSq += weight * weight
+        }
+
+        return WeightedDocumentVector(weights: weights, magnitude: magnitudeSq.squareRoot())
+    }
+
+    static func cosineSimilarity(lhs: WeightedDocumentVector, rhs: WeightedDocumentVector) -> Double {
+        guard !lhs.isEmpty, !rhs.isEmpty else { return 0.0 }
+
+        let magnitude = lhs.magnitude * rhs.magnitude
+        guard magnitude > 0 else { return 0.0 }
+
+        // Probing the larger dictionary with the smaller one's keys keeps the loop
+        // bounded by the smaller document.
+        let (probe, table) = lhs.weights.count <= rhs.weights.count
+            ? (lhs.weights, rhs.weights)
+            : (rhs.weights, lhs.weights)
+
+        var dotProduct = 0.0
+        for (term, weight) in probe {
+            guard let otherWeight = table[term] else { continue }
+            dotProduct += weight * otherWeight
+        }
+
+        return dotProduct / magnitude
+    }
+
+    /// Convenience for one-off comparisons where no vectors have been built yet.
+    /// Pairwise passes should build the vectors once and use the overload above.
     static func cosineSimilarity(
         lhs: [String: Int],
         rhs: [String: Int],
         documentFrequencies: [String: Int],
         documentCount: Int
     ) -> Double {
-        guard !lhs.isEmpty, !rhs.isEmpty else { return 0.0 }
-
-        func idf(for term: String) -> Double {
-            let df = Double(documentFrequencies[term] ?? 0)
-            let n = Double(documentCount)
-            return log((n + 1.0) / (df + 1.0)) + 1.0
-        }
-
-        let allTerms = Set(lhs.keys).union(rhs.keys)
-        var dotProduct = 0.0
-        var lhsMagnitudeSq = 0.0
-        var rhsMagnitudeSq = 0.0
-
-        for term in allTerms {
-            let w = idf(for: term)
-            let lhsWeight = Double(lhs[term] ?? 0) * w
-            let rhsWeight = Double(rhs[term] ?? 0) * w
-            dotProduct += lhsWeight * rhsWeight
-            lhsMagnitudeSq += lhsWeight * lhsWeight
-            rhsMagnitudeSq += rhsWeight * rhsWeight
-        }
-
-        let magnitude = (lhsMagnitudeSq * rhsMagnitudeSq).squareRoot()
-        guard magnitude > 0 else { return 0.0 }
-        return dotProduct / magnitude
+        cosineSimilarity(
+            lhs: weightedVector(for: lhs, documentFrequencies: documentFrequencies, documentCount: documentCount),
+            rhs: weightedVector(for: rhs, documentFrequencies: documentFrequencies, documentCount: documentCount)
+        )
     }
 
     // MARK: - Veto / Debug
@@ -348,28 +383,32 @@ enum DuplicateDetector {
             static func < (lhs: ScoredEdge, rhs: ScoredEdge) -> Bool { lhs.score > rhs.score }
         }
 
+        let vectors = withText.map {
+            weightedVector(
+                for: $0.termFrequencies!,
+                documentFrequencies: documentFrequencies,
+                documentCount: documentCount
+            )
+        }
+        let firstPageVectors = withText.map { entry in
+            entry.firstPageTermFrequencies.map {
+                weightedVector(for: $0, documentFrequencies: fpDF, documentCount: fpDC)
+            }
+        }
+
         var edges: [ScoredEdge] = []
         for i in withText.indices {
             for j in (i + 1)..<withText.count {
-                let lhsTerms = withText[i].termFrequencies!
-                let rhsTerms = withText[j].termFrequencies!
-                var score = cosineSimilarity(
-                    lhs: lhsTerms, rhs: rhsTerms,
-                    documentFrequencies: documentFrequencies, documentCount: documentCount
-                )
+                var score = cosineSimilarity(lhs: vectors[i], rhs: vectors[j])
 
                 // First-page fallback: if both have first-page data and have a matching
                 // identity, use the higher of whole-doc and first-page scores
-                if let lhsFP = withText[i].firstPageTermFrequencies,
-                   let rhsFP = withText[j].firstPageTermFrequencies,
+                if let lhsFP = firstPageVectors[i],
+                   let rhsFP = firstPageVectors[j],
                    withText[i].identity != nil,
                    withText[j].identity != nil,
                    !withText[i].identity!.conflicts(with: withText[j].identity!) {
-                    let fpScore = cosineSimilarity(
-                        lhs: lhsFP, rhs: rhsFP,
-                        documentFrequencies: fpDF, documentCount: fpDC
-                    )
-                    score = max(score, fpScore)
+                    score = max(score, cosineSimilarity(lhs: lhsFP, rhs: rhsFP))
                 }
 
                 if score >= textSimilarityThreshold {

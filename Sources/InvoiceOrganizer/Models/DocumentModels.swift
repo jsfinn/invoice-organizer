@@ -35,6 +35,25 @@ struct DocumentMetadata: Equatable, Sendable {
             documentType: workflow.documentType
         )
     }
+
+    /// Fills blank fields from `fallback`, field by field. Every value already set
+    /// here survives, so a lower-confidence source can add to this metadata but never
+    /// contradict it.
+    func fillingGaps(from fallback: DocumentMetadata) -> DocumentMetadata {
+        func present(_ value: String?) -> String? {
+            guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return nil
+            }
+            return value
+        }
+
+        return DocumentMetadata(
+            vendor: present(vendor) ?? fallback.vendor,
+            invoiceDate: invoiceDate ?? fallback.invoiceDate,
+            invoiceNumber: present(invoiceNumber) ?? fallback.invoiceNumber,
+            documentType: documentType ?? fallback.documentType
+        )
+    }
 }
 
 struct DocumentArtifactReference: Identifiable, Equatable, Sendable {

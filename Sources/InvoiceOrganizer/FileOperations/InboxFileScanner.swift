@@ -8,6 +8,7 @@ struct ScannedInvoiceFile: Hashable, Sendable {
     let location: InvoiceLocation
     let vendor: String?
     let invoiceDate: Date?
+    let invoiceNumber: String?
     let processedAt: Date?
     let addedAt: Date
     let modifiedAt: Date
@@ -21,6 +22,7 @@ struct ScannedInvoiceFile: Hashable, Sendable {
         location: InvoiceLocation,
         vendor: String?,
         invoiceDate: Date?,
+        invoiceNumber: String? = nil,
         processedAt: Date?,
         addedAt: Date,
         modifiedAt: Date? = nil,
@@ -33,6 +35,7 @@ struct ScannedInvoiceFile: Hashable, Sendable {
         self.location = location
         self.vendor = vendor
         self.invoiceDate = invoiceDate
+        self.invoiceNumber = invoiceNumber
         self.processedAt = processedAt
         self.addedAt = addedAt
         self.modifiedAt = modifiedAt ?? addedAt
@@ -81,6 +84,7 @@ enum InboxFileScanner {
                 location: location,
                 vendor: processedMetadata?.vendor,
                 invoiceDate: processedMetadata?.invoiceDate,
+                invoiceNumber: processedMetadata?.invoiceNumber,
                 processedAt: processedMetadata?.processedAt,
                 addedAt: processedMetadata?.processedAt ?? fallbackDate,
                 modifiedAt: modifiedDate,
@@ -129,7 +133,7 @@ enum InboxFileScanner {
             location: .processed,
             vendor: workflow?.vendor ?? file.vendor ?? file.fileURL.deletingLastPathComponent().lastPathComponent,
             invoiceDate: workflow?.invoiceDate ?? file.invoiceDate,
-            invoiceNumber: workflow?.invoiceNumber,
+            invoiceNumber: workflow?.invoiceNumber ?? file.invoiceNumber,
             documentType: workflow?.documentType,
             processedAt: file.processedAt,
             addedAt: file.addedAt,

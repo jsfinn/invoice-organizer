@@ -3,7 +3,10 @@ import Foundation
 struct ProcessedInvoiceMetadata {
     let vendor: String
     let invoiceDate: Date
-    let processedAt: Date
+    let invoiceNumber: String?
+    /// Only present on filenames written by builds that appended a processing
+    /// timestamp. Modern filenames carry an invoice number in that position instead.
+    let processedAt: Date?
 }
 
 enum ArchivePathBuilder {
@@ -71,28 +74,39 @@ enum ArchivePathBuilder {
         return "\(baseName).\(fileExtension)"
     }
 
+    /// Reads back what `processedFilename` writes: `Vendor-yyyy-MM-dd[-invoiceNumber]`.
+    ///
+    /// Older builds wrote `Vendor-yyyy-MM-dd-yyyyMMdd-HHmmss`, where the trailing
+    /// component is a processing timestamp rather than an invoice number. Both forms
+    /// are still on disk, so the suffix is classified by whether it parses as that
+    /// timestamp.
+    ///
+    /// Note the round trip is lossy for invoice numbers: `normalizedFileComponent`
+    /// rewrites `/` and `:` to `-`, so a parsed number is a hint only and must never
+    /// overwrite a stored one.
     static func processedMetadata(from fileURL: URL) -> ProcessedInvoiceMetadata? {
         let baseName = fileURL.deletingPathExtension().lastPathComponent
-        let pattern = #"^(.*)-(\d{4}-\d{2}-\d{2})-(\d{8}-\d{6})$"#
+        let pattern = #"^(.+?)-(\d{4}-\d{2}-\d{2})(?:-(.+))?$"#
 
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return nil
         }
 
-        let range = NSRange(location: 0, length: baseName.utf16.count)
+        let range = NSRange(baseName.startIndex..<baseName.endIndex, in: baseName)
         guard let match = regex.firstMatch(in: baseName, range: range),
-              match.numberOfRanges == 4,
               let vendorRange = Range(match.range(at: 1), in: baseName),
               let invoiceRange = Range(match.range(at: 2), in: baseName),
-              let processedRange = Range(match.range(at: 3), in: baseName),
-              let invoiceDate = invoiceDateFormatter.date(from: String(baseName[invoiceRange])),
-              let processedAt = processedTimestampFormatter.date(from: String(baseName[processedRange])) else {
+              let invoiceDate = invoiceDateFormatter.date(from: String(baseName[invoiceRange])) else {
             return nil
         }
+
+        let suffix = Range(match.range(at: 3), in: baseName).map { String(baseName[$0]) }
+        let processedAt = suffix.flatMap(processedTimestampFormatter.date(from:))
 
         return ProcessedInvoiceMetadata(
             vendor: String(baseName[vendorRange]),
             invoiceDate: invoiceDate,
+            invoiceNumber: processedAt == nil ? suffix : nil,
             processedAt: processedAt
         )
     }
