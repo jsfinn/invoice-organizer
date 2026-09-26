@@ -1057,12 +1057,14 @@ final class AppModel: ObservableObject {
 
         do {
             let lookup = artifactsByID
-            let result = try workflowActionCoordinator.moveToArchive(
-                documents: documents,
-                artifactsByID: lookup,
-                workflowsByID: workflowByID,
-                archiveRoot: archiveRoot
-            )
+            let result = try fileSystemReconciler.suppressWatcherRefresh {
+                try workflowActionCoordinator.moveToArchive(
+                    documents: documents,
+                    artifactsByID: lookup,
+                    workflowsByID: workflowByID,
+                    archiveRoot: archiveRoot
+                )
+            }
             workflowByID = result.workflowsByID
             persistWorkflow()
 
@@ -1075,7 +1077,6 @@ final class AppModel: ObservableObject {
                 structuredFailedHashes.subtract(orphanedContentHashes)
             }
 
-            fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
             settingsErrorMessage = nil
             await fileSystemReconciler.reconcileNow()
         } catch {
@@ -1116,8 +1117,10 @@ final class AppModel: ObservableObject {
         let orphanedContentHashes = deletedContentHashes.subtracting(remainingContentHashes)
 
         do {
-            for artifact in selectedArtifacts {
-                try moveToTrashHandler(artifact.fileURL)
+            try fileSystemReconciler.suppressWatcherRefresh {
+                for artifact in selectedArtifacts {
+                    try moveToTrashHandler(artifact.fileURL)
+                }
             }
 
             if !orphanedContentHashes.isEmpty {
@@ -1129,7 +1132,6 @@ final class AppModel: ObservableObject {
                 structuredFailedHashes.subtract(orphanedContentHashes)
             }
 
-            fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
             settingsErrorMessage = nil
             await fileSystemReconciler.reconcileNow()
         } catch {
@@ -1190,11 +1192,13 @@ final class AppModel: ObservableObject {
         let orphanedContentHashes = joinedContentHashes.subtracting(remainingContentHashes)
 
         do {
-            let result = try workflowActionCoordinator.moveArtifactsToArchive(
-                artifacts: orderedArtifacts,
-                workflowsByID: workflowByID,
-                archiveRoot: archiveRoot
-            )
+            let result = try fileSystemReconciler.suppressWatcherRefresh {
+                try workflowActionCoordinator.moveArtifactsToArchive(
+                    artifacts: orderedArtifacts,
+                    workflowsByID: workflowByID,
+                    archiveRoot: archiveRoot
+                )
+            }
             workflowByID = result.workflowsByID
             persistWorkflow()
 
@@ -1207,7 +1211,6 @@ final class AppModel: ObservableObject {
                 structuredFailedHashes.subtract(orphanedContentHashes)
             }
 
-            fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
             settingsErrorMessage = nil
             let joinedArtifactID = PhysicalArtifactIdentityStore.shared.existingID(for: destinationURL)
             setSelection(ids: Set(joinedArtifactID.map { [$0] } ?? []), primary: joinedArtifactID)
@@ -1268,7 +1271,7 @@ final class AppModel: ObservableObject {
         _ = PhysicalArtifactIdentityStore.shared.id(for: destinationURL)
         PhysicalArtifactIdentityStore.shared.save()
 
-        fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
+        fileSystemReconciler.suppressWatcherRefresh()
         settingsErrorMessage = nil
         let copyArtifactID = PhysicalArtifactIdentityStore.shared.existingID(for: destinationURL)
         setSelection(ids: Set(copyArtifactID.map { [$0] } ?? []), primary: copyArtifactID)
@@ -1342,7 +1345,7 @@ final class AppModel: ObservableObject {
             structuredFailedHashes.subtract(orphanedContentHashes)
         }
 
-        fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
+        fileSystemReconciler.suppressWatcherRefresh()
         settingsErrorMessage = nil
         let createdIDs = createdURLs.compactMap { PhysicalArtifactIdentityStore.shared.existingID(for: $0) }
         setSelection(ids: Set(createdIDs), primary: createdIDs.first)
@@ -1486,12 +1489,14 @@ final class AppModel: ObservableObject {
         }
 
         do {
-            let result = try workflowActionCoordinator.reopenToInProgress(
-                documents: documents,
-                artifactsByID: artifactsByID,
-                workflowsByID: workflowByID,
-                processingRoot: processingRoot
-            )
+            let result = try fileSystemReconciler.suppressWatcherRefresh {
+                try workflowActionCoordinator.reopenToInProgress(
+                    documents: documents,
+                    artifactsByID: artifactsByID,
+                    workflowsByID: workflowByID,
+                    processingRoot: processingRoot
+                )
+            }
             workflowByID = result.workflowsByID
             persistWorkflow()
             settingsErrorMessage = nil
@@ -1530,16 +1535,18 @@ final class AppModel: ObservableObject {
         }
 
         do {
-            let result = try workflowActionCoordinator.moveToInProgress(
-                documents: documents,
-                artifactsByID: artifactsByID,
-                workflowsByID: workflowByID,
-                processingRoot: processingRoot,
-                duplicatesRoot: duplicatesRoot,
-                structuredRecordForContentHash: { [computationCache] contentHash in
-                    computationCache.structuredRecord(forContentHash: contentHash)
-                }
-            )
+            let result = try fileSystemReconciler.suppressWatcherRefresh {
+                try workflowActionCoordinator.moveToInProgress(
+                    documents: documents,
+                    artifactsByID: artifactsByID,
+                    workflowsByID: workflowByID,
+                    processingRoot: processingRoot,
+                    duplicatesRoot: duplicatesRoot,
+                    structuredRecordForContentHash: { [computationCache] contentHash in
+                        computationCache.structuredRecord(forContentHash: contentHash)
+                    }
+                )
+            }
             workflowByID = result.workflowsByID
             persistWorkflow()
             settingsErrorMessage = nil
@@ -1568,12 +1575,14 @@ final class AppModel: ObservableObject {
         }
 
         do {
-            let result = try workflowActionCoordinator.moveToUnprocessed(
-                documents: documents,
-                artifactsByID: artifactsByID,
-                workflowsByID: workflowByID,
-                inboxRoot: inboxRoot
-            )
+            let result = try fileSystemReconciler.suppressWatcherRefresh {
+                try workflowActionCoordinator.moveToUnprocessed(
+                    documents: documents,
+                    artifactsByID: artifactsByID,
+                    workflowsByID: workflowByID,
+                    inboxRoot: inboxRoot
+                )
+            }
             workflowByID = result.workflowsByID
             persistWorkflow()
             settingsErrorMessage = nil
@@ -1611,12 +1620,14 @@ final class AppModel: ObservableObject {
         }
 
         do {
-            let result = try workflowActionCoordinator.moveToProcessed(
-                documents: documents,
-                artifactsByID: artifactsByID,
-                workflowsByID: workflowByID,
-                processedRoot: processedRoot
-            )
+            let result = try fileSystemReconciler.suppressWatcherRefresh {
+                try workflowActionCoordinator.moveToProcessed(
+                    documents: documents,
+                    artifactsByID: artifactsByID,
+                    workflowsByID: workflowByID,
+                    processedRoot: processedRoot
+                )
+            }
             workflowByID = result.workflowsByID
             persistWorkflow()
             settingsErrorMessage = nil
@@ -1761,7 +1772,7 @@ final class AppModel: ObservableObject {
         }
         invoices[index].fileURL = result.newURL
         invoices[index].name = result.newName
-        fileSystemReconciler.suppressWatcherRefresh(for: 1.0)
+        fileSystemReconciler.suppressWatcherRefresh()
     }
 
     func persistPreviewRotation(for artifactID: PhysicalArtifact.ID, quarterTurns: Int) async -> PreviewRotationSaveResult? {
@@ -1802,7 +1813,7 @@ final class AppModel: ObservableObject {
 
             let updatedContentHash = accessCoordinator.updatedContentHash(for: handle)
             await migrateCachedArtifacts(from: invoice.contentHash, to: updatedContentHash)
-            fileSystemReconciler.suppressWatcherRefresh(for: 1.5)
+            fileSystemReconciler.suppressWatcherRefresh()
 
             if let refreshedIndex = invoices.firstIndex(where: { $0.id == invoice.id }) {
                 invoices[refreshedIndex].contentHash = updatedContentHash ?? invoices[refreshedIndex].contentHash

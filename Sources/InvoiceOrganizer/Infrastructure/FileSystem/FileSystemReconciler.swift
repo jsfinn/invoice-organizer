@@ -15,7 +15,13 @@ final class FileSystemReconciler {
     private var watcher: FileSystemWatcher?
     private var refreshTask: Task<Void, Never>?
     private var periodicTask: Task<Void, Never>?
-    private var suppressWatcherRefreshUntil: Date?
+    private var watcherOperationDepth = 0
+    private var watcherSettleDeadline: Date?
+
+    /// The event stream coalesces with a 0.5s latency, so events for the app's own
+    /// writes keep arriving after the operation that caused them has returned.
+    /// Suppression outlasts the work by this much to swallow that backlog.
+    private static let watcherSettleWindow: TimeInterval = 1.5
 
     init(
         folderSettings: FolderSettings,
@@ -50,8 +56,33 @@ final class FileSystemReconciler {
         await emitSnapshot()
     }
 
-    func suppressWatcherRefresh(for seconds: TimeInterval) {
-        suppressWatcherRefreshUntil = Date().addingTimeInterval(seconds)
+    /// Mutes the folder watcher while the app itself is changing files, so its own
+    /// writes don't come back as change events and schedule a reconcile on top of
+    /// the one the operation already performs.
+    ///
+    /// Prefer this form wherever the operation is still in hand. A mute that starts
+    /// only once the work is done has already missed everything a long batch move
+    /// emitted while it ran.
+    @discardableResult
+    func suppressWatcherRefresh<T>(during operation: () throws -> T) rethrows -> T {
+        watcherOperationDepth += 1
+        defer {
+            watcherOperationDepth -= 1
+            watcherSettleDeadline = Date().addingTimeInterval(Self.watcherSettleWindow)
+        }
+        return try operation()
+    }
+
+    /// Settle-only form, for callers whose file operation has already completed and
+    /// that need nothing more than the resulting event backlog swallowed.
+    func suppressWatcherRefresh() {
+        watcherSettleDeadline = Date().addingTimeInterval(Self.watcherSettleWindow)
+    }
+
+    private var isWatcherSuppressed: Bool {
+        if watcherOperationDepth > 0 { return true }
+        guard let watcherSettleDeadline else { return false }
+        return watcherSettleDeadline > Date()
     }
 
     private func restartPeriodicReconciliationIfNeeded(autoRefresh: Bool) {
@@ -101,12 +132,8 @@ final class FileSystemReconciler {
         } else {
             watcher = FileSystemWatcher(paths: watchPaths) { [weak self] in
                 Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    if let suppressWatcherRefreshUntil = self.suppressWatcherRefreshUntil,
-                       suppressWatcherRefreshUntil > Date() {
-                        return
-                    }
-                    self.suppressWatcherRefreshUntil = nil
+                    guard let self, !self.isWatcherSuppressed else { return }
+                    self.watcherSettleDeadline = nil
                     self.scheduleRefresh()
                 }
             }
