@@ -36,10 +36,45 @@ final class ArtifactComputationCache {
     func loadAll() async {
         let textRecords = await textStore.cachedRecords()
         let structuredRecords = await structuredDataStore.cachedRecords()
+
+        // Tokenizing is the expensive half of a reload, and a reconcile reloads the
+        // whole store every time. Term frequencies are a pure function of the text,
+        // so a record that came back unchanged keeps the frequencies already
+        // derived from it and only genuinely new text is tokenized.
+        duplicateTermFrequenciesByHash = termFrequencies(
+            for: textRecords,
+            unchangedFrom: textRecordsByHash,
+            reusing: duplicateTermFrequenciesByHash,
+            text: { $0.text }
+        )
+        firstPageDuplicateTermFrequenciesByHash = termFrequencies(
+            for: textRecords,
+            unchangedFrom: textRecordsByHash,
+            reusing: firstPageDuplicateTermFrequenciesByHash,
+            text: { $0.firstPageText }
+        )
+
         textRecordsByHash = textRecords
         structuredRecordsByHash = structuredRecords
-        duplicateTermFrequenciesByHash = DuplicateDetector.termFrequenciesFromRecords(textRecords)
-        firstPageDuplicateTermFrequenciesByHash = DuplicateDetector.firstPageTermFrequenciesFromRecords(textRecords)
+    }
+
+    private func termFrequencies(
+        for records: [String: InvoiceTextRecord],
+        unchangedFrom previousRecords: [String: InvoiceTextRecord],
+        reusing cached: [String: [String: Int]],
+        text: (InvoiceTextRecord) -> String?
+    ) -> [String: [String: Int]] {
+        var frequenciesByHash: [String: [String: Int]] = Dictionary(minimumCapacity: records.count)
+
+        for (contentHash, record) in records {
+            if previousRecords[contentHash] == record, let reused = cached[contentHash] {
+                frequenciesByHash[contentHash] = reused
+            } else if let frequencies = DuplicateDetector.normalizedTermFrequencies(for: text(record)) {
+                frequenciesByHash[contentHash] = frequencies
+            }
+        }
+
+        return frequenciesByHash
     }
 
     @discardableResult

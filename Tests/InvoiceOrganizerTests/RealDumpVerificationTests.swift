@@ -214,6 +214,45 @@ private func referenceCosineSimilarity(
     #expect(elapsed < .seconds(1), "clustering took \(elapsed)")
 }
 
+/// Every reconcile reloads the whole text store, and tokenizing it was costing about
+/// as much as the snapshot rebuild itself. A reload must produce exactly the same
+/// frequencies while re-tokenizing only what actually changed.
+@MainActor
+@Test func realDumpReloadReusesTokenization() async throws {
+    guard let dump = try loadDump() else {
+        print("skipped: set INVOICE_ORGANIZER_STATE_DUMP to a diagnostic dump")
+        return
+    }
+
+    let textStore = InMemoryInvoiceTextStore()
+    for (contentHash, record) in dump.raw.extractedTextByContentHash {
+        await textStore.save(record, forContentHash: contentHash)
+    }
+
+    let cache = ArtifactComputationCache(
+        textStore: textStore,
+        structuredDataStore: InMemoryInvoiceStructuredDataStore()
+    )
+
+    let coldStart = ContinuousClock.now
+    await cache.loadAll()
+    let cold = ContinuousClock.now - coldStart
+
+    let expectedTerms = cache.duplicateTermFrequenciesByHash
+    let expectedFirstPage = cache.firstPageDuplicateTermFrequenciesByHash
+
+    let warmStart = ContinuousClock.now
+    await cache.loadAll()
+    let warm = ContinuousClock.now - warmStart
+
+    print("reload of \(dump.raw.extractedTextByContentHash.count) records: cold \(cold), warm \(warm)")
+
+    #expect(cache.duplicateTermFrequenciesByHash == expectedTerms)
+    #expect(cache.firstPageDuplicateTermFrequenciesByHash == expectedFirstPage)
+    #expect(!expectedTerms.isEmpty)
+    #expect(warm < cold / 2, "reload re-tokenized unchanged records: cold \(cold), warm \(warm)")
+}
+
 /// The whole snapshot rebuild, which is what runs on the main actor and therefore
 /// what the user experiences as a stall when files move between queues.
 @Test func realDumpSnapshotRebuildStaysResponsive() throws {

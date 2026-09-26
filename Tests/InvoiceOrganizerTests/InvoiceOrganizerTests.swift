@@ -4564,7 +4564,7 @@ private final class CallLog: @unchecked Sendable {
     }
 }
 
-private actor InMemoryInvoiceTextStore: InvoiceTextStoring {
+actor InMemoryInvoiceTextStore: InvoiceTextStoring {
     private var records: [String: InvoiceTextRecord] = [:]
 
     func cachedText(forContentHash contentHash: String) async -> InvoiceTextRecord? {
@@ -4592,7 +4592,7 @@ private actor InMemoryInvoiceTextStore: InvoiceTextStoring {
     }
 }
 
-private actor InMemoryInvoiceStructuredDataStore: InvoiceStructuredDataStoring {
+actor InMemoryInvoiceStructuredDataStore: InvoiceStructuredDataStoring {
     private var records: [String: InvoiceStructuredDataRecord] = [:]
 
     func cachedData(forContentHash contentHash: String) async -> InvoiceStructuredDataRecord? {
