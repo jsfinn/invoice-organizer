@@ -75,3 +75,52 @@ Potential improvements:
 
 ### Merge Cross-Format Duplicate Families
 
+## Scaling
+
+The current archive is roughly 330 invoices for one fiscal year. The target is tens
+of thousands. These entries record what breaks on the way there, measured rather
+than estimated, so the order of work is not re-argued from intuition.
+
+### Duplicate Detection Is Quadratic And Blocks The Main Actor
+
+What we observed:
+- `DuplicateDetector.buildClusters` scores every pair of documents that has extracted text, so the work grows with the square of the library
+- Measured with realistic 180-term vectors: 330 invoices takes 0.34s, 2,000 takes 11.9s, 5,000 takes 78.5s
+- Extrapolated from the measured per-pair cost: 10,000 invoices is 5.2 minutes, 30,000 is 47 minutes, 50,000 is 131 minutes
+- `duplicateGroups` is reached from `LibrarySnapshotBuilder`, called by `AppModel.rebuildLibrarySnapshot()`, which is on the main actor and has fourteen call sites
+- Clusters are rebuilt from scratch every time; a single extraction run triggers around 556 rebuilds
+- At 30,000 documents the term vectors alone are on the order of a gigabyte resident, because they are rebuilt in memory on each pass
+
+Why this matters:
+- This is the first wall, not storage. At 10,000 invoices the UI freezes for five minutes per rebuild, and the 30-second periodic reconcile means it never recovers
+- Everything else on this list is survivable in the background; this one costs the application
+
+Potential improvements:
+- Block candidates with an inverted index over rare terms so only pairs sharing one are scored, which is the near-linear fix
+- Make clustering incremental: one new file should not recluster the library
+- Move the rebuild off the main actor (see the separate note on `rebuildLibrarySnapshot`)
+- Keep the vectors in the index rather than rebuilding them in memory per pass
+
+Considered and rejected:
+- Extracting dedup into a separate service. `DuplicateDetector` already imports only Foundation and is a stateless set of static functions with no I/O, actor, or UI reach, so there is no coupling left to break. A service boundary would not change the algorithm, the call site, or the recomputation, and a network service is a non-starter because the input is raw OCR text containing bank and routing numbers
+- A local XPC process stays available if memory isolation later becomes the binding constraint. Being pure and stateless is what keeps that option cheap, and it costs nothing to hold
+
+### Bulk Caches Rewrite The Whole Map On Every Save
+
+What we observed:
+- `InvoiceTextStore` and `InvoiceStructuredDataStore` decode the entire map, mutate one key, and re-encode all of it on each `save`
+- Current sizes in `UserDefaults`: `workflow.invoiceExtractedText` 2.4MB, `workflow.invoiceStructuredData` 126KB, `workflow.invoiceMetadata` 58KB, `artifact.identityMap` 47KB
+- Encoding cost scales with the map: 2.3MB takes 8.3ms, 35MB takes 67ms, 140MB takes 275ms, 350MB takes 699ms
+- Because every invoice triggers a whole-map rewrite, a full extraction run is quadratic: 1.4s at 330 invoices, 167s at 5,000, 46 minutes at 20,000, 4.9 hours at 50,000
+- At the target size the payload is 140MB to 350MB living in `cfprefsd`, which keeps each domain resident and rewrites the whole plist on flush
+
+Why this matters:
+- `UserDefaults` is a preferences store, and this is bulk document text; the medium is wrong before the format is
+- Reads are already fronted by `ArtifactComputationCache`, so the remaining cost is entirely on writes
+- Writes are coalesced and flushed asynchronously with no transaction spanning the four stores, so a crash can leave the identity map, workflow records, and caches disagreeing
+
+Potential improvements:
+- Move to SQLite. Moving the blobs to JSON files in Application Support fixes the medium but leaves the quadratic rewrite in place, so it is not worth spending a migration on
+- Design this together with the dedup index: candidate blocking needs an indexed lookup over terms, which is the same query engine, and doing them separately means one schema is thrown away
+- Note that a migration is one-way on live customer data. Until now every release could be rolled back because no key or encoding changed; introducing a database ends that, so it needs a backup path
+
