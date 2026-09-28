@@ -48,14 +48,11 @@ final class DiagnosticSnapshotRecorder {
         defaults.set(dump.appVersion, forKey: Self.lastDumpedVersionKey)
     }
 
-    /// The menu command's path: always a fresh dump, and failures are the caller's
-    /// to report.
-    func exportSnapshot(computed: ComputedLibraryState) throws -> URL {
-        let dump = LibraryStateDump(raw: LibraryStateExtractor.extract(), computed: computed)
-        return try dump.write(to: LibraryStateDump.fileURL(in: directory, capturedAt: dump.capturedAt))
+    /// The menu command's path: always a fresh dump, read on the main actor so the
+    /// caller can hand the result to a background task and package it there.
+    func makeDump(computed: ComputedLibraryState) -> LibraryStateDump {
+        LibraryStateDump(raw: LibraryStateExtractor.extract(), computed: computed)
     }
-
-    var diagnosticsDirectory: URL { directory }
 
     /// A test run builds `AppModel` many times over; none of those launches should
     /// leave OCR text in the real Application Support folder.

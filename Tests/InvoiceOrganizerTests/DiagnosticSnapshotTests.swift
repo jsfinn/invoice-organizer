@@ -188,3 +188,127 @@ private func makeTestDefaults(_ function: String = #function) -> (UserDefaults, 
     #expect(completed.raw == dump.raw)
     #expect(completed.computed?.artifacts.first?.invoiceNumber == "256174208")
 }
+
+// MARK: - Diagnostic bundle
+
+@Test func bundleCarriesTheScannedFoldersAndLeavesTheArchiveOut() async throws {
+    let fileManager = FileManager.default
+    let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    func makeFolder(_ name: String, containing filename: String) throws -> URL {
+        let url = root.appendingPathComponent(name, isDirectory: true)
+        try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+        try Data(name.utf8).write(to: url.appendingPathComponent(filename))
+        return url
+    }
+
+    let settings = FolderSettings(
+        inboxURL: try makeFolder("Inbox", containing: "incoming.pdf"),
+        processedURL: try makeFolder("Processed", containing: "Sysco-2024-01-05-INV-1.pdf"),
+        processingURL: try makeFolder("Processing", containing: "wip.pdf"),
+        duplicatesURL: try makeFolder("Archive", containing: "dupe.pdf")
+    )
+
+    let destination = root.appendingPathComponent("bundle.zip")
+    _ = try DiagnosticBundle.write(
+        dump: LibraryStateDump(raw: .empty, computed: nil),
+        folderSettings: settings,
+        to: destination
+    )
+    #expect(fileManager.fileExists(atPath: destination.path))
+
+    let unpacked = root.appendingPathComponent("unpacked", isDirectory: true)
+    try fileManager.createDirectory(at: unpacked, withIntermediateDirectories: true)
+    let ditto = Process()
+    ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+    ditto.arguments = ["-x", "-k", destination.path, unpacked.path]
+    try ditto.run()
+    ditto.waitUntilExit()
+
+    let bundle = unpacked.appendingPathComponent("bundle", isDirectory: true)
+    func exists(_ relativePath: String) -> Bool {
+        fileManager.fileExists(atPath: bundle.appendingPathComponent(relativePath).path)
+    }
+
+    #expect(exists("state.json"))
+    #expect(exists("manifest.json"))
+    #expect(exists("Inbox/incoming.pdf"))
+    #expect(exists("Processing/wip.pdf"))
+    #expect(exists("Processed/Sysco-2024-01-05-INV-1.pdf"))
+    #expect(!exists("Archive"))
+
+    let manifest = try JSONDecoder().decode(
+        DiagnosticBundleManifest.self,
+        from: Data(contentsOf: bundle.appendingPathComponent("manifest.json"))
+    )
+    #expect(manifest.roots.map(\.role).sorted { $0.rawValue < $1.rawValue } == [.inbox, .processed, .processing])
+    #expect(manifest.roots.allSatisfy { $0.fileCount == 1 })
+    // The original path is what lets a reader remap the bundle onto local folders.
+    #expect(manifest.roots.first { $0.role == .processed }?.originalPath == settings.processedURL?.standardizedFileURL.path)
+}
+
+/// Progress arrives from the thread driving compression, so the test has to collect
+/// it somewhere safe to read afterwards.
+private final class ProgressBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Double] = []
+
+    func record(_ value: Double) {
+        lock.withLock { values.append(value) }
+    }
+
+    var recorded: [Double] {
+        lock.withLock { values }
+    }
+}
+
+@Test func bundleProgressRisesAndFinishesAtOne() async throws {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+    try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+    try Data(repeating: 7, count: 512_000).write(to: inbox.appendingPathComponent("incoming.pdf"))
+
+    let progress = ProgressBox()
+    _ = try DiagnosticBundle.write(
+        dump: LibraryStateDump(raw: .empty, computed: nil),
+        folderSettings: FolderSettings(inboxURL: inbox),
+        to: root.appendingPathComponent("bundle.zip"),
+        onProgress: { progress.record($0) }
+    )
+
+    let recorded = progress.recorded
+    // A corpus this small compresses faster than the sampling interval, so the
+    // only guaranteed reading is the terminal one.
+    #expect(recorded.last == 1)
+    #expect(recorded.allSatisfy { (0...1).contains($0) })
+    #expect(recorded == recorded.sorted())
+}
+
+@Test func bundleSkipsAConfiguredFolderThatIsMissingOnDisk() async throws {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+    try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+
+    // A partial bundle diagnoses more than no bundle, and the manifest records
+    // which roots were actually captured.
+    let settings = FolderSettings(
+        inboxURL: inbox,
+        processedURL: root.appendingPathComponent("NeverSynced", isDirectory: true),
+        processingURL: nil,
+        duplicatesURL: nil
+    )
+
+    let destination = root.appendingPathComponent("partial.zip")
+    _ = try DiagnosticBundle.write(
+        dump: LibraryStateDump(raw: .empty, computed: nil),
+        folderSettings: settings,
+        to: destination
+    )
+
+    #expect(FileManager.default.fileExists(atPath: destination.path))
+}

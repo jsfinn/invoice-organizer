@@ -274,7 +274,7 @@ enum InvoiceReadState: Equatable, Sendable {
     case failed
 }
 
-enum FolderRole: String, CaseIterable, Identifiable, Sendable {
+enum FolderRole: String, Codable, CaseIterable, Identifiable, Sendable {
     case inbox = "Inbox"
     case processing = "Processing"
     case processed = "Processed"

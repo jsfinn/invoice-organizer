@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -36,7 +37,9 @@ struct ContentView: View {
                     structuredQueueCount: model.structuredQueueDepth,
                     heicQueue: model.heicConversionQueue,
                     onOpenHEICHistory: model.markHEICConversionActivitySeen,
-                    onSelectConvertedFile: model.revealConvertedFileInQueue(_:)
+                    onSelectConvertedFile: model.revealConvertedFileInQueue(_:),
+                    diagnosticExport: model.diagnosticExport,
+                    onAcknowledgeDiagnosticExport: model.clearDiagnosticExport
                 )
             }
         }
@@ -49,6 +52,8 @@ private struct StatusBarView: View {
     @ObservedObject var heicQueue: HEICConversionQueueModel
     let onOpenHEICHistory: () -> Void
     let onSelectConvertedFile: (HEICConvertedFile) -> Void
+    let diagnosticExport: DiagnosticExportState?
+    let onAcknowledgeDiagnosticExport: () -> Void
     @State private var isShowingHEICHistory = false
 
     var body: some View {
@@ -81,6 +86,10 @@ private struct StatusBarView: View {
                 )
             }
             Spacer(minLength: 0)
+
+            if let diagnosticExport {
+                diagnosticExportStatus(diagnosticExport)
+            }
         }
         .padding(.leading, 26)
         .padding(.trailing, 12)
@@ -89,6 +98,38 @@ private struct StatusBarView: View {
         .overlay(alignment: .top) {
             Divider()
         }
+    }
+
+    /// The finished archive stays put until "Show in Finder" is used, so an export
+    /// that completes while the user is elsewhere is still there to be found.
+    @ViewBuilder
+    private func diagnosticExportStatus(_ state: DiagnosticExportState) -> some View {
+        HStack(spacing: 8) {
+            switch state {
+            case let .exporting(fraction):
+                Text("Exporting diagnostic bundle")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                ProgressView(value: fraction)
+                    .progressViewStyle(.linear)
+                    .frame(width: 120)
+                Text(fraction.formatted(.percent.precision(.fractionLength(0))))
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(.tertiary)
+
+            case let .finished(url):
+                Text("Diagnostic bundle ready")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Button("Show in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                    onAcknowledgeDiagnosticExport()
+                }
+                .font(.system(size: 11))
+                .buttonStyle(.link)
+            }
+        }
+        .transition(.opacity)
     }
 
     private func label(_ title: String, count: Int) -> some View {

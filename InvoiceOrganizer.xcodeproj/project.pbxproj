@@ -44,8 +44,8 @@
 		6D6246C485A24CFA4E4FBD14 /* SelectAllOnFocus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 280B4810D31878273E9E22B0 /* SelectAllOnFocus.swift */; };
 		710CB18BC5826C5B8973D5CB /* InvoiceWorkflowStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D52179153F771CF8FB386D /* InvoiceWorkflowStore.swift */; };
 		740E8893954B244F67C6F9F8 /* DuplicateOverride.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36A6765A18411AFFD9B104E9 /* DuplicateOverride.swift */; };
-		763E81A3BF1E1766B2CACA29 /* ExportDiagnosticSnapshotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC092D4F6986FF7AA1AFA7A3 /* ExportDiagnosticSnapshotView.swift */; };
 		76ACC649AB66DB4F0C6A9380 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4BEDBC9AE365973B7AFAA0C /* AppModel.swift */; };
+		77E1EA805E1BE89809595212 /* DiagnosticBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F4360C94F03FD5696EE3D19 /* DiagnosticBundle.swift */; };
 		78A2E2AEBD5097516D036DAC /* RealDumpVerificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B1112D9974032FF05913065 /* RealDumpVerificationTests.swift */; };
 		82FA2918CA0BD70D45E76E0C /* SetupRequiredView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352246B9A9E5914AD01C319E /* SetupRequiredView.swift */; };
 		831B14D18FD8EED458D3CDA2 /* ReplacementPreviewRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 890624B54CA6140BDBEF5B82 /* ReplacementPreviewRenderer.swift */; };
@@ -80,6 +80,7 @@
 		DE099784CA01A55E7785B247 /* ArtifactAccessCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6796E8204ECE65BE00F76321 /* ArtifactAccessCoordinator.swift */; };
 		E2A2F8CF74CE82DD1542D6BD /* InvoiceStructuredExtractionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F85923FD6EF7364C426A589D /* InvoiceStructuredExtractionClient.swift */; };
 		E65919A51DC8A1835F5CC1B4 /* QueueStatusCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F148EE8CC3F868A3314FE06 /* QueueStatusCard.swift */; };
+		EF1A0A68DD75A6C0ACEFD840 /* ExportDiagnosticBundleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2818B299D531F9BF12C13786 /* ExportDiagnosticBundleView.swift */; };
 		F1DD263D8142276399819C2A /* StructuredExtractionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 150C9BA921200FE9C87F83F6 /* StructuredExtractionHandler.swift */; };
 		F302FA072F9A49B5BBFF102D /* CheckForUpdatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B234C551E2440907921BBB2 /* CheckForUpdatesView.swift */; };
 		F783F204E0A73839426EB06E /* LibraryStateExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668AD82E08956A41FABD0C8E /* LibraryStateExtractor.swift */; };
@@ -112,6 +113,7 @@
 		26E6B9963E59261DF8AB01BD /* ProcessedInvoiceCollisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessedInvoiceCollisionTests.swift; sourceTree = "<group>"; };
 		275E539E7266BD6630D2AA40 /* FormField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormField.swift; sourceTree = "<group>"; };
 		280B4810D31878273E9E22B0 /* SelectAllOnFocus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectAllOnFocus.swift; sourceTree = "<group>"; };
+		2818B299D531F9BF12C13786 /* ExportDiagnosticBundleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportDiagnosticBundleView.swift; sourceTree = "<group>"; };
 		2A09E6698764231FA35A064B /* InboxFileScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxFileScanner.swift; sourceTree = "<group>"; };
 		30B92089CBED91EFFF2B8FBD /* InvoiceFileRotator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceFileRotator.swift; sourceTree = "<group>"; };
 		352246B9A9E5914AD01C319E /* SetupRequiredView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupRequiredView.swift; sourceTree = "<group>"; };
@@ -136,6 +138,7 @@
 		7682FA66D1B7FB76E36C84A4 /* DocumentIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentIdentity.swift; sourceTree = "<group>"; };
 		78FD9A85C78EBE3E91D8A16B /* InvoiceOrganizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceOrganizer.swift; sourceTree = "<group>"; };
 		7AB0FA9279C3AF73F4A32F11 /* DocumentTextExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTextExtractor.swift; sourceTree = "<group>"; };
+		7F4360C94F03FD5696EE3D19 /* DiagnosticBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticBundle.swift; sourceTree = "<group>"; };
 		7F6D5AC17B04AE12587BC23B /* FileHasher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileHasher.swift; sourceTree = "<group>"; };
 		82CAED86D5CD24CCF0F959A6 /* ProcessedInvoiceCollision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessedInvoiceCollision.swift; sourceTree = "<group>"; };
 		84B72E2F14F2484DF372353A /* FolderPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPicker.swift; sourceTree = "<group>"; };
@@ -176,7 +179,6 @@
 		F4C394D71B7FE207AB3901D9 /* ArtifactComputationCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactComputationCache.swift; sourceTree = "<group>"; };
 		F6B05263495F9A4FF2953824 /* PhysicalArtifactIdentityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhysicalArtifactIdentityStore.swift; sourceTree = "<group>"; };
 		F85923FD6EF7364C426A589D /* InvoiceStructuredExtractionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceStructuredExtractionClient.swift; sourceTree = "<group>"; };
-		FC092D4F6986FF7AA1AFA7A3 /* ExportDiagnosticSnapshotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportDiagnosticSnapshotView.swift; sourceTree = "<group>"; };
 		FCCE5C80EEF23F66C41BB114 /* InvoiceOrganizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InvoiceOrganizerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -292,7 +294,7 @@
 			isa = PBXGroup;
 			children = (
 				3B234C551E2440907921BBB2 /* CheckForUpdatesView.swift */,
-				FC092D4F6986FF7AA1AFA7A3 /* ExportDiagnosticSnapshotView.swift */,
+				2818B299D531F9BF12C13786 /* ExportDiagnosticBundleView.swift */,
 				275E539E7266BD6630D2AA40 /* FormField.swift */,
 				280B4810D31878273E9E22B0 /* SelectAllOnFocus.swift */,
 				BEAA5D10C6354B20E1C62723 /* VendorField.swift */,
@@ -405,6 +407,7 @@
 		B2F862D0942BFE02B21E1298 /* Diagnostics */ = {
 			isa = PBXGroup;
 			children = (
+				7F4360C94F03FD5696EE3D19 /* DiagnosticBundle.swift */,
 				9BD9B67FAA21825749B312EE /* DiagnosticSnapshotRecorder.swift */,
 				874193A47E7B1B2750DBAFB3 /* LibraryStateDump.swift */,
 				668AD82E08956A41FABD0C8E /* LibraryStateExtractor.swift */,
@@ -496,7 +499,7 @@
 			path = State;
 			sourceTree = "<group>";
 		};
-		"TEMP_2357982B-8387-4D1D-AE09-D19F94AE01FA" /* Resources */ = {
+		"TEMP_F7816001-268C-4ABA-B0E7-96EA8D22A47E" /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -606,6 +609,7 @@
 				DA52C84315CFF7BB898AAC3F /* ContentHashQueue.swift in Sources */,
 				5083F31BF23A63D2CD1E6BDE /* ContentView.swift in Sources */,
 				83ECCB9A5900200E7F2BA87A /* DataEntryCard.swift in Sources */,
+				77E1EA805E1BE89809595212 /* DiagnosticBundle.swift in Sources */,
 				0E54CE7DF1B8E7A3810830BA /* DiagnosticSnapshotRecorder.swift in Sources */,
 				A20CA93BB39B2B9A044CA212 /* DocumentIdentity.swift in Sources */,
 				1165F9DA6EA3092C39C86D9C /* DocumentModels.swift in Sources */,
@@ -614,7 +618,7 @@
 				59DBDC8510729494AF771643 /* DuplicateDetector.swift in Sources */,
 				45BA615069AA584B57C73103 /* DuplicateModels.swift in Sources */,
 				740E8893954B244F67C6F9F8 /* DuplicateOverride.swift in Sources */,
-				763E81A3BF1E1766B2CACA29 /* ExportDiagnosticSnapshotView.swift in Sources */,
+				EF1A0A68DD75A6C0ACEFD840 /* ExportDiagnosticBundleView.swift in Sources */,
 				B5D822DD1BA5C56A4200A6EF /* ExternalFileDropDelegate.swift in Sources */,
 				9CBEA774CBCF8C910743083F /* FileDuplicationService.swift in Sources */,
 				FCB15CFC8FB3A1C3DCB67942 /* FileHasher.swift in Sources */,

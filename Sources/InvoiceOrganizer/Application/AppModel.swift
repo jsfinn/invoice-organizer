@@ -11,6 +11,7 @@ final class AppModel: ObservableObject {
     @Published var llmSettings: LLMSettings
     @Published var settingsErrorMessage: String?
     @Published private(set) var llmPreflightStatus: LLMPreflightStatus
+    @Published private(set) var diagnosticExport: DiagnosticExportState?
     @Published private(set) var documents: [Document] = []
     @Published private(set) var extractedTextHashes: Set<String> = []
     @Published private(set) var structuredDataHashes: Set<String> = []
@@ -217,12 +218,36 @@ final class AppModel: ObservableObject {
         )
     }
 
-    func exportDiagnosticSnapshot() throws -> URL {
-        try diagnosticSnapshotRecorder.exportSnapshot(computed: computedLibraryState())
+    /// Packages the library state together with the files it describes. `destination`
+    /// is the archive itself, so a large export is written straight where the user
+    /// asked for it rather than staged in Application Support first.
+    ///
+    /// The finished state is left in place for the status bar to clear once the user
+    /// has been shown where the archive landed.
+    func exportDiagnosticBundle(to destination: URL) async throws {
+        let dump = diagnosticSnapshotRecorder.makeDump(computed: computedLibraryState())
+        let settings = folderSettings
+        diagnosticExport = .exporting(fraction: 0)
+
+        do {
+            try await Task.detached(priority: .userInitiated) { [weak self] in
+                _ = try DiagnosticBundle.write(dump: dump, folderSettings: settings, to: destination) { fraction in
+                    Task { @MainActor in
+                        guard let self, case .exporting = self.diagnosticExport else { return }
+                        self.diagnosticExport = .exporting(fraction: fraction)
+                    }
+                }
+            }.value
+        } catch {
+            diagnosticExport = nil
+            throw error
+        }
+
+        diagnosticExport = .finished(destination)
     }
 
-    var diagnosticsDirectory: URL {
-        diagnosticSnapshotRecorder.diagnosticsDirectory
+    func clearDiagnosticExport() {
+        diagnosticExport = nil
     }
 
     func possibleSameInvoiceMatches(for artifactID: PhysicalArtifact.ID) -> [PossibleSameInvoiceMatch] {
