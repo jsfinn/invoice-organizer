@@ -2403,6 +2403,51 @@ private func waitUntil(_ condition: () -> Bool, attempts: Int = 200) async throw
     #expect(secondMatches?.first?.matchedLocation == .inbox)
 }
 
+@Test func librarySnapshotBuilderHidesPossibleSameInvoiceMatchesForSeparatedDocuments() async throws {
+    func artifact(_ name: String, hash: String) -> PhysicalArtifact {
+        PhysicalArtifact(
+            id: UUID().uuidString,
+            name: name,
+            fileURL: URL(fileURLWithPath: "/Inbox/\(name)"),
+            location: .inbox,
+            addedAt: Date(timeIntervalSince1970: 10),
+            fileType: .pdf,
+            status: .unprocessed,
+            contentHash: hash
+        )
+    }
+    let first = artifact("invoice-a.pdf", hash: "invoice-a")
+    let second = artifact("invoice-b.pdf", hash: "invoice-b")
+    let third = artifact("invoice-c.pdf", hash: "invoice-c")
+
+    let sharedMetadata = DocumentMetadata(
+        vendor: "Acme Corp",
+        invoiceDate: utcDate(year: 2024, month: 1, day: 5),
+        invoiceNumber: "INV-42",
+        documentType: .invoice
+    )
+    let snapshot = LibrarySnapshotBuilder(
+        structuredRecordForContentHash: { _ in nil }
+    )
+    .build(
+        from: [first, second, third],
+        workflowsByArtifactID: [:],
+        documentMetadataHintsByArtifactID: [
+            first.id: sharedMetadata,
+            second.id: sharedMetadata,
+            third.id: sharedMetadata
+        ],
+        duplicateTermFrequenciesByHash: [:],
+        duplicateFirstPageTermFrequenciesByHash: [:],
+        separatedContentHashPairs: [ContentHashPair("invoice-a", "invoice-b")]
+    )
+
+    // The separated pair no longer sees each other; both still match the third document.
+    #expect(snapshot.possibleSameInvoiceMatchesByArtifactID[first.id]?.map(\.matchedArtifactID) == [third.id])
+    #expect(snapshot.possibleSameInvoiceMatchesByArtifactID[second.id]?.map(\.matchedArtifactID) == [third.id])
+    #expect(Set(snapshot.possibleSameInvoiceMatchesByArtifactID[third.id]?.map(\.matchedArtifactID) ?? []) == [first.id, second.id])
+}
+
 @Test func librarySnapshotBuilderExposesPossibleSameInvoiceMatchesForReceiptsWithoutInvoiceNumber() async throws {
     let first = PhysicalArtifact(
         id: UUID().uuidString,

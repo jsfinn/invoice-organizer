@@ -67,7 +67,10 @@ struct LibrarySnapshotBuilder {
                 document.artifactIDs.map { ($0, document) }
             }
         )
-        let possibleSameInvoiceMatchesByArtifactID = buildPossibleSameInvoiceMatches(from: documents)
+        let possibleSameInvoiceMatchesByArtifactID = buildPossibleSameInvoiceMatches(
+            from: documents,
+            separatedContentHashPairs: separatedContentHashPairs
+        )
 
         var projectedArtifacts = artifacts
         var metadataByArtifactID: [PhysicalArtifact.ID: DocumentMetadata] = [:]
@@ -289,8 +292,11 @@ struct LibrarySnapshotBuilder {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// Documents the user has declared distinct (`separatedContentHashPairs`) are never
+    /// reported as possible same invoices, even when their metadata still agrees.
     private func buildPossibleSameInvoiceMatches(
-        from documents: [Document]
+        from documents: [Document],
+        separatedContentHashPairs: Set<ContentHashPair>
     ) -> [PhysicalArtifact.ID: [PossibleSameInvoiceMatch]] {
         let candidateDocuments = documents.compactMap { document -> (Document, DocumentMetadata, SameInvoiceKey)? in
             let effectiveMetadata = sameInvoiceMetadata(for: document)
@@ -302,13 +308,21 @@ struct LibrarySnapshotBuilder {
         }
         let documentsBySignature = Dictionary(grouping: candidateDocuments, by: \.2)
 
+        func isSeparated(_ lhs: Document, _ rhs: Document) -> Bool {
+            guard !separatedContentHashPairs.isEmpty else { return false }
+            let rhsHashes = rhs.artifacts.compactMap(\.contentHash)
+            return lhs.artifacts.compactMap(\.contentHash).contains { lhsHash in
+                rhsHashes.contains { separatedContentHashPairs.contains(ContentHashPair(lhsHash, $0)) }
+            }
+        }
+
         var matchesByArtifactID: [PhysicalArtifact.ID: [PossibleSameInvoiceMatch]] = [:]
         for group in documentsBySignature.values where group.count > 1 {
             let documents = group.map { ($0.0, $0.1) }
 
             for (document, _) in documents {
                 let otherMatches = documents
-                    .filter { $0.0.id != document.id }
+                    .filter { $0.0.id != document.id && !isSeparated(document, $0.0) }
                     .compactMap { makePossibleSameInvoiceMatch(from: $0.0, metadata: $0.1) }
 
                 guard !otherMatches.isEmpty else { continue }

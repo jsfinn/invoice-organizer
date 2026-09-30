@@ -97,6 +97,13 @@ struct MetadataCard: View {
                                     Text(match.matchedLocation.rawValue)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+
+                                    Button("Not the Same") {
+                                        model.markNotSameInvoice(artifactID: invoice.id, matchedDocumentID: match.documentID)
+                                    }
+                                    .buttonStyle(.link)
+                                    .font(.caption)
+                                    .help("These are different documents. This match will not be shown again.")
                                 }
 
                                 Text(match.artifactCount == 1

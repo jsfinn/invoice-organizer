@@ -77,9 +77,15 @@ struct InvoiceBrowserView: NSViewRepresentable {
             documents: documents,
             ocrStatesByArtifactID: ocrStatesByArtifactID,
             readStatesByArtifactID: readStatesByArtifactID,
+            badgeTitlesByArtifactID: badgeTitlesByArtifactID,
             selectedIDs: selectedArtifactIDs
         )
         return scrollView
+    }
+
+    /// One badge per row, the duplicate badge taking precedence as it does when drawing.
+    private var badgeTitlesByArtifactID: [PhysicalArtifact.ID: String] {
+        duplicateBadgeTitlesByArtifactID.merging(possibleSameInvoiceBadgeTitlesByArtifactID) { duplicate, _ in duplicate }
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
@@ -92,6 +98,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
             documents: documents,
             ocrStatesByArtifactID: ocrStatesByArtifactID,
             readStatesByArtifactID: readStatesByArtifactID,
+            badgeTitlesByArtifactID: badgeTitlesByArtifactID,
             selectedIDs: selectedArtifactIDs
         )
     }
@@ -132,6 +139,7 @@ struct InvoiceBrowserView: NSViewRepresentable {
         private var displayedRows: [InvoiceBrowserRow] = []
         private var ocrStatesByArtifactID: [PhysicalArtifact.ID: InvoiceOCRState] = [:]
         private var readStatesByArtifactID: [PhysicalArtifact.ID: InvoiceReadState] = [:]
+        private var badgeTitlesByArtifactID: [PhysicalArtifact.ID: String] = [:]
         private var isSyncingSelection = false
 
         init(parent: InvoiceBrowserView) {
@@ -143,11 +151,17 @@ struct InvoiceBrowserView: NSViewRepresentable {
             documents: [Document],
             ocrStatesByArtifactID: [PhysicalArtifact.ID: InvoiceOCRState],
             readStatesByArtifactID: [PhysicalArtifact.ID: InvoiceReadState],
+            badgeTitlesByArtifactID: [PhysicalArtifact.ID: String],
             selectedIDs: Set<PhysicalArtifact.ID>
         ) {
-            let didStateChange = self.ocrStatesByArtifactID != ocrStatesByArtifactID || self.readStatesByArtifactID != readStatesByArtifactID
+            // Badges are drawn per cell from `parent`, so a badge that appears or disappears
+            // without the rows changing (e.g. "Not the Same" on two singletons) needs a reload.
+            let didStateChange = self.ocrStatesByArtifactID != ocrStatesByArtifactID
+                || self.readStatesByArtifactID != readStatesByArtifactID
+                || self.badgeTitlesByArtifactID != badgeTitlesByArtifactID
             self.ocrStatesByArtifactID = ocrStatesByArtifactID
             self.readStatesByArtifactID = readStatesByArtifactID
+            self.badgeTitlesByArtifactID = badgeTitlesByArtifactID
             syncTableSortDescriptorsFromContext()
             let sortedInvoices = sort(invoices: invoices)
             let nextRows = buildInvoiceBrowserRows(
@@ -433,7 +447,12 @@ struct InvoiceBrowserView: NSViewRepresentable {
                     menu.addItem(.separator())
                 }
 
-                let title = selectedArtifacts.count > 1 ? "Mark as Not Duplicates" : "Mark as Not a Duplicate"
+                let title: String
+                if isInDuplicateGroup(selectedArtifacts) {
+                    title = selectedArtifacts.count > 1 ? "Mark as Not Duplicates" : "Mark as Not a Duplicate"
+                } else {
+                    title = "Mark as Not the Same Invoice"
+                }
                 let markItem = NSMenuItem(title: title, action: #selector(markSelectionNotDuplicate), keyEquivalent: "")
                 markItem.target = self
                 menu.addItem(markItem)
@@ -546,9 +565,15 @@ struct InvoiceBrowserView: NSViewRepresentable {
             return (PDFDocument(url: artifact.fileURL)?.pageCount ?? 0) >= 2
         }
 
-        /// The action applies when at least one selected artifact is part of a duplicate group,
-        /// i.e. there is some existing grouping the override could split apart.
+        /// The action applies when at least one selected artifact is part of a duplicate group
+        /// or is reported as a possible same invoice, i.e. there is some relationship the
+        /// override could remove.
         private func canMarkNotDuplicate(_ selectedArtifacts: [PhysicalArtifact]) -> Bool {
+            isInDuplicateGroup(selectedArtifacts)
+                || selectedArtifacts.contains { parent.possibleSameInvoiceBadgeTitlesByArtifactID[$0.id] != nil }
+        }
+
+        private func isInDuplicateGroup(_ selectedArtifacts: [PhysicalArtifact]) -> Bool {
             let selectedIDs = Set(selectedArtifacts.map(\.id))
             guard !selectedIDs.isEmpty else { return false }
 

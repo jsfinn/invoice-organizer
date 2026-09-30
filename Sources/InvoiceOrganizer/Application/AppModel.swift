@@ -2016,10 +2016,11 @@ final class AppModel: ObservableObject {
         documents = librarySnapshot.documents
     }
 
-    /// Records a user override declaring the given artifacts to be distinct documents, so the
-    /// duplicate detector never groups them again. Separates the selected artifacts from each
-    /// other and from the other members of any duplicate group they currently belong to, while
-    /// preserving genuine duplicate relationships among the *unselected* members.
+    /// Records a user override declaring the given artifacts to be distinct documents, so they
+    /// are neither grouped as duplicates nor reported as possible same invoices again.
+    /// Separates the selected artifacts from each other, from the other members of any
+    /// duplicate group they currently belong to, and from the documents they are reported as
+    /// possibly matching, while preserving genuine relationships among the *unselected* members.
     func markArtifactsAsNotDuplicates(ids: [PhysicalArtifact.ID]) {
         let selectedIDs = Set(ids)
         guard !selectedIDs.isEmpty else { return }
@@ -2044,6 +2045,13 @@ final class AppModel: ObservableObject {
                 }
             }
         }
+        for id in selectedIDs {
+            for match in possibleSameInvoiceMatches(for: id) {
+                if let matched = librarySnapshot.documentsByID[match.documentID] {
+                    otherHashes.formUnion(matched.artifacts.compactMap(\.contentHash))
+                }
+            }
+        }
         otherHashes.subtract(selectedHashes)
 
         var newPairs: Set<ContentHashPair> = []
@@ -2061,7 +2069,30 @@ final class AppModel: ObservableObject {
             }
         }
 
-        let additions = newPairs.subtracting(separatedContentHashPairs)
+        recordSeparatedContentHashPairs(newPairs)
+    }
+
+    /// Records that the document containing `artifactID` and the document it is reported as
+    /// possibly matching are distinct. Only that pair is separated; any other match or
+    /// duplicate relationship either document has is left as is.
+    func markNotSameInvoice(artifactID: PhysicalArtifact.ID, matchedDocumentID: Document.ID) {
+        guard let document = librarySnapshot.document(for: artifactID),
+              let matched = librarySnapshot.documentsByID[matchedDocumentID] else {
+            return
+        }
+
+        var newPairs: Set<ContentHashPair> = []
+        for hash in document.artifacts.compactMap(\.contentHash) {
+            for matchedHash in matched.artifacts.compactMap(\.contentHash) where hash != matchedHash {
+                newPairs.insert(ContentHashPair(hash, matchedHash))
+            }
+        }
+
+        recordSeparatedContentHashPairs(newPairs)
+    }
+
+    private func recordSeparatedContentHashPairs(_ pairs: Set<ContentHashPair>) {
+        let additions = pairs.subtracting(separatedContentHashPairs)
         guard !additions.isEmpty else { return }
 
         separatedContentHashPairs.formUnion(additions)
